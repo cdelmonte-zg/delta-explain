@@ -227,6 +227,6 @@ MIT
 
 ## Author
 
-[Christian Del Monte](https://github.com/cdelmonte-zg) -- built as a companion tool for understanding Delta Lake internals and as open-source observability for the Delta protocol.
+[Christian Del Monte](https://github.com/cdelmonte-zg)
 
-Powered by [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs).
+`delta-explain` is built on [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) and focuses on making Delta-level file elimination visible.
