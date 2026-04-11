@@ -1,0 +1,11 @@
+[package]
+name = "delta-explain"
+version = "0.1.0"
+edition = "2024"
+description = "CLI diagnostic tool showing step-by-step how Delta Lake prunes files given a predicate"
+
+[dependencies]
+delta_kernel = { version = "0.20", features = ["default-engine-rustls", "arrow"] }
+clap = { version = "4", features = ["derive"] }
+url = "2"
+num-format = "0.4"
