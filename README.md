@@ -156,7 +156,7 @@ delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_
 
 The JSON output includes per-file status, stats coverage, and phase-level metrics.
 
-### Docker in a pipeline
+### Docker in a pipeline (after first release)
 
 ```yaml
 # GitHub Actions example
@@ -183,6 +183,10 @@ Combine flags freely: `--min-pruning`, `--assert-stats`, `--format json`, and `-
 The per-file statistics (min/max values) are read directly from the Delta log JSON to show *why* each file was kept or dropped.
 
 No query engine is involved. No data files are read. Only metadata.
+
+### Scope
+
+`delta-explain` explains Delta-level file elimination only: partition pruning and file-level data skipping. Parquet row-group predicate pushdown (filtering *inside* surviving files based on row-group footer statistics) is intentionally out of scope for the current version -- it operates at a different layer (file format, not table protocol) and will be available as a future `--parquet-pushdown` option.
 
 ## Predicate syntax
 
