@@ -67,18 +67,21 @@ Files missing statistics are explicitly flagged as `[no stats]`.
 
 ## Install
 
-From source:
+From Git:
 
 ```bash
-cargo install delta-explain
+cargo install --git https://github.com/cdelmonte-zg/delta-explain
 ```
 
-Or with Docker:
+Or build locally:
 
 ```bash
-docker pull ghcr.io/cdelmonte-zg/delta-explain
-docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
+git clone https://github.com/cdelmonte-zg/delta-explain.git
+cd delta-explain
+cargo install --path .
 ```
+
+Once a release is published, `cargo install delta-explain` and `docker pull ghcr.io/cdelmonte-zg/delta-explain` will work too.
 
 ## Usage
 
@@ -183,17 +186,38 @@ No query engine is involved. No data files are read. Only metadata.
 
 ## Predicate syntax
 
-Simple AND-joined comparisons:
+`delta-explain` accepts standard SQL WHERE-clause syntax, parsed via [sqlparser-rs](https://github.com/sqlparser-rs/sqlparser-rs).
 
-```
-column = 'value'
-column > 42
-column <= 3.14
-column != 'x'
+```sql
+-- Comparisons
+age > 30
+country = 'DE'
+score >= 90.5
+
+-- Logical operators
 age > 30 AND country = 'DE'
+country = 'DE' OR country = 'IT'
+NOT country = 'US'
+
+-- IN lists
+country IN ('DE', 'IT', 'US')
+country NOT IN ('US')
+
+-- BETWEEN
+age BETWEEN 20 AND 40
+
+-- NULL checks
+name IS NOT NULL
+age IS NULL
+
+-- Parentheses
+(country = 'DE' OR country = 'IT') AND age > 30
+
+-- Nested columns
+payload.age > 30
 ```
 
-Supported operators: `=`, `!=`, `<`, `<=`, `>`, `>=`. Supported types: string, integer, long, float, double, boolean.
+Supported types: string, integer, long, float, double, boolean. This is a diagnostic tool -- subqueries, functions, and LIKE are not supported.
 
 ## License
 

@@ -98,7 +98,10 @@ async fn read_stats_async(
     let log_prefix = if table_prefix.as_ref().is_empty() {
         ObjectPath::from("_delta_log")
     } else {
-        ObjectPath::from(format!("{}/_delta_log", table_prefix.as_ref().trim_end_matches('/')))
+        ObjectPath::from(format!(
+            "{}/_delta_log",
+            table_prefix.as_ref().trim_end_matches('/')
+        ))
     };
 
     let objects: Vec<_> = store

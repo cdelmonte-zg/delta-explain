@@ -1,120 +1,306 @@
 use delta_kernel::expressions::{Expression, Predicate};
 use delta_kernel::schema::{DataType, SchemaRef};
+use sqlparser::ast::{BinaryOperator, Expr as SqlExpr, UnaryOperator, Value as SqlValue};
+use sqlparser::dialect::GenericDialect;
+use sqlparser::parser::Parser;
 
-/// Parse a simple predicate string like "age > 30 AND country = 'DE'"
-/// into a kernel Predicate. Supports AND-joined binary comparisons.
-/// Operators: =, !=, <, <=, >, >=
+/// Parse a SQL WHERE-clause expression into a delta-kernel Predicate.
+///
+/// Supports: comparisons, AND, OR, NOT, IN (...), BETWEEN, IS [NOT] NULL,
+/// parentheses, nested column references (a.b), and standard SQL literals.
 pub fn parse_predicate(input: &str, schema: &SchemaRef) -> Result<Predicate, String> {
-    let clauses: Vec<&str> = split_on_and(input);
-    if clauses.is_empty() {
-        return Err("Empty predicate".into());
-    }
+    let dialect = GenericDialect {};
+    let mut parser = Parser::new(&dialect)
+        .try_with_sql(input)
+        .map_err(|e| format!("Parse error: {e}"))?;
+    let sql_expr = parser
+        .parse_expr()
+        .map_err(|e| format!("Parse error: {e}"))?;
 
-    let preds: Vec<Predicate> = clauses
-        .into_iter()
-        .map(|clause| parse_comparison(clause.trim(), schema))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    if preds.len() == 1 {
-        Ok(preds.into_iter().next().unwrap())
-    } else {
-        Ok(Predicate::and_from(preds))
-    }
+    convert_to_predicate(&sql_expr, schema)
 }
 
-/// Split on " AND " (case-insensitive)
-fn split_on_and(input: &str) -> Vec<&str> {
-    let upper = input.to_uppercase();
-    let mut result = Vec::new();
-    let mut start = 0;
+// ── SQL AST -> kernel Predicate ─────────────────────────────────────
 
-    while let Some(pos) = upper[start..].find(" AND ") {
-        result.push(&input[start..start + pos]);
-        start = start + pos + 5; // len(" AND ")
-    }
-    result.push(&input[start..]);
-    result
-}
+fn convert_to_predicate(expr: &SqlExpr, schema: &SchemaRef) -> Result<Predicate, String> {
+    match expr {
+        // AND / OR
+        SqlExpr::BinaryOp { left, op, right } => match op {
+            BinaryOperator::And => {
+                let l = convert_to_predicate(left, schema)?;
+                let r = convert_to_predicate(right, schema)?;
+                Ok(Predicate::and(l, r))
+            }
+            BinaryOperator::Or => {
+                let l = convert_to_predicate(left, schema)?;
+                let r = convert_to_predicate(right, schema)?;
+                Ok(Predicate::or(l, r))
+            }
+            // Comparison operators
+            BinaryOperator::Eq
+            | BinaryOperator::NotEq
+            | BinaryOperator::Lt
+            | BinaryOperator::LtEq
+            | BinaryOperator::Gt
+            | BinaryOperator::GtEq => {
+                let (l, r) = convert_comparison_pair(left, right, schema)?;
+                match op {
+                    BinaryOperator::Eq => Ok(l.eq(r)),
+                    BinaryOperator::NotEq => Ok(l.ne(r)),
+                    BinaryOperator::Lt => Ok(l.lt(r)),
+                    BinaryOperator::LtEq => Ok(l.le(r)),
+                    BinaryOperator::Gt => Ok(l.gt(r)),
+                    BinaryOperator::GtEq => Ok(l.ge(r)),
+                    _ => unreachable!(),
+                }
+            }
+            other => Err(format!("Unsupported binary operator: {other}")),
+        },
 
-/// Parse a single comparison like "age > 30" or "country = 'DE'"
-fn parse_comparison(clause: &str, schema: &SchemaRef) -> Result<Predicate, String> {
-    // Try operators from longest to shortest to avoid matching '<' before '<='
-    let ops = ["!=", "<=", ">=", "=", "<", ">"];
-
-    for op in ops {
-        if let Some(idx) = clause.find(op) {
-            let col_name = clause[..idx].trim();
-            let value_str = clause[idx + op.len()..].trim();
-
-            let field = schema
-                .field(col_name)
-                .ok_or_else(|| format!("Unknown column: '{col_name}'"))?;
-
-            let col = Expression::column([col_name]);
-            let lit = parse_literal(value_str, field.data_type())?;
-
-            return match op {
-                "=" => Ok(col.eq(lit)),
-                "!=" => Ok(col.ne(lit)),
-                "<" => Ok(col.lt(lit)),
-                "<=" => Ok(col.le(lit)),
-                ">" => Ok(col.gt(lit)),
-                ">=" => Ok(col.ge(lit)),
-                _ => unreachable!(),
-            };
+        // NOT
+        SqlExpr::UnaryOp {
+            op: UnaryOperator::Not,
+            expr,
+        } => {
+            let inner = convert_to_predicate(expr, schema)?;
+            Ok(Predicate::not(inner))
         }
-    }
 
-    Err(format!("Cannot parse comparison: '{clause}'"))
+        // IS NULL / IS NOT NULL
+        SqlExpr::IsNull(expr) => {
+            let e = convert_to_expression(expr, schema)?;
+            Ok(e.is_null())
+        }
+        SqlExpr::IsNotNull(expr) => {
+            let e = convert_to_expression(expr, schema)?;
+            Ok(e.is_not_null())
+        }
+
+        // IN (val1, val2, ...)  ->  col = val1 OR col = val2 OR ...
+        SqlExpr::InList {
+            expr,
+            list,
+            negated,
+        } => {
+            if list.is_empty() {
+                return Err("Empty IN list".into());
+            }
+            let col_type = resolve_column_type(expr, schema);
+            let col = convert_to_expression(expr, schema)?;
+            let preds: Vec<Predicate> = list
+                .iter()
+                .map(|item| {
+                    let val = convert_typed_expression(item, schema, col_type.as_ref())?;
+                    Ok(col.clone().eq(val))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+
+            let combined = if preds.len() == 1 {
+                preds.into_iter().next().unwrap()
+            } else {
+                Predicate::or_from(preds)
+            };
+
+            if *negated {
+                Ok(Predicate::not(combined))
+            } else {
+                Ok(combined)
+            }
+        }
+
+        // BETWEEN low AND high  ->  col >= low AND col <= high
+        SqlExpr::Between {
+            expr,
+            negated,
+            low,
+            high,
+        } => {
+            let col_type = resolve_column_type(expr, schema);
+            let col = convert_to_expression(expr, schema)?;
+            let lo = convert_typed_expression(low, schema, col_type.as_ref())?;
+            let hi = convert_typed_expression(high, schema, col_type.as_ref())?;
+            let between = Predicate::and(col.clone().ge(lo), col.le(hi));
+            if *negated {
+                Ok(Predicate::not(between))
+            } else {
+                Ok(between)
+            }
+        }
+
+        // Nested parens
+        SqlExpr::Nested(inner) => convert_to_predicate(inner, schema),
+
+        // Boolean column reference
+        SqlExpr::Identifier(_) | SqlExpr::CompoundIdentifier(_) => {
+            let col = convert_to_expression(expr, schema)?;
+            Ok(Predicate::from_expr(col))
+        }
+
+        other => Err(format!("Unsupported expression: {other}")),
+    }
 }
 
-fn parse_literal(s: &str, data_type: &DataType) -> Result<Expression, String> {
-    let s = s.trim();
-    if *data_type == DataType::STRING {
-        let unquoted = s
-            .strip_prefix('\'')
-            .and_then(|s| s.strip_suffix('\''))
-            .or_else(|| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
-            .ok_or_else(|| format!("String literal must be quoted: '{s}'"))?;
-        Ok(Expression::literal(unquoted.to_string()))
-    } else if *data_type == DataType::INTEGER {
-        let v: i32 = s.parse().map_err(|e| format!("Invalid integer '{s}': {e}"))?;
-        Ok(Expression::literal(v))
-    } else if *data_type == DataType::LONG {
-        let v: i64 = s.parse().map_err(|e| format!("Invalid long '{s}': {e}"))?;
-        Ok(Expression::literal(v))
-    } else if *data_type == DataType::FLOAT {
-        let v: f32 = s.parse().map_err(|e| format!("Invalid float '{s}': {e}"))?;
-        Ok(Expression::literal(v))
-    } else if *data_type == DataType::DOUBLE {
-        let v: f64 = s.parse().map_err(|e| format!("Invalid double '{s}': {e}"))?;
-        Ok(Expression::literal(v))
-    } else if *data_type == DataType::BOOLEAN {
-        let v: bool = s.parse().map_err(|e| format!("Invalid boolean '{s}': {e}"))?;
-        Ok(Expression::literal(v))
-    } else {
-        Err(format!("Unsupported data type for literal: {data_type:?}"))
+// ── Type-aware conversion helpers ────────────────────────────────────
+
+/// For a comparison like `col > 42`, resolve the column type from one side
+/// and use it to coerce the literal on the other side.
+fn convert_comparison_pair(
+    left: &SqlExpr,
+    right: &SqlExpr,
+    schema: &SchemaRef,
+) -> Result<(Expression, Expression), String> {
+    let left_type = resolve_column_type(left, schema);
+    let right_type = resolve_column_type(right, schema);
+    let hint = left_type.or(right_type);
+
+    let l = convert_typed_expression(left, schema, hint.as_ref())?;
+    let r = convert_typed_expression(right, schema, hint.as_ref())?;
+    Ok((l, r))
+}
+
+/// Try to determine the DataType of a column reference in the schema.
+fn resolve_column_type(expr: &SqlExpr, schema: &SchemaRef) -> Option<DataType> {
+    match expr {
+        SqlExpr::Identifier(ident) => schema.field(&ident.value).map(|f| f.data_type().clone()),
+        SqlExpr::CompoundIdentifier(parts) if parts.len() == 1 => {
+            schema.field(&parts[0].value).map(|f| f.data_type().clone())
+        }
+        SqlExpr::Nested(inner) => resolve_column_type(inner, schema),
+        _ => None,
     }
 }
 
-/// Classify each clause as either partition-only or data-skipping.
+/// Convert an expression, using a type hint to coerce numeric literals.
+fn convert_typed_expression(
+    expr: &SqlExpr,
+    schema: &SchemaRef,
+    type_hint: Option<&DataType>,
+) -> Result<Expression, String> {
+    match expr {
+        SqlExpr::Value(val_with_span) => convert_literal(&val_with_span.value, type_hint),
+        SqlExpr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr: inner,
+        } => {
+            let e = convert_typed_expression(inner, schema, type_hint)?;
+            negate_literal(e)
+        }
+        SqlExpr::Nested(inner) => convert_typed_expression(inner, schema, type_hint),
+        _ => convert_to_expression(expr, schema),
+    }
+}
+
+fn negate_literal(expr: Expression) -> Result<Expression, String> {
+    match expr {
+        Expression::Literal(scalar) => {
+            use delta_kernel::expressions::Scalar;
+            match scalar {
+                Scalar::Integer(v) => Ok(Expression::literal(-v)),
+                Scalar::Long(v) => Ok(Expression::literal(-v)),
+                Scalar::Float(v) => Ok(Expression::literal(-v)),
+                Scalar::Double(v) => Ok(Expression::literal(-v)),
+                _ => Err(format!("Cannot negate: {scalar:?}")),
+            }
+        }
+        _ => Err("Unary minus only supported on literals".into()),
+    }
+}
+
+// ── SQL AST -> kernel Expression ────────────────────────────────────
+
+fn convert_to_expression(expr: &SqlExpr, _schema: &SchemaRef) -> Result<Expression, String> {
+    match expr {
+        // Simple column: age, country
+        SqlExpr::Identifier(ident) => Ok(Expression::column([ident.value.clone()])),
+
+        // Dotted column: payload.age
+        SqlExpr::CompoundIdentifier(parts) => {
+            let names: Vec<String> = parts.iter().map(|p| p.value.clone()).collect();
+            Ok(Expression::column(names))
+        }
+
+        // Literal values (no type hint when used outside a comparison)
+        SqlExpr::Value(val_with_span) => convert_literal(&val_with_span.value, None),
+
+        // Nested parens
+        SqlExpr::Nested(inner) => convert_to_expression(inner, _schema),
+
+        // Unary minus: -42
+        SqlExpr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => {
+            let inner = convert_to_expression(expr, _schema)?;
+            negate_literal(inner)
+        }
+
+        other => Err(format!("Unsupported expression: {other}")),
+    }
+}
+
+fn convert_literal(val: &SqlValue, type_hint: Option<&DataType>) -> Result<Expression, String> {
+    match val {
+        SqlValue::Number(s, _) => {
+            // If we have a type hint from the column, use it to parse the right type
+            if let Some(dt) = type_hint {
+                if *dt == DataType::DOUBLE {
+                    let v: f64 = s
+                        .parse()
+                        .map_err(|e| format!("Invalid double '{s}': {e}"))?;
+                    return Ok(Expression::literal(v));
+                } else if *dt == DataType::FLOAT {
+                    let v: f32 = s.parse().map_err(|e| format!("Invalid float '{s}': {e}"))?;
+                    return Ok(Expression::literal(v));
+                } else if *dt == DataType::LONG {
+                    let v: i64 = s.parse().map_err(|e| format!("Invalid long '{s}': {e}"))?;
+                    return Ok(Expression::literal(v));
+                }
+            }
+            // Default: try i32, then i64, then f64
+            if let Ok(v) = s.parse::<i32>() {
+                Ok(Expression::literal(v))
+            } else if let Ok(v) = s.parse::<i64>() {
+                Ok(Expression::literal(v))
+            } else if let Ok(v) = s.parse::<f64>() {
+                Ok(Expression::literal(v))
+            } else {
+                Err(format!("Cannot parse number: '{s}'"))
+            }
+        }
+        SqlValue::SingleQuotedString(s) => Ok(Expression::literal(s.clone())),
+        SqlValue::Boolean(b) => Ok(Expression::literal(*b)),
+        SqlValue::Null => Ok(Expression::null_literal(DataType::STRING)),
+        other => Err(format!("Unsupported literal: {other}")),
+    }
+}
+
+// ── Predicate splitting (partition vs stats) ────────────────────────
+
+/// Classify each top-level AND clause as partition or data-skipping.
 /// Returns (partition_preds, stats_preds).
 pub fn split_predicate(
     input: &str,
     schema: &SchemaRef,
     partition_columns: &[String],
 ) -> Result<(Vec<Predicate>, Vec<Predicate>), String> {
-    let clauses = split_on_and(input);
+    let dialect = GenericDialect {};
+    let mut parser = Parser::new(&dialect)
+        .try_with_sql(input)
+        .map_err(|e| format!("Parse error: {e}"))?;
+    let sql_expr = parser
+        .parse_expr()
+        .map_err(|e| format!("Parse error: {e}"))?;
+
     let mut partition_preds = Vec::new();
     let mut stats_preds = Vec::new();
 
+    let clauses = flatten_and(&sql_expr);
     for clause in clauses {
-        let clause = clause.trim();
-        let pred = parse_comparison(clause, schema)?;
+        let refs = collect_column_refs(clause);
+        let pred = convert_to_predicate(clause, schema)?;
 
-        // Figure out which column this clause references
-        let col_name = extract_column_name(clause)?;
-        if partition_columns.contains(&col_name) {
+        let is_partition = !refs.is_empty() && refs.iter().all(|r| partition_columns.contains(r));
+        if is_partition {
             partition_preds.push(pred);
         } else {
             stats_preds.push(pred);
@@ -124,48 +310,91 @@ pub fn split_predicate(
     Ok((partition_preds, stats_preds))
 }
 
-pub fn extract_clauses(pred_str: &str, keep: impl Fn(&str) -> bool) -> String {
-    let upper = pred_str.to_uppercase();
-    let mut parts = Vec::new();
-    let mut start = 0;
-
-    let mut indices = Vec::new();
-    let mut s = 0;
-    while let Some(pos) = upper[s..].find(" AND ") {
-        indices.push(s + pos);
-        s = s + pos + 5;
-    }
-
-    let mut clauses = Vec::new();
-    for &idx in &indices {
-        clauses.push(&pred_str[start..idx]);
-        start = idx + 5;
-    }
-    clauses.push(&pred_str[start..]);
-
-    let ops = ["!=", "<=", ">=", "=", "<", ">"];
-    for clause in clauses {
-        let clause = clause.trim();
-        for op in ops {
-            if let Some(idx) = clause.find(op) {
-                let col = clause[..idx].trim();
-                if keep(col) {
-                    parts.push(clause.to_string());
-                }
-                break;
-            }
+/// Flatten top-level ANDs into a list of clauses.
+fn flatten_and(expr: &SqlExpr) -> Vec<&SqlExpr> {
+    match expr {
+        SqlExpr::BinaryOp {
+            left,
+            op: BinaryOperator::And,
+            right,
+        } => {
+            let mut v = flatten_and(left);
+            v.extend(flatten_and(right));
+            v
         }
+        SqlExpr::Nested(inner) => flatten_and(inner),
+        _ => vec![expr],
     }
-
-    parts.join(" AND ")
 }
 
-fn extract_column_name(clause: &str) -> Result<String, String> {
-    let ops = ["!=", "<=", ">=", "=", "<", ">"];
-    for op in ops {
-        if let Some(idx) = clause.find(op) {
-            return Ok(clause[..idx].trim().to_string());
+/// Collect all column name references from an expression.
+fn collect_column_refs(expr: &SqlExpr) -> Vec<String> {
+    let mut refs = Vec::new();
+    collect_refs_inner(expr, &mut refs);
+    refs
+}
+
+fn collect_refs_inner(expr: &SqlExpr, refs: &mut Vec<String>) {
+    match expr {
+        SqlExpr::Identifier(ident) => refs.push(ident.value.clone()),
+        SqlExpr::CompoundIdentifier(parts) => {
+            refs.push(
+                parts
+                    .iter()
+                    .map(|p| &p.value)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("."),
+            );
         }
+        SqlExpr::BinaryOp { left, right, .. } => {
+            collect_refs_inner(left, refs);
+            collect_refs_inner(right, refs);
+        }
+        SqlExpr::UnaryOp { expr, .. } => collect_refs_inner(expr, refs),
+        SqlExpr::Nested(inner) => collect_refs_inner(inner, refs),
+        SqlExpr::IsNull(e) | SqlExpr::IsNotNull(e) => collect_refs_inner(e, refs),
+        SqlExpr::InList { expr, list, .. } => {
+            collect_refs_inner(expr, refs);
+            for item in list {
+                collect_refs_inner(item, refs);
+            }
+        }
+        SqlExpr::Between {
+            expr, low, high, ..
+        } => {
+            collect_refs_inner(expr, refs);
+            collect_refs_inner(low, refs);
+            collect_refs_inner(high, refs);
+        }
+        _ => {}
     }
-    Err(format!("Cannot extract column name from: '{clause}'"))
+}
+
+/// Extract human-readable clause text for display.
+/// Filters top-level AND clauses by a column predicate.
+pub fn extract_clauses(pred_str: &str, keep: impl Fn(&str) -> bool) -> String {
+    let dialect = GenericDialect {};
+    let Ok(mut parser) = Parser::new(&dialect).try_with_sql(pred_str) else {
+        return pred_str.to_string();
+    };
+    let Ok(sql_expr) = parser.parse_expr() else {
+        return pred_str.to_string();
+    };
+
+    let clauses = flatten_and(&sql_expr);
+    let kept: Vec<String> = clauses
+        .into_iter()
+        .filter(|clause| {
+            let refs = collect_column_refs(clause);
+            !refs.is_empty() && refs.iter().all(|r| keep(r))
+        })
+        .map(|c| c.to_string())
+        .collect();
+
+    if kept.is_empty() {
+        pred_str.to_string()
+    } else {
+        kept.join(" AND ")
+    }
 }

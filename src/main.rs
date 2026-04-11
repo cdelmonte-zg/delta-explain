@@ -7,12 +7,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
+use delta_kernel::engine::default::DefaultEngineBuilder;
 use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::storage::store_from_url_opts;
-use delta_kernel::engine::default::DefaultEngineBuilder;
 use delta_kernel::expressions::Predicate;
-use delta_kernel::scan::state::ScanFile;
 use delta_kernel::scan::ScanBuilder;
+use delta_kernel::scan::state::ScanFile;
 use delta_kernel::{DeltaResult, Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
@@ -49,7 +49,6 @@ struct Cli {
     verbose: bool,
 
     // ── CI / assertion flags ────────────────────────────────────────
-
     /// Output format: "text" (default) or "json"
     #[arg(long, default_value = "text")]
     format: String,
@@ -64,7 +63,6 @@ struct Cli {
     assert_stats: bool,
 
     // ── Cloud storage flags ─────────────────────────────────────────
-
     /// AWS region (S3 only)
     #[arg(long)]
     region: Option<String>,
@@ -151,14 +149,15 @@ fn collect_files(
     let mut files = Vec::new();
     for res in scan.scan_metadata(engine)? {
         let scan_meta = res?;
-        files = scan_meta.visit_scan_files(files, |files: &mut Vec<FileInfo>, file: ScanFile| {
-            files.push(FileInfo {
-                path: file.path.clone(),
-                size: file.size,
-                partition_values: file.partition_values.clone(),
-                num_records: file.stats.map(|s| s.num_records),
-            });
-        })?;
+        files =
+            scan_meta.visit_scan_files(files, |files: &mut Vec<FileInfo>, file: ScanFile| {
+                files.push(FileInfo {
+                    path: file.path.clone(),
+                    size: file.size,
+                    partition_values: file.partition_values.clone(),
+                    num_records: file.stats.map(|s| s.num_records),
+                });
+            })?;
     }
     Ok(files)
 }
@@ -228,8 +227,7 @@ fn try_main() -> DeltaResult<()> {
                     .map_err(delta_kernel::Error::Generic)?;
 
                 let prev_count = surviving.len();
-                let surviving =
-                    collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+                let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
                 let surviving_paths: HashSet<String> =
                     surviving.iter().map(|f| f.path.clone()).collect();
 
