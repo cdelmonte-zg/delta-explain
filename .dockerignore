@@ -1,0 +1,8 @@
+target/
+.git/
+.github/
+.venv/
+test-table/
+tests/
+create_test_table.py
+*.md

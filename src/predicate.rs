@@ -124,6 +124,42 @@ pub fn split_predicate(
     Ok((partition_preds, stats_preds))
 }
 
+pub fn extract_clauses(pred_str: &str, keep: impl Fn(&str) -> bool) -> String {
+    let upper = pred_str.to_uppercase();
+    let mut parts = Vec::new();
+    let mut start = 0;
+
+    let mut indices = Vec::new();
+    let mut s = 0;
+    while let Some(pos) = upper[s..].find(" AND ") {
+        indices.push(s + pos);
+        s = s + pos + 5;
+    }
+
+    let mut clauses = Vec::new();
+    for &idx in &indices {
+        clauses.push(&pred_str[start..idx]);
+        start = idx + 5;
+    }
+    clauses.push(&pred_str[start..]);
+
+    let ops = ["!=", "<=", ">=", "=", "<", ">"];
+    for clause in clauses {
+        let clause = clause.trim();
+        for op in ops {
+            if let Some(idx) = clause.find(op) {
+                let col = clause[..idx].trim();
+                if keep(col) {
+                    parts.push(clause.to_string());
+                }
+                break;
+            }
+        }
+    }
+
+    parts.join(" AND ")
+}
+
 fn extract_column_name(clause: &str) -> Result<String, String> {
     let ops = ["!=", "<=", ">=", "=", "<", ">"];
     for op in ops {

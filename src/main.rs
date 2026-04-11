@@ -1,6 +1,8 @@
 mod predicate;
+mod report;
+mod stats;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -12,18 +14,72 @@ use delta_kernel::expressions::Predicate;
 use delta_kernel::scan::state::ScanFile;
 use delta_kernel::scan::ScanBuilder;
 use delta_kernel::{DeltaResult, Engine, Snapshot};
-use num_format::{Locale, ToFormattedString};
+use object_store::DynObjectStore;
 use url::Url;
 
+use report::{FileInfo, OutputFormat, PhaseResult, PruningReport};
+
 #[derive(Parser)]
-#[command(name = "delta-explain", about = "Show step-by-step how Delta Lake prunes files given a predicate")]
+#[command(name = "delta-explain", about = "Make Delta pruning visible")]
+#[command(after_help = "\
+Examples:
+  Diagnostic (local):
+    delta-explain ./my-table -w \"country = 'DE'\"
+    delta-explain ./my-table -w \"age > 30\" --verbose
+
+  CI assertion:
+    delta-explain ./my-table -w \"country = 'DE'\" --min-pruning 60
+    delta-explain ./my-table --assert-stats
+    delta-explain ./my-table -w \"age > 30\" --format json
+
+  Cloud:
+    delta-explain --env-creds s3://bucket/table -w \"age > 30\"
+    delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
+")]
 struct Cli {
-    /// Path to the Delta table (local path or URL)
+    /// Path to the Delta table (local path, s3://, az://, gs://)
     path: String,
 
     /// Predicate expression (e.g. "age > 30 AND country = 'DE'")
-    #[arg(short, long)]
+    #[arg(short = 'w', long = "where")]
     predicate: Option<String>,
+
+    /// Show per-file details (kept/dropped with reason)
+    #[arg(short, long)]
+    verbose: bool,
+
+    // ── CI / assertion flags ────────────────────────────────────────
+
+    /// Output format: "text" (default) or "json"
+    #[arg(long, default_value = "text")]
+    format: String,
+
+    /// Fail (exit 1) if total pruning percentage is below this threshold.
+    /// Requires --where.
+    #[arg(long, value_name = "PERCENT")]
+    min_pruning: Option<f64>,
+
+    /// Fail (exit 1) if any file in the snapshot is missing statistics.
+    #[arg(long)]
+    assert_stats: bool,
+
+    // ── Cloud storage flags ─────────────────────────────────────────
+
+    /// AWS region (S3 only)
+    #[arg(long)]
+    region: Option<String>,
+
+    /// Key=value options for the object store backend. Can be repeated.
+    #[arg(long = "option", value_name = "KEY=VALUE")]
+    options: Vec<String>,
+
+    /// Get cloud credentials from environment variables
+    #[arg(long)]
+    env_creds: bool,
+
+    /// Access a public bucket (S3: skip signature)
+    #[arg(long)]
+    public: bool,
 }
 
 fn main() -> ExitCode {
@@ -37,97 +93,115 @@ fn main() -> ExitCode {
 }
 
 fn parse_table_uri(path: &str) -> DeltaResult<Url> {
-    if let Ok(url) = Url::parse(path) {
-        if url.scheme() != "file" && url.has_host() {
-            return Ok(url);
-        }
+    if let Ok(url) = Url::parse(path)
+        && url.scheme() != "file"
+        && url.has_host()
+    {
+        return Ok(url);
     }
     let absolute = std::fs::canonicalize(path)
         .map_err(|e| delta_kernel::Error::Generic(format!("Invalid path '{path}': {e}")))?;
-    Url::from_directory_path(&absolute)
-        .map_err(|_| delta_kernel::Error::Generic(format!("Cannot convert path to URL: {absolute:?}")))
+    Url::from_directory_path(&absolute).map_err(|_| {
+        delta_kernel::Error::Generic(format!("Cannot convert path to URL: {absolute:?}"))
+    })
 }
 
-fn build_engine(url: &Url) -> DeltaResult<impl Engine> {
-    let opts: HashMap<String, String> = HashMap::new();
+struct EngineAndStore {
+    engine: Box<dyn Engine>,
+    store: Arc<DynObjectStore>,
+}
+
+fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
+    let mut opts: HashMap<String, String> = HashMap::new();
+
+    if let Some(ref region) = cli.region {
+        opts.insert("region".into(), region.clone());
+    }
+    if cli.public {
+        opts.insert("skip_signature".into(), "true".into());
+    }
+    for option in &cli.options {
+        let (key, value) = option.split_once('=').ok_or_else(|| {
+            delta_kernel::Error::Generic(format!(
+                "Invalid option format '{option}', expected KEY=VALUE"
+            ))
+        })?;
+        opts.insert(key.to_ascii_lowercase(), value.into());
+    }
+
     let store = store_from_url_opts(url, opts)?;
-    Ok(DefaultEngineBuilder::<TokioBackgroundExecutor>::new(store).build())
+    let engine = DefaultEngineBuilder::<TokioBackgroundExecutor>::new(store.clone()).build();
+
+    Ok(EngineAndStore {
+        engine: Box::new(engine),
+        store,
+    })
 }
 
-fn count_scan_files(
+fn collect_files(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
     predicate: Option<&Predicate>,
-) -> DeltaResult<usize> {
+) -> DeltaResult<Vec<FileInfo>> {
     let mut builder = ScanBuilder::new(snapshot);
     if let Some(pred) = predicate {
         builder = builder.with_predicate(Arc::new(pred.clone()));
     }
     let scan = builder.build()?;
-    let mut count = 0usize;
+    let mut files = Vec::new();
     for res in scan.scan_metadata(engine)? {
         let scan_meta = res?;
-        count = scan_meta.visit_scan_files(count, |count: &mut usize, _file: ScanFile| {
-            *count += 1;
+        files = scan_meta.visit_scan_files(files, |files: &mut Vec<FileInfo>, file: ScanFile| {
+            files.push(FileInfo {
+                path: file.path.clone(),
+                size: file.size,
+                partition_values: file.partition_values.clone(),
+                num_records: file.stats.map(|s| s.num_records),
+            });
         })?;
     }
-    Ok(count)
-}
-
-/// Get partition column names by inspecting partition_values of scan files.
-fn get_partition_columns(
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
-) -> DeltaResult<Vec<String>> {
-    let scan = ScanBuilder::new(snapshot).build()?;
-    for res in scan.scan_metadata(engine)? {
-        let scan_meta = res?;
-        let columns = scan_meta.visit_scan_files(
-            Vec::<String>::new(),
-            |cols: &mut Vec<String>, file: ScanFile| {
-                if cols.is_empty() {
-                    *cols = file.partition_values.keys().cloned().collect();
-                    cols.sort();
-                }
-            },
-        )?;
-        if !columns.is_empty() {
-            return Ok(columns);
-        }
-    }
-    Ok(Vec::new())
-}
-
-fn fmt(n: usize) -> String {
-    n.to_formatted_string(&Locale::en)
+    Ok(files)
 }
 
 fn try_main() -> DeltaResult<()> {
     let cli = Cli::parse();
 
+    let output_format = match cli.format.as_str() {
+        "json" => OutputFormat::Json,
+        _ => OutputFormat::Text,
+    };
+
     let url = parse_table_uri(&cli.path)?;
-    let engine = build_engine(&url)?;
-    let snapshot = Snapshot::builder_for(url).build(&engine)?;
-
+    let EngineAndStore { engine, store } = build_engine(&url, &cli)?;
+    let snapshot = Snapshot::builder_for(url.clone()).build(engine.as_ref())?;
     let schema = snapshot.schema();
-    let partition_columns = get_partition_columns(snapshot.clone(), &engine)?;
 
-    // Total files (no predicate)
-    let total_files = count_scan_files(snapshot.clone(), &engine, None)?;
+    let all_files = collect_files(snapshot.clone(), engine.as_ref(), None)?;
+    let partition_columns: Vec<String> = all_files
+        .first()
+        .map(|f| {
+            let mut cols: Vec<String> = f.partition_values.keys().cloned().collect();
+            cols.sort();
+            cols
+        })
+        .unwrap_or_default();
 
-    println!("Delta table: {}", cli.path);
-    if let Some(ref pred_str) = cli.predicate {
-        println!("Predicate: {pred_str}");
-    }
-    println!();
-    println!("Files in snapshot: {}", fmt(total_files));
+    let file_stats = stats::read_stats_from_log(&url, &store)?;
+
+    let mut report = PruningReport {
+        table_path: cli.path.clone(),
+        version: snapshot.version(),
+        total_files: all_files.len(),
+        all_files,
+        file_stats,
+        phases: Vec::new(),
+    };
 
     if let Some(ref pred_str) = cli.predicate {
         let (part_preds, stats_preds) =
             predicate::split_predicate(pred_str, &schema, &partition_columns)
                 .map_err(delta_kernel::Error::Generic)?;
 
-        // Partition pruning step
         if !part_preds.is_empty() {
             let part_pred = if part_preds.len() == 1 {
                 part_preds.into_iter().next().unwrap()
@@ -135,81 +209,101 @@ fn try_main() -> DeltaResult<()> {
                 Predicate::and_from(part_preds)
             };
 
-            let after_partition = count_scan_files(snapshot.clone(), &engine, Some(&part_pred))?;
+            let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
+            let surviving_paths: HashSet<String> =
+                surviving.iter().map(|f| f.path.clone()).collect();
 
-            let part_display = extract_clauses(pred_str, |col| {
-                partition_columns.contains(&col.to_string())
+            report.phases.push(PhaseResult {
+                name: "Partition pruning".into(),
+                predicate_display: predicate::extract_clauses(pred_str, |col| {
+                    partition_columns.contains(&col.to_string())
+                }),
+                input_count: report.total_files,
+                output_count: surviving.len(),
+                surviving_paths,
             });
-            println!();
-            println!("Partition pruning");
-            println!("  predicate: {part_display}");
-            println!("  files remaining: {}", fmt(after_partition));
 
-            // Data skipping step (full predicate)
             if !stats_preds.is_empty() {
                 let full_pred = predicate::parse_predicate(pred_str, &schema)
                     .map_err(delta_kernel::Error::Generic)?;
 
-                let after_skipping =
-                    count_scan_files(snapshot.clone(), &engine, Some(&full_pred))?;
+                let prev_count = surviving.len();
+                let surviving =
+                    collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+                let surviving_paths: HashSet<String> =
+                    surviving.iter().map(|f| f.path.clone()).collect();
 
-                let stats_display = extract_clauses(pred_str, |col| {
-                    !partition_columns.contains(&col.to_string())
+                report.phases.push(PhaseResult {
+                    name: "Data skipping (min/max statistics)".into(),
+                    predicate_display: predicate::extract_clauses(pred_str, |col| {
+                        !partition_columns.contains(&col.to_string())
+                    }),
+                    input_count: prev_count,
+                    output_count: surviving.len(),
+                    surviving_paths,
                 });
-                println!();
-                println!("Data skipping (statistics)");
-                println!("  predicate: {stats_display}");
-                println!("  files remaining: {}", fmt(after_skipping));
             }
         } else {
-            // No partition predicates, only data skipping
             let full_pred = predicate::parse_predicate(pred_str, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
 
-            let after_skipping = count_scan_files(snapshot.clone(), &engine, Some(&full_pred))?;
+            let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+            let surviving_paths: HashSet<String> =
+                surviving.iter().map(|f| f.path.clone()).collect();
 
-            println!();
-            println!("Data skipping (statistics)");
-            println!("  predicate: {pred_str}");
-            println!("  files remaining: {}", fmt(after_skipping));
+            report.phases.push(PhaseResult {
+                name: "Data skipping (min/max statistics)".into(),
+                predicate_display: pred_str.clone(),
+                input_count: report.total_files,
+                output_count: surviving.len(),
+                surviving_paths,
+            });
         }
+    }
+
+    // ── Output ──────────────────────────────────────────────────────
+
+    match output_format {
+        OutputFormat::Text => report.print_text(cli.verbose, cli.predicate.as_deref()),
+        OutputFormat::Json => report.print_json(cli.predicate.as_deref()),
+    }
+
+    // ── Assertions (CI mode) ────────────────────────────────────────
+
+    let mut failed = false;
+
+    if let Some(threshold) = cli.min_pruning {
+        let actual = report.total_pruning_pct();
+        if actual < threshold {
+            eprintln!(
+                "ASSERTION FAILED: total pruning {actual:.1}% is below threshold {threshold:.1}%"
+            );
+            failed = true;
+        }
+    }
+
+    if cli.assert_stats {
+        let missing: Vec<&str> = report
+            .all_files
+            .iter()
+            .filter(|f| !report.file_stats.contains_key(&f.path))
+            .map(|f| f.path.as_str())
+            .collect();
+        if !missing.is_empty() {
+            eprintln!(
+                "ASSERTION FAILED: {} file(s) missing statistics:",
+                missing.len()
+            );
+            for path in &missing {
+                eprintln!("  {path}");
+            }
+            failed = true;
+        }
+    }
+
+    if failed {
+        std::process::exit(1);
     }
 
     Ok(())
-}
-
-fn extract_clauses(pred_str: &str, keep: impl Fn(&str) -> bool) -> String {
-    let upper = pred_str.to_uppercase();
-    let mut parts = Vec::new();
-    let mut start = 0;
-
-    let mut indices = Vec::new();
-    let mut s = 0;
-    while let Some(pos) = upper[s..].find(" AND ") {
-        indices.push(s + pos);
-        s = s + pos + 5;
-    }
-
-    let mut clauses = Vec::new();
-    for &idx in &indices {
-        clauses.push(&pred_str[start..idx]);
-        start = idx + 5;
-    }
-    clauses.push(&pred_str[start..]);
-
-    let ops = ["!=", "<=", ">=", "=", "<", ">"];
-    for clause in clauses {
-        let clause = clause.trim();
-        for op in ops {
-            if let Some(idx) = clause.find(op) {
-                let col = clause[..idx].trim();
-                if keep(col) {
-                    parts.push(clause.to_string());
-                }
-                break;
-            }
-        }
-    }
-
-    parts.join(" AND ")
 }

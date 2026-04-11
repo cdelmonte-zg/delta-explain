@@ -2,10 +2,25 @@
 name = "delta-explain"
 version = "0.1.0"
 edition = "2024"
-description = "CLI diagnostic tool showing step-by-step how Delta Lake prunes files given a predicate"
+description = "Make Delta pruning visible. A CLI that shows step-by-step how partition pruning and data skipping reduce candidate files in a Delta table."
+license = "MIT"
+repository = "https://github.com/cdelmonte-zg/delta-explain"
+homepage = "https://github.com/cdelmonte-zg/delta-explain"
+readme = "README.md"
+keywords = ["delta-lake", "pruning", "data-skipping", "observability", "parquet"]
+categories = ["command-line-utilities", "database"]
+authors = ["Christian Del Monte"]
 
 [dependencies]
 delta_kernel = { version = "0.20", features = ["default-engine-rustls", "arrow"] }
 clap = { version = "4", features = ["derive"] }
 url = "2"
 num-format = "0.4"
+serde_json = "1"
+object_store = "0.12"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures = "0.3"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
