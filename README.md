@@ -67,21 +67,19 @@ Files missing statistics are explicitly flagged as `[no stats]`.
 
 ## Install
 
-From Git:
+From [crates.io](https://crates.io/crates/delta-explain):
+
+```bash
+cargo install delta-explain
+```
+
+Or from Git (latest development version):
 
 ```bash
 cargo install --git https://github.com/cdelmonte-zg/delta-explain
 ```
 
-Or build locally:
-
-```bash
-git clone https://github.com/cdelmonte-zg/delta-explain.git
-cd delta-explain
-cargo install --path .
-```
-
-Once a release is published, `cargo install delta-explain` and `docker pull ghcr.io/cdelmonte-zg/delta-explain` will work too.
+Docker image will be available after the first container release on GHCR.
 
 ## Usage
 

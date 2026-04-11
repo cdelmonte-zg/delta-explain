@@ -1,4 +1,4 @@
-FROM rust:1.86-slim AS builder
+FROM rust:slim AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN cargo build --release && rm -rf src target/release/deps/delta_explain*
 COPY src/ src/
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/cdelmonte-zg/delta-explain"
 LABEL org.opencontainers.image.description="Make Delta pruning visible"
