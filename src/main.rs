@@ -118,6 +118,9 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     if cli.public {
         opts.insert("skip_signature".into(), "true".into());
     }
+    if cli.env_creds {
+        opts.insert("allow_env".into(), "true".into());
+    }
     for option in &cli.options {
         let (key, value) = option.split_once('=').ok_or_else(|| {
             delta_kernel::Error::Generic(format!(

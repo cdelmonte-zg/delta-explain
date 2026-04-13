@@ -234,6 +234,10 @@ Supported types: string, integer, long, float, double, boolean. This is a diagno
 
 See [VISION.md](VISION.md) for planned improvements.
 
+## Deep dive
+
+For a detailed walkthrough of the architecture, design decisions, and the reasoning behind the two-phase model, see the companion article: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/deep-dives/delta-explain-making-delta-pruning-visible/).
+
 ## License
 
 MIT
