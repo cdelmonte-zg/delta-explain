@@ -632,8 +632,11 @@ fn flat_no_partition_pruning_phase() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Partition pruning").not()
-                .and(predicate::str::contains("Data skipping (min/max statistics)")),
+            predicate::str::contains("Partition pruning")
+                .not()
+                .and(predicate::str::contains(
+                    "Data skipping (min/max statistics)",
+                )),
         );
 }
 
@@ -690,7 +693,10 @@ fn flat_vs_partitioned_pruning_contrast() {
 
     let flat_pct = flat_json["total_pruning_pct"].as_f64().unwrap();
     let part_pct = part_json["total_pruning_pct"].as_f64().unwrap();
-    assert!(part_pct > flat_pct, "partitioned ({part_pct}%) should prune more than flat ({flat_pct}%)");
+    assert!(
+        part_pct > flat_pct,
+        "partitioned ({part_pct}%) should prune more than flat ({flat_pct}%)"
+    );
 }
 
 #[test]
@@ -706,11 +712,21 @@ fn flat_verbose_shows_dropped_files() {
         .success()
         .stdout(
             predicate::str::contains("[DROPPED] part-00001.snappy.parquet")
-                .and(predicate::str::contains("[DROPPED] part-00002.snappy.parquet"))
-                .and(predicate::str::contains("[KEPT   ] part-00003.snappy.parquet"))
-                .and(predicate::str::contains("[KEPT   ] part-00004.snappy.parquet"))
-                .and(predicate::str::contains("[KEPT   ] part-00005.snappy.parquet"))
-                .and(predicate::str::contains("[KEPT   ] part-00006.snappy.parquet")),
+                .and(predicate::str::contains(
+                    "[DROPPED] part-00002.snappy.parquet",
+                ))
+                .and(predicate::str::contains(
+                    "[KEPT   ] part-00003.snappy.parquet",
+                ))
+                .and(predicate::str::contains(
+                    "[KEPT   ] part-00004.snappy.parquet",
+                ))
+                .and(predicate::str::contains(
+                    "[KEPT   ] part-00005.snappy.parquet",
+                ))
+                .and(predicate::str::contains(
+                    "[KEPT   ] part-00006.snappy.parquet",
+                )),
         );
 }
 
