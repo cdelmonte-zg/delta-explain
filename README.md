@@ -79,7 +79,12 @@ Or from Git (latest development version):
 cargo install --git https://github.com/cdelmonte-zg/delta-explain
 ```
 
-Docker image will be available after the first container release on GHCR.
+Or with Docker (amd64 + arm64):
+
+```bash
+docker pull ghcr.io/cdelmonte-zg/delta-explain
+docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
+```
 
 ## Usage
 
@@ -154,7 +159,7 @@ delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_
 
 The JSON output includes per-file status, stats coverage, and phase-level metrics.
 
-### Docker in a pipeline (after first release)
+### Docker in a pipeline
 
 ```yaml
 # GitHub Actions example

@@ -10,6 +10,11 @@ fn test_table() -> String {
     format!("{manifest_dir}/test-table")
 }
 
+fn test_table_flat() -> String {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    format!("{manifest_dir}/test-table-flat")
+}
+
 // ── Basic snapshot ──────────────────────────────────────────────────
 
 #[test]
@@ -603,4 +608,214 @@ fn like_rejected() {
         .args([&test_table(), "-w", "name LIKE '%Hans%'"])
         .assert()
         .failure();
+}
+
+// ── Flat table (no partitions) ─────────────────────────────────────
+// These tests use a table with no partition columns and mixed country
+// values per file, demonstrating how pruning degrades without
+// proper partitioning.
+
+#[test]
+fn flat_table_snapshot() {
+    cmd()
+        .arg(&test_table_flat())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Files in snapshot: 6"));
+}
+
+#[test]
+fn flat_no_partition_pruning_phase() {
+    // With no partition columns, "Partition pruning" phase should not appear
+    cmd()
+        .args([&test_table_flat(), "-w", "country = 'DE' AND age > 40"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Partition pruning").not()
+                .and(predicate::str::contains("Data skipping (min/max statistics)")),
+        );
+}
+
+#[test]
+fn flat_combined_predicate_keeps_4_files() {
+    // Without partitioning, country min/max ranges are wide, so data skipping
+    // can only eliminate files where max(age) <= 40
+    cmd()
+        .args([&test_table_flat(), "-w", "country = 'DE' AND age > 40"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("files remaining: 4")
+                .and(predicate::str::contains("33% pruned")),
+        );
+}
+
+#[test]
+fn flat_vs_partitioned_pruning_contrast() {
+    // Same predicate, same number of files — partitioned table prunes 83%,
+    // flat table only 33%.
+    let flat_out = cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let part_out = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+
+    let flat_json: serde_json::Value = serde_json::from_slice(&flat_out.stdout).unwrap();
+    let part_json: serde_json::Value = serde_json::from_slice(&part_out.stdout).unwrap();
+
+    // Both tables have 6 files
+    assert_eq!(flat_json["total_files"], 6);
+    assert_eq!(part_json["total_files"], 6);
+
+    // Partitioned: 1 file survives (83% pruned)
+    assert_eq!(part_json["final_files"], 1);
+    // Flat: 4 files survive (33% pruned)
+    assert_eq!(flat_json["final_files"], 4);
+
+    let flat_pct = flat_json["total_pruning_pct"].as_f64().unwrap();
+    let part_pct = part_json["total_pruning_pct"].as_f64().unwrap();
+    assert!(part_pct > flat_pct, "partitioned ({part_pct}%) should prune more than flat ({flat_pct}%)");
+}
+
+#[test]
+fn flat_verbose_shows_dropped_files() {
+    cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--verbose",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("[DROPPED] part-00001.snappy.parquet")
+                .and(predicate::str::contains("[DROPPED] part-00002.snappy.parquet"))
+                .and(predicate::str::contains("[KEPT   ] part-00003.snappy.parquet"))
+                .and(predicate::str::contains("[KEPT   ] part-00004.snappy.parquet"))
+                .and(predicate::str::contains("[KEPT   ] part-00005.snappy.parquet"))
+                .and(predicate::str::contains("[KEPT   ] part-00006.snappy.parquet")),
+        );
+}
+
+#[test]
+fn flat_no_total_reduction_with_single_phase() {
+    // Only one phase → no "Total reduction" summary line
+    cmd()
+        .args([&test_table_flat(), "-w", "country = 'DE' AND age > 40"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Total reduction").not());
+}
+
+#[test]
+fn flat_json_single_phase() {
+    let output = cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let phases = json["phases"].as_array().unwrap();
+
+    assert_eq!(phases.len(), 1);
+    assert_eq!(phases[0]["name"], "Data skipping (min/max statistics)");
+    assert_eq!(phases[0]["input_files"], 6);
+    assert_eq!(phases[0]["output_files"], 4);
+}
+
+#[test]
+fn flat_json_stats_coverage() {
+    let output = cmd()
+        .args([&test_table_flat(), "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(json["stats_coverage"]["files_with_stats"], 6);
+    assert_eq!(json["stats_coverage"]["total_files"], 6);
+}
+
+// ── CI assertions (flat table) ─────────────────────────────────────
+
+#[test]
+fn flat_min_pruning_fails_at_90() {
+    // Flat table achieves only 33% pruning — a 90% threshold must fail
+    cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--min-pruning",
+            "90",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "ASSERTION FAILED: total pruning 33.3% is below threshold 90.0%",
+        ));
+}
+
+#[test]
+fn flat_min_pruning_passes_at_30() {
+    // 33% pruning is above a 30% threshold
+    cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--min-pruning",
+            "30",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn flat_assert_stats_passes() {
+    // All files in the flat table have statistics
+    cmd()
+        .args([&test_table_flat(), "--assert-stats"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn flat_min_pruning_with_json_format() {
+    // CI mode: JSON output + assertion, both work together
+    cmd()
+        .args([
+            &test_table_flat(),
+            "-w",
+            "country = 'DE' AND age > 40",
+            "--format",
+            "json",
+            "--min-pruning",
+            "90",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("\"total_pruning_pct\""))
+        .stderr(predicate::str::contains("ASSERTION FAILED"));
 }
