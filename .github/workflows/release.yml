@@ -50,9 +50,9 @@ jobs:
           echo "OIDC_TOKEN=$OIDC_TOKEN" >> "$GITHUB_ENV"
 
       - name: Publish to crates.io
-        run: cargo publish --registry crates-io
+        run: cargo publish
         env:
-          CARGO_REGISTRIES_CRATES_IO_TOKEN: "oidc:${{ env.OIDC_TOKEN }}"
+          CARGO_REGISTRY_TOKEN: "oidc:${{ env.OIDC_TOKEN }}"
 
   github-release:
     needs: [test, publish-crate]
