@@ -22,10 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     # Only publish stable releases (no prerelease tags like v0.1.0-alpha)
     if: ${{ !contains(github.ref_name, '-') }}
-    environment: crates-io
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -42,20 +38,10 @@ jobs:
             exit 1
           fi
 
-      - name: Get publish token via Trusted Publishing
-        run: |
-          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=crates.io" | jq -r '.value')
-          PUBLISH_TOKEN=$(curl -sS -X POST https://crates.io/api/v1/trusted_publishing/tokens \
-            -H "Content-Type: application/json" \
-            -d "{\"jwt\":\"$OIDC_TOKEN\"}" | jq -r '.token')
-          echo "::add-mask::$PUBLISH_TOKEN"
-          echo "PUBLISH_TOKEN=$PUBLISH_TOKEN" >> "$GITHUB_ENV"
-
       - name: Publish to crates.io
         run: cargo publish
         env:
-          CARGO_REGISTRY_TOKEN: ${{ env.PUBLISH_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   github-release:
     needs: [test, publish-crate]
