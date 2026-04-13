@@ -1,6 +1,6 @@
 [package]
 name = "delta-explain"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Make Delta pruning visible. A CLI that shows step-by-step how partition pruning and data skipping reduce candidate files in a Delta table."
 license = "MIT"
