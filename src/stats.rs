@@ -208,6 +208,82 @@ fn parse_add_stats(add: &Value) -> FileStats {
     }
 }
 
+/// Read partition columns from the `metadata` action in the Delta log.
+///
+/// Scans the JSON log files for the last `metaData` action and extracts the
+/// `partitionColumns` array. This is the correct way to determine partition
+/// columns per the Delta protocol — never infer from file partition values.
+pub fn read_partition_columns_from_log(
+    table_url: &Url,
+    store: &Arc<DynObjectStore>,
+) -> Result<Vec<String>, delta_kernel::Error> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot create tokio runtime: {e}")))?;
+    rt.block_on(read_partition_columns_async(table_url, store))
+}
+
+async fn read_partition_columns_async(
+    table_url: &Url,
+    store: &Arc<DynObjectStore>,
+) -> Result<Vec<String>, delta_kernel::Error> {
+    let (_, table_prefix) = object_store::parse_url(table_url)
+        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot parse table URL: {e}")))?;
+
+    let log_prefix = if table_prefix.as_ref().is_empty() {
+        ObjectPath::from("_delta_log")
+    } else {
+        ObjectPath::from(format!(
+            "{}/_delta_log",
+            table_prefix.as_ref().trim_end_matches('/')
+        ))
+    };
+
+    let objects: Vec<_> = store
+        .list(Some(&log_prefix))
+        .try_collect()
+        .await
+        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot list delta log: {e}")))?;
+
+    let mut json_paths: Vec<ObjectPath> = objects
+        .into_iter()
+        .filter(|obj| obj.location.to_string().ends_with(".json"))
+        .map(|obj| obj.location)
+        .collect();
+    json_paths.sort();
+
+    // The last metaData action wins (schema evolution can replace it).
+    let mut partition_columns = Vec::new();
+
+    for path in json_paths {
+        let data = store
+            .get(&path)
+            .await
+            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read {path}: {e}")))?
+            .bytes()
+            .await
+            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read bytes {path}: {e}")))?;
+
+        let content = String::from_utf8_lossy(&data);
+
+        for line in content.lines() {
+            let Ok(action) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+
+            if let Some(meta) = action.get("metaData")
+                && let Some(cols) = meta.get("partitionColumns").and_then(|v| v.as_array())
+            {
+                partition_columns = cols
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+            }
+        }
+    }
+
+    Ok(partition_columns)
+}
+
 fn format_stat_value(val: &Value) -> String {
     match val {
         Value::String(s) => s.clone(),

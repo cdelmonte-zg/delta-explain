@@ -226,6 +226,14 @@ payload.age > 30
 
 Supported types: string, integer, long, float, double, boolean. This is a diagnostic tool -- subqueries, functions, and LIKE are not supported.
 
+## Current limitations
+
+- **JSON commit log only.** Statistics are read from the Delta log JSON files. Checkpoint Parquet files are not yet supported. Tables that have been vacuumed with only a checkpoint remaining will show incomplete statistics.
+- **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
+- **Top-level AND splitting only.** Predicate classification (partition vs data skipping) operates on top-level AND conjuncts. Complex OR expressions mixing partition and non-partition columns are routed conservatively to data skipping.
+
+See [VISION.md](VISION.md) for planned improvements.
+
 ## License
 
 MIT

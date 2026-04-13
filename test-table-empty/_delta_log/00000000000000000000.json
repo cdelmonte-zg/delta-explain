@@ -1,0 +1,3 @@
+{"commitInfo":{"timestamp":1775894500000,"operation":"CREATE TABLE","operationParameters":{"partitionBy":"[\"region\"]","mode":"ErrorIfExists"},"engineInfo":"delta-rs:py-1.5.0","clientVersion":"delta-rs.py-1.5.0"}}
+{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}
+{"metaData":{"id":"empty-table-00000000-0000-0000-0000-000000000000","name":null,"description":null,"format":{"provider":"parquet","options":{}},"schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"integer\",\"nullable\":true,\"metadata\":{}},{\"name\":\"region\",\"type\":\"string\",\"nullable\":true,\"metadata\":{}},{\"name\":\"value\",\"type\":\"double\",\"nullable\":true,\"metadata\":{}}]}","partitionColumns":["region"],"createdTime":1775894500000,"configuration":{}}}

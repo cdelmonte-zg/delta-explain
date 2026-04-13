@@ -176,14 +176,7 @@ fn try_main() -> DeltaResult<()> {
     let schema = snapshot.schema();
 
     let all_files = collect_files(snapshot.clone(), engine.as_ref(), None)?;
-    let partition_columns: Vec<String> = all_files
-        .first()
-        .map(|f| {
-            let mut cols: Vec<String> = f.partition_values.keys().cloned().collect();
-            cols.sort();
-            cols
-        })
-        .unwrap_or_default();
+    let partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
 
     let file_stats = stats::read_stats_from_log(&url, &store)?;
 
