@@ -22,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     # Only publish stable releases (no prerelease tags like v0.1.0-alpha)
     if: ${{ !contains(github.ref_name, '-') }}
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,10 +42,17 @@ jobs:
             exit 1
           fi
 
+      - name: Generate OIDC token
+        run: |
+          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=crates.io" | jq -r '.value')
+          echo "::add-mask::$OIDC_TOKEN"
+          echo "OIDC_TOKEN=$OIDC_TOKEN" >> "$GITHUB_ENV"
+
       - name: Publish to crates.io
-        run: cargo publish
+        run: cargo publish --registry crates-io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRIES_CRATES_IO_TOKEN: "oidc:${{ env.OIDC_TOKEN }}"
 
   github-release:
     needs: [test, publish-crate]
