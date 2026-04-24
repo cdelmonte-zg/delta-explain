@@ -210,7 +210,7 @@ fn try_main() -> DeltaResult<()> {
                 predicate_display: part_frag.clone(), 
                 input_count: report.total_files, 
                 output_count: count, 
-                surviving_paths: surviving_paths,
+                surviving_paths,
             });
             
             count
