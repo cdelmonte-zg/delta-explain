@@ -1,4 +1,5 @@
-mod predicate;
+mod predicate_analyzer;
+mod predicate_parser;
 mod report;
 mod stats;
 
@@ -193,67 +194,53 @@ fn try_main() -> DeltaResult<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let (part_preds, stats_preds) =
-            predicate::split_predicate(pred_str, &schema, &partition_columns)
+        
+        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)
+            .map_err(delta_kernel::Error::Generic)?;
+        
+        let prev_count = if let Some(part_frag) = &analysis.partition_safe {
+            let part_pred = predicate_parser::parse_predicate(part_frag, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
-
-        if !part_preds.is_empty() {
-            let part_pred = if part_preds.len() == 1 {
-                part_preds.into_iter().next().unwrap()
-            } else {
-                Predicate::and_from(part_preds)
-            };
-
             let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
-            let surviving_paths: HashSet<String> =
-                surviving.iter().map(|f| f.path.clone()).collect();
+            let surviving_paths: HashSet<String> = surviving.iter().map(|f| f.path.clone()).collect();
+            let count = surviving.len();
 
-            report.phases.push(PhaseResult {
-                name: "Partition pruning".into(),
-                predicate_display: predicate::extract_clauses(pred_str, |col| {
-                    partition_columns.contains(&col.to_string())
-                }),
-                input_count: report.total_files,
-                output_count: surviving.len(),
-                surviving_paths,
+            report.phases.push(PhaseResult { 
+                name: "Partition pruning".into(), 
+                predicate_display: part_frag.clone(), 
+                input_count: report.total_files, 
+                output_count: count, 
+                surviving_paths: surviving_paths,
             });
-
-            if !stats_preds.is_empty() {
-                let full_pred = predicate::parse_predicate(pred_str, &schema)
-                    .map_err(delta_kernel::Error::Generic)?;
-
-                let prev_count = surviving.len();
-                let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
-                let surviving_paths: HashSet<String> =
-                    surviving.iter().map(|f| f.path.clone()).collect();
-
-                report.phases.push(PhaseResult {
-                    name: "Data skipping (min/max statistics)".into(),
-                    predicate_display: predicate::extract_clauses(pred_str, |col| {
-                        !partition_columns.contains(&col.to_string())
-                    }),
-                    input_count: prev_count,
-                    output_count: surviving.len(),
-                    surviving_paths,
-                });
-            }
+            
+            count
         } else {
-            let full_pred = predicate::parse_predicate(pred_str, &schema)
-                .map_err(delta_kernel::Error::Generic)?;
+            report.total_files
+        };
 
+        if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
+            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)
+                .map_err(delta_kernel::Error::Generic)?;
             let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
-            let surviving_paths: HashSet<String> =
-                surviving.iter().map(|f| f.path.clone()).collect();
+            let surviving_paths: HashSet<String> = surviving.iter().map(|f| f.path.clone()).collect();
+
+            let display = [&analysis.stats_safe, &analysis.unsplittable]
+                .iter()
+                .filter_map(|f| f.as_ref())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" AND ");
 
             report.phases.push(PhaseResult {
                 name: "Data skipping (min/max statistics)".into(),
-                predicate_display: pred_str.clone(),
-                input_count: report.total_files,
+                predicate_display: display,
+                input_count: prev_count,
                 output_count: surviving.len(),
                 surviving_paths,
             });
         }
     }
+
 
     // ── Output ──────────────────────────────────────────────────────
 
