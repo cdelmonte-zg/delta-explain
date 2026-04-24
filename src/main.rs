@@ -194,25 +194,25 @@ fn try_main() -> DeltaResult<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        
         let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)
             .map_err(delta_kernel::Error::Generic)?;
-        
+
         let prev_count = if let Some(part_frag) = &analysis.partition_safe {
             let part_pred = predicate_parser::parse_predicate(part_frag, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
             let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
-            let surviving_paths: HashSet<String> = surviving.iter().map(|f| f.path.clone()).collect();
+            let surviving_paths: HashSet<String> =
+                surviving.iter().map(|f| f.path.clone()).collect();
             let count = surviving.len();
 
-            report.phases.push(PhaseResult { 
-                name: "Partition pruning".into(), 
-                predicate_display: part_frag.clone(), 
-                input_count: report.total_files, 
-                output_count: count, 
+            report.phases.push(PhaseResult {
+                name: "Partition pruning".into(),
+                predicate_display: part_frag.clone(),
+                input_count: report.total_files,
+                output_count: count,
                 surviving_paths,
             });
-            
+
             count
         } else {
             report.total_files
@@ -222,7 +222,8 @@ fn try_main() -> DeltaResult<()> {
             let full_pred = predicate_parser::parse_predicate(pred_str, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
             let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
-            let surviving_paths: HashSet<String> = surviving.iter().map(|f| f.path.clone()).collect();
+            let surviving_paths: HashSet<String> =
+                surviving.iter().map(|f| f.path.clone()).collect();
 
             let display = [&analysis.stats_safe, &analysis.unsplittable]
                 .iter()
@@ -240,7 +241,6 @@ fn try_main() -> DeltaResult<()> {
             });
         }
     }
-
 
     // ── Output ──────────────────────────────────────────────────────
 

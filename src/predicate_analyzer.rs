@@ -2,7 +2,6 @@ use sqlparser::ast::{BinaryOperator, Expr as SqlExpr};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
     Exact,
@@ -25,10 +24,7 @@ pub struct PredicateAnalysis {
     pub notes: Vec<AnalysisNote>,
 }
 
-
-
 pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, String> {
-    
     // 1. Parse sql
     let dialect = GenericDialect {};
     let mut parser = Parser::new(&dialect)
@@ -38,33 +34,31 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
         .parse_expr()
         .map_err(|e| format!("Parse error: {e}"))?;
 
-
     let mut partition_frags: Vec<String> = Vec::new();
     let mut stats_frags: Vec<String> = Vec::new();
     let mut unsplittable_frags: Vec<String> = Vec::new();
     let mut notes: Vec<AnalysisNote> = Vec::new();
 
-    
     for clause in flatten_and(&sql_expr) {
         let refs = collect_column_refs(clause);
         let frag = clause.to_string();
 
         let any_partition = refs.iter().any(|r| partition_columns.contains(r));
 
-        let all_partitions = ! refs.is_empty() 
-            && refs.iter().all(|r| partition_columns.contains(r));
+        let all_partitions = !refs.is_empty() && refs.iter().all(|r| partition_columns.contains(r));
 
         if all_partitions {
             partition_frags.push(frag);
-        } else if ! any_partition {
+        } else if !any_partition {
             stats_frags.push(frag);
         } else {
             unsplittable_frags.push(frag);
 
-            notes.push(AnalysisNote{
+            notes.push(AnalysisNote {
                 code: "UNSPLITTABLE_OR".into(),
                 message: "Mixed expression across partition and non-partition \
-                        columns; cannot separate safely, routed as unsplittable".into(),
+                        columns; cannot separate safely, routed as unsplittable"
+                    .into(),
             });
         }
     }
@@ -88,7 +82,6 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
         confidence,
         notes,
     })
-
 }
 
 fn join_opt(frags: Vec<String>) -> Option<String> {
@@ -98,7 +91,6 @@ fn join_opt(frags: Vec<String>) -> Option<String> {
         Some(frags.join(" AND "))
     }
 }
-
 
 /// Flatten top-level ANDs into a list of clauses.
 fn flatten_and(expr: &SqlExpr) -> Vec<&SqlExpr> {
