@@ -6,9 +6,26 @@ use serde_json::json;
 use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::stats::FileStats;
 
+pub const SCHEMA_VERSION: &str = "0.1.0";
+
 pub enum OutputFormat {
     Text,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverallResult {
+    Pass,
+    Fail,
+}
+
+impl std::fmt::Display for OverallResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            OverallResult::Pass => "pass",
+            OverallResult::Fail => "fail",
+        })
+    }
 }
 
 pub struct FileInfo {
@@ -35,6 +52,9 @@ pub struct PruningReport {
     pub all_files: Vec<FileInfo>,
     pub file_stats: HashMap<String, FileStats>,
     pub phases: Vec<PhaseResult>,
+    pub elapsed_ms: u128,
+    pub assertions: Vec<serde_json::Value>,
+    pub overall_result: Option<OverallResult>,
 }
 
 impl PruningReport {
@@ -188,49 +208,23 @@ impl PruningReport {
 
     pub fn print_json(&self, predicate: Option<&str>) {
         let (stats_present, stats_total) = self.stats_coverage();
+        let stats_pct = if stats_total > 0 {
+            (stats_present as f64 / stats_total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let stats_mode = if stats_total == 0 || stats_present == 0 {
+            "absent"
+        } else if stats_present == stats_total {
+            "exact"
+        } else {
+            "partial"
+        };
 
         let phases: Vec<serde_json::Value> = self
             .phases
             .iter()
-            .enumerate()
-            .map(|(i, phase)| {
-                let candidates: HashSet<&str> = if i == 0 {
-                    self.all_files.iter().map(|f| f.path.as_str()).collect()
-                } else {
-                    self.phases[i - 1]
-                        .surviving_paths
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect()
-                };
-
-                let files: Vec<serde_json::Value> = self
-                    .all_files
-                    .iter()
-                    .filter(|f| candidates.contains(f.path.as_str()))
-                    .map(|f| {
-                        let kept = phase.surviving_paths.contains(&f.path);
-                        let stats = self.file_stats.get(&f.path);
-                        let mut file_json = json!({
-                            "path": f.path,
-                            "size": f.size,
-                            "status": if kept { "kept" } else { "dropped" },
-                            "has_stats": stats.is_some(),
-                        });
-                        if !f.partition_values.is_empty() {
-                            file_json["partition_values"] =
-                                serde_json::to_value(&f.partition_values).unwrap();
-                        }
-                        if let Some(n) = f.num_records {
-                            file_json["num_records"] = json!(n);
-                        }
-                        if let Some(s) = stats {
-                            file_json["stats"] = s.to_json();
-                        }
-                        file_json
-                    })
-                    .collect();
-
+            .map(|phase| {
                 json!({
                     "name": phase.name,
                     "confidence": phase.confidence.to_string(),
@@ -239,40 +233,49 @@ impl PruningReport {
                     "output_files": phase.output_count,
                     "pruned_files": phase.input_count.saturating_sub(phase.output_count),
                     "pruning_pct": pruning_pct(phase.input_count, phase.output_count),
-                    "files": files,
                 })
             })
             .collect();
 
-        let mut output = json!({
+        let analysis_block = self.analysis.as_ref().map(|analysis| {
+            json!({
+                "partition_safe": analysis.partition_safe,
+                "stats_safe": analysis.stats_safe,
+                "unsplittable": analysis.unsplittable,
+                "confidence": analysis.confidence.to_string(),
+                "notes": analysis.notes.iter().map(|n| json!({
+                    "code": n.code,
+                    "message": n.message,
+                })).collect::<Vec<_>>(),
+            })
+        });
+
+        let result_value = match self.overall_result {
+            Some(r) => json!(r.to_string()),
+            None => serde_json::Value::Null,
+        };
+
+        let output = json!({
+            "schema_version": SCHEMA_VERSION,
+            "tool_version": env!("CARGO_PKG_VERSION"),
+            "elapsed_ms": self.elapsed_ms,
             "table": self.table_path,
             "version": self.version,
             "predicate": predicate,
             "total_files": self.total_files,
             "final_files": self.phases.last().map(|p| p.output_count).unwrap_or(self.total_files),
             "total_pruning_pct": self.total_pruning_pct(),
-            "stats_coverage": {
+            "analysis": analysis_block,
+            "stats": {
+                "mode": stats_mode,
                 "files_with_stats": stats_present,
                 "total_files": stats_total,
-                "pct": if stats_total > 0 { (stats_present as f64 / stats_total as f64) * 100.0 } else { 0.0 },
+                "pct": stats_pct,
             },
             "phases": phases,
+            "assertions": self.assertions,
+            "result": result_value,
         });
-
-        if let Some(analysis) = &self.analysis {
-            output["analysis"] = json!({
-                "partition_safe": analysis.partition_safe,
-                "stats_safe": analysis.stats_safe,
-                "unsplittable": analysis.unsplittable,
-                "confidence": analysis.confidence.to_string(),
-                "notes": analysis.notes.iter().map(|n| json!(
-                    {
-                        "code": n.code,
-                        "message": n.message
-                    }
-                )).collect::<Vec<_>>(),
-            });
-        }
 
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     }

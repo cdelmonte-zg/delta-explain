@@ -21,30 +21,6 @@ pub struct ColumnStats {
 }
 
 impl FileStats {
-    pub fn to_json(&self) -> serde_json::Value {
-        use serde_json::json;
-        let mut cols = serde_json::Map::new();
-        for (col, cs) in &self.columns {
-            let mut entry = serde_json::Map::new();
-            if let Some(ref min) = cs.min {
-                entry.insert("min".into(), json!(min));
-            }
-            if let Some(ref max) = cs.max {
-                entry.insert("max".into(), json!(max));
-            }
-            if let Some(nc) = cs.null_count {
-                entry.insert("null_count".into(), json!(nc));
-            }
-            cols.insert(col.clone(), Value::Object(entry));
-        }
-        let mut obj = serde_json::Map::new();
-        if let Some(nr) = self.num_records {
-            obj.insert("num_records".into(), json!(nr));
-        }
-        obj.insert("columns".into(), Value::Object(cols));
-        Value::Object(obj)
-    }
-
     pub fn format_compact(&self) -> String {
         if self.columns.is_empty() {
             return if self.num_records.is_some() {

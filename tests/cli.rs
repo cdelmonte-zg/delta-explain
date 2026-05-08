@@ -227,30 +227,15 @@ fn json_contains_phases() {
 }
 
 #[test]
-fn json_contains_stats_coverage() {
+fn json_contains_stats_block() {
     let output = cmd()
         .args([&test_table(), "--format", "json"])
         .output()
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["stats_coverage"]["files_with_stats"], 6);
-    assert_eq!(json["stats_coverage"]["total_files"], 6);
-}
-
-#[test]
-fn json_per_file_has_status() {
-    let output = cmd()
-        .args([&test_table(), "-w", "country = 'DE'", "--format", "json"])
-        .output()
-        .unwrap();
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let files = json["phases"][0]["files"].as_array().unwrap();
-    let statuses: Vec<&str> = files
-        .iter()
-        .map(|f| f["status"].as_str().unwrap())
-        .collect();
-    assert!(statuses.contains(&"kept"));
-    assert!(statuses.contains(&"dropped"));
+    assert_eq!(json["stats"]["files_with_stats"], 6);
+    assert_eq!(json["stats"]["total_files"], 6);
+    assert_eq!(json["stats"]["mode"], "exact");
 }
 
 // ── CI assertions ───────────────────────────────────────────────────
@@ -763,15 +748,16 @@ fn flat_json_single_phase() {
 }
 
 #[test]
-fn flat_json_stats_coverage() {
+fn flat_json_stats_block() {
     let output = cmd()
         .args([&test_table_flat(), "--format", "json"])
         .output()
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
 
-    assert_eq!(json["stats_coverage"]["files_with_stats"], 6);
-    assert_eq!(json["stats_coverage"]["total_files"], 6);
+    assert_eq!(json["stats"]["files_with_stats"], 6);
+    assert_eq!(json["stats"]["total_files"], 6);
+    assert_eq!(json["stats"]["mode"], "exact");
 }
 
 // ── CI assertions (flat table) ─────────────────────────────────────
@@ -977,4 +963,108 @@ fn json_phase_confidence(
         .unwrap();
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["phases"][phase_idx]["confidence"], expected);
+}
+
+// ── JSON schema v0.1.0 (Step 1.3) ───────────────────────────────────
+
+fn run_json(args: &[&str]) -> serde_json::Value {
+    let output = cmd().args(args).output().unwrap();
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn json_carries_schema_and_tool_version() {
+    let json = run_json(&[&test_table(), "--format", "json"]);
+    assert_eq!(json["schema_version"], "0.1.0");
+    assert_eq!(json["tool_version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn json_carries_elapsed_ms() {
+    let json = run_json(&[&test_table(), "--format", "json"]);
+    let elapsed = json["elapsed_ms"].as_u64().expect("elapsed_ms must be u64");
+    // The full flow runs in well under 1 minute on any fixture.
+    assert!(elapsed < 60_000);
+}
+
+/// `phases[]` no longer carries per-file detail in the stable schema.
+#[test]
+fn json_phases_have_no_files_field() {
+    let json = run_json(&[&test_table(), "-w", "country = 'DE'", "--format", "json"]);
+    let phase = &json["phases"][0];
+    assert!(
+        phase.get("files").is_none(),
+        "phases[].files should be absent in v0.1.0 schema"
+    );
+}
+
+#[test]
+fn json_assertions_empty_when_no_flags() {
+    let json = run_json(&[&test_table(), "-w", "country = 'DE'", "--format", "json"]);
+    let assertions = json["assertions"]
+        .as_array()
+        .expect("assertions must be an array");
+    assert!(assertions.is_empty());
+    assert!(json["result"].is_null());
+}
+
+#[test]
+fn json_assertions_populated_with_min_pruning() {
+    let json = run_json(&[
+        &test_table(),
+        "-w",
+        "country = 'DE'",
+        "--format",
+        "json",
+        "--min-pruning",
+        "50",
+    ]);
+    let assertions = json["assertions"].as_array().unwrap();
+    assert_eq!(assertions.len(), 1);
+    assert_eq!(assertions[0]["name"], "min_pruning");
+    assert_eq!(assertions[0]["threshold"], 50.0);
+    assert_eq!(assertions[0]["result"], "pass");
+    assert_eq!(json["result"], "pass");
+}
+
+#[test]
+fn json_assertions_populated_with_assert_stats() {
+    let json = run_json(&[&test_table(), "--format", "json", "--assert-stats"]);
+    let assertions = json["assertions"].as_array().unwrap();
+    assert_eq!(assertions.len(), 1);
+    assert_eq!(assertions[0]["name"], "stats_complete");
+    assert_eq!(assertions[0]["missing_count"], 0);
+    assert_eq!(assertions[0]["result"], "pass");
+    assert_eq!(json["result"], "pass");
+}
+
+#[test]
+fn json_result_fail_when_assertion_fails() {
+    let output = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE'",
+            "--format",
+            "json",
+            "--min-pruning",
+            "99",
+        ])
+        .output()
+        .unwrap();
+    // Process exits 1 on assertion failure, but the JSON is still produced first.
+    assert!(!output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["assertions"][0]["result"], "fail");
+    assert_eq!(json["result"], "fail");
+}
+
+#[test]
+fn json_stats_mode_absent_for_empty_table() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let empty = format!("{manifest_dir}/test-table-empty");
+    let json = run_json(&[&empty, "--format", "json"]);
+    assert_eq!(json["stats"]["mode"], "absent");
+    assert_eq!(json["stats"]["files_with_stats"], 0);
+    assert_eq!(json["stats"]["total_files"], 0);
 }

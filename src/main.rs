@@ -18,9 +18,10 @@ use delta_kernel::{DeltaResult, Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
 
-use report::{FileInfo, OutputFormat, PhaseResult, PruningReport};
+use report::{FileInfo, OutputFormat, OverallResult, PhaseResult, PruningReport};
 
 use predicate_analyzer::Confidence;
+use serde_json::json;
 
 #[derive(Parser)]
 #[command(name = "delta-explain", about = "Make Delta pruning visible")]
@@ -170,6 +171,7 @@ fn collect_files(
 
 fn try_main() -> DeltaResult<()> {
     let cli = Cli::parse();
+    let start = std::time::Instant::now();
 
     let output_format = match cli.format.as_str() {
         "json" => OutputFormat::Json,
@@ -194,6 +196,9 @@ fn try_main() -> DeltaResult<()> {
         all_files,
         file_stats,
         phases: Vec::new(),
+        elapsed_ms: 0,
+        assertions: Vec::new(),
+        overall_result: None,
     };
 
     if let Some(ref pred_str) = cli.predicate {
@@ -253,35 +258,40 @@ fn try_main() -> DeltaResult<()> {
         report.analysis = Some(analysis);
     }
 
-    // ── Output ──────────────────────────────────────────────────────
-
-    match output_format {
-        OutputFormat::Text => report.print_text(cli.verbose, cli.predicate.as_deref()),
-        OutputFormat::Json => report.print_json(cli.predicate.as_deref()),
-    }
-
     // ── Assertions (CI mode) ────────────────────────────────────────
 
-    let mut failed = false;
+    let mut any_assertion = false;
+    let mut all_pass = true;
 
     if let Some(threshold) = cli.min_pruning {
+        any_assertion = true;
         let actual = report.total_pruning_pct();
-        if actual < threshold {
+        let pass = actual >= threshold;
+        all_pass &= pass;
+        if !pass {
             eprintln!(
                 "ASSERTION FAILED: total pruning {actual:.1}% is below threshold {threshold:.1}%"
             );
-            failed = true;
         }
+        report.assertions.push(json!({
+            "name": "min_pruning",
+            "threshold": threshold,
+            "actual": actual,
+            "result": if pass { "pass" } else { "fail" },
+        }));
     }
 
     if cli.assert_stats {
+        any_assertion = true;
         let missing: Vec<&str> = report
             .all_files
             .iter()
             .filter(|f| !report.file_stats.contains_key(&f.path))
             .map(|f| f.path.as_str())
             .collect();
-        if !missing.is_empty() {
+        let pass = missing.is_empty();
+        all_pass &= pass;
+        if !pass {
             eprintln!(
                 "ASSERTION FAILED: {} file(s) missing statistics:",
                 missing.len()
@@ -289,11 +299,34 @@ fn try_main() -> DeltaResult<()> {
             for path in &missing {
                 eprintln!("  {path}");
             }
-            failed = true;
         }
+        report.assertions.push(json!({
+            "name": "stats_complete",
+            "missing_count": missing.len(),
+            "result": if pass { "pass" } else { "fail" },
+        }));
     }
 
-    if failed {
+    report.overall_result = if any_assertion {
+        Some(if all_pass {
+            OverallResult::Pass
+        } else {
+            OverallResult::Fail
+        })
+    } else {
+        None
+    };
+
+    report.elapsed_ms = start.elapsed().as_millis();
+
+    // ── Output ──────────────────────────────────────────────────────
+
+    match output_format {
+        OutputFormat::Text => report.print_text(cli.verbose, cli.predicate.as_deref()),
+        OutputFormat::Json => report.print_json(cli.predicate.as_deref()),
+    }
+
+    if matches!(report.overall_result, Some(OverallResult::Fail)) {
         std::process::exit(1);
     }
 
