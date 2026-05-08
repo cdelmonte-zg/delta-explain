@@ -107,22 +107,23 @@ the diff (the diff is right there).
 
 ## Output Schema Stability
 
-The JSON output is **not yet a stable contract**. Field names and structure may change
-without a deprecation period until Step 1.3 of the roadmap is shipped (v0.2.0).
-After v0.2.0 the JSON will carry an explicit `schema_version` and changes will follow
-SemVer semantics relative to that field.
+The JSON output is a **stable contract** from v0.2.0 onwards. It carries an
+explicit `schema_version` (currently `"0.1.0"`) and changes follow SemVer
+relative to that field — additive changes bump the minor, breaking changes
+bump the major.
 
-Until then, downstream tools that parse `delta-explain --format json` should pin to
-an exact `delta-explain` version.
+When introducing a JSON change, decide first whether it is additive (new
+optional field) or breaking (rename/remove/restructure). Breaking changes
+require a `schema_version` bump and a CHANGELOG entry under "Breaking".
 
 ## Roadmap & Milestones
 
-- **FASE 0 (soft launch)** — deadline May 2026, tied to a MERGE article that cites
-  `delta-explain` as a "companion tool to make file elimination visible from metadata".
-  Steps 0.1–0.5 are P0 blockers for that.
-- **FASE 1 (MVP)** — confidence model, stable JSON schema, full e2e test matrix.
-  Lands together as v0.2.0.
-- Later phases (2–5) cover checkpoint Parquet support, real stats coverage, type
-  coercions, finer CI assertions, predicate analysis improvements, diagnostics, and
-  compare mode. See `DELTA-EXPLAIN-ROADMAP.md` for the canonical list and current
-  status.
+- **FASE 0 (soft launch)** — shipped in v0.2.0 (May 2026), tied to a MERGE
+  article that cites `delta-explain` as a "companion tool to make file
+  elimination visible from metadata".
+- **FASE 1 (MVP)** — confidence model, stable JSON schema, full e2e test
+  matrix. Shipped together with FASE 0 as v0.2.0.
+- Later phases (2–5) cover checkpoint Parquet support, real stats coverage,
+  type coercions, finer CI assertions, predicate analysis improvements,
+  diagnostics, and compare mode. See `DELTA-EXPLAIN-ROADMAP.md` for the
+  canonical list and current status.
