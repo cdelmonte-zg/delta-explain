@@ -115,8 +115,13 @@ async fn read_stats_async(
                 let Some(file_path) = add.get("path").and_then(|v| v.as_str()) else {
                     continue;
                 };
-                let stats = parse_add_stats(add);
-                result.insert(file_path.to_string(), stats);
+                // Only track files whose Add action actually carries a `stats`
+                // payload. Files without log-level stats are skipped here; the
+                // report layer treats their absence as "no stats".
+                if add.get("stats").and_then(|v| v.as_str()).is_some() {
+                    let stats = parse_add_stats(add);
+                    result.insert(file_path.to_string(), stats);
+                }
             }
 
             if let Some(remove) = action.get("remove")
