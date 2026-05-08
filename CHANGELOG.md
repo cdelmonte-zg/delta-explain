@@ -7,6 +7,17 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
+## [0.2.1] — 2026-05-08
+
+### Documentation
+
+- README refreshed for the v0.2.0 schema: the main example now shows the
+  `Predicate Analysis` block and per-phase `[confidence]` tags, the JSON
+  output section documents the v0.1.0 schema fields (`analysis`, `stats`,
+  `assertions`, `result`, version metadata), and the OR-mixed limitation
+  is rephrased to reflect that those predicates are now explicitly
+  classified as `unsplittable` rather than silently downgraded.
+
 ## [0.2.0] — 2026-05-08
 
 This release closes the FASE 0 / FASE 1 set in the roadmap and freezes the

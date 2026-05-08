@@ -28,18 +28,30 @@ Delta table: ./my-table
 Version:     5
 Predicate:   age > 40 AND country = 'DE'
 
+Predicate Analysis:
+  partition-safe: country = 'DE'
+  stats-safe:     age > 40
+  unsplittable:   -
+  confidence:     conservative
+
 Files in snapshot: 6
 
-Phase 1: Partition pruning
+Phase 1: Partition pruning [exact]
   predicate:       country = 'DE'
   files remaining: 2  (-4, 67% pruned)
 
-Phase 2: Data skipping (min/max statistics)
+Phase 2: Data skipping (min/max statistics) [conservative]
   predicate:       age > 40
   files remaining: 1  (-1, 50% pruned)
 
 Total reduction: 6 -> 1 files (83% pruned)
 ```
+
+The **Predicate Analysis** block tells you how the predicate was split:
+
+- `partition-safe` fragments are evaluated by partition pruning alone (`exact` confidence — no false positives)
+- `stats-safe` fragments rely on per-file min/max statistics (`conservative` confidence — files without stats are kept)
+- `unsplittable` fragments cannot be separated safely (e.g. an `OR` mixing partition and non-partition columns) and degrade the overall confidence to `incomplete`, with an explicit warning code such as `UNSPLITTABLE_OR`
 
 With `--verbose`, you see exactly *which* files are kept or dropped and *why*:
 
@@ -157,7 +169,15 @@ delta-explain s3://warehouse/events --assert-stats
 delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
 ```
 
-The JSON output includes per-file status, stats coverage, and phase-level metrics.
+The JSON output is a stable contract from v0.2.0 onwards (`schema_version: "0.1.0"`):
+
+- `analysis` — the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
+- `phases[]` — one entry per pruning phase, each with its own `confidence` tag
+- `stats` — coverage block with categorical `mode` (`exact` / `partial` / `absent`)
+- `assertions[]` and `result` — outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
+- `schema_version`, `tool_version`, `elapsed_ms` — release and run metadata
+
+See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
 ### Docker in a pipeline
 
@@ -230,7 +250,7 @@ Supported types: string, integer, long, float, double, boolean. This is a diagno
 
 - **JSON commit log only.** Statistics are read from the Delta log JSON files. Checkpoint Parquet files are not yet supported. Tables that have been vacuumed with only a checkpoint remaining will show incomplete statistics.
 - **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
-- **Top-level AND splitting only.** Predicate classification (partition vs data skipping) operates on top-level AND conjuncts. Complex OR expressions mixing partition and non-partition columns are routed conservatively to data skipping.
+- **Top-level AND splitting only.** Predicate classification operates on top-level AND conjuncts. OR expressions mixing partition and non-partition columns are flagged explicitly as `unsplittable` with a `UNSPLITTABLE_OR` note and an `incomplete` confidence — they are not silently downgraded.
 
 See [VISION.md](VISION.md) for planned improvements.
 
