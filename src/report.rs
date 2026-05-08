@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use num_format::{Locale, ToFormattedString};
 use serde_json::json;
 
+use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::stats::FileStats;
 
 pub enum OutputFormat {
@@ -18,6 +19,7 @@ pub struct FileInfo {
 }
 
 pub struct PhaseResult {
+    pub confidence: Confidence,
     pub name: String,
     pub predicate_display: String,
     pub input_count: usize,
@@ -26,6 +28,7 @@ pub struct PhaseResult {
 }
 
 pub struct PruningReport {
+    pub analysis: Option<PredicateAnalysis>,
     pub table_path: String,
     pub version: u64,
     pub total_files: usize,
@@ -65,6 +68,25 @@ impl PruningReport {
         if let Some(pred) = predicate {
             println!("Predicate:   {pred}");
         }
+
+        if let Some(analysis) = &self.analysis {
+            println!();
+            println!("Predicate Analysis:");
+            println!(
+                "  partition-safe: {}",
+                analysis.partition_safe.as_deref().unwrap_or("-")
+            );
+            println!(
+                "  stats-safe:     {}",
+                analysis.stats_safe.as_deref().unwrap_or("-")
+            );
+            println!(
+                "  unsplittable:   {}",
+                analysis.unsplittable.as_deref().unwrap_or("-")
+            );
+            println!("  confidence:     {}", analysis.confidence);
+        }
+
         println!();
         println!("Files in snapshot: {}", fmt(self.total_files));
 
@@ -77,7 +99,7 @@ impl PruningReport {
             let pct = pruning_pct(phase.input_count, phase.output_count);
 
             println!();
-            println!("Phase {}: {}", i + 1, phase.name);
+            println!("Phase {}: {} [{}]", i + 1, phase.name, phase.confidence);
             println!("  predicate:       {}", phase.predicate_display);
             println!(
                 "  files remaining: {}  (-{}, {:.0}% pruned)",
@@ -101,6 +123,16 @@ impl PruningReport {
                 fmt(final_count),
                 self.total_pruning_pct(),
             );
+        }
+
+        if let Some(analysis) = &self.analysis
+            && !analysis.notes.is_empty()
+        {
+            println!();
+            println!("Warnings!");
+            for note in &analysis.notes {
+                println!("[{}]: {}", note.code, note.message);
+            }
         }
     }
 
@@ -201,6 +233,7 @@ impl PruningReport {
 
                 json!({
                     "name": phase.name,
+                    "confidence": phase.confidence.to_string(),
                     "predicate": phase.predicate_display,
                     "input_files": phase.input_count,
                     "output_files": phase.output_count,
@@ -211,7 +244,7 @@ impl PruningReport {
             })
             .collect();
 
-        let output = json!({
+        let mut output = json!({
             "table": self.table_path,
             "version": self.version,
             "predicate": predicate,
@@ -225,6 +258,21 @@ impl PruningReport {
             },
             "phases": phases,
         });
+
+        if let Some(analysis) = &self.analysis {
+            output["analysis"] = json!({
+                "partition_safe": analysis.partition_safe,
+                "stats_safe": analysis.stats_safe,
+                "unsplittable": analysis.unsplittable,
+                "confidence": analysis.confidence.to_string(),
+                "notes": analysis.notes.iter().map(|n| json!(
+                    {
+                        "code": n.code,
+                        "message": n.message
+                    }
+                )).collect::<Vec<_>>(),
+            });
+        }
 
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     }

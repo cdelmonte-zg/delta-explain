@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use rstest::rstest;
 
 fn cmd() -> Command {
     Command::cargo_bin("delta-explain").unwrap()
@@ -20,7 +21,7 @@ fn test_table_flat() -> String {
 #[test]
 fn no_predicate_shows_file_count() {
     cmd()
-        .arg(&test_table())
+        .arg(test_table())
         .assert()
         .success()
         .stdout(predicate::str::contains("Files in snapshot: 6"));
@@ -29,7 +30,7 @@ fn no_predicate_shows_file_count() {
 #[test]
 fn no_predicate_shows_version() {
     cmd()
-        .arg(&test_table())
+        .arg(test_table())
         .assert()
         .success()
         .stdout(predicate::str::contains("Version:     5"));
@@ -618,7 +619,7 @@ fn like_rejected() {
 #[test]
 fn flat_table_snapshot() {
     cmd()
-        .arg(&test_table_flat())
+        .arg(test_table_flat())
         .assert()
         .success()
         .stdout(predicate::str::contains("Files in snapshot: 6"));
@@ -834,4 +835,146 @@ fn flat_min_pruning_with_json_format() {
         .failure()
         .stdout(predicate::str::contains("\"total_pruning_pct\""))
         .stderr(predicate::str::contains("ASSERTION FAILED"));
+}
+
+// ── Predicate analysis output (Step 0.3) ────────────────────────────
+
+/// Text output: global confidence label reflects the bucket assignment.
+#[rstest]
+#[case("country = 'DE'", "exact")]
+#[case("age > 30", "conservative")]
+#[case("country = 'DE' AND age > 30", "conservative")]
+#[case("country = 'DE' OR age > 30", "incomplete")]
+fn text_shows_global_confidence(#[case] predicate: &str, #[case] expected: &str) {
+    cmd()
+        .args([&test_table(), "-w", predicate])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "confidence:     {expected}"
+        )));
+}
+
+/// Text output: predicate analysis block lists every bucket, with `-` when empty.
+#[test]
+fn text_shows_predicate_analysis_block() {
+    cmd()
+        .args([&test_table(), "-w", "country = 'DE' AND age > 30"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Predicate Analysis:")
+                .and(predicate::str::contains("partition-safe: country = 'DE'"))
+                .and(predicate::str::contains("stats-safe:     age > 30"))
+                .and(predicate::str::contains("unsplittable:   -")),
+        );
+}
+
+/// Text output: each phase title carries its own [confidence] tag.
+#[rstest]
+#[case("country = 'DE'", "Phase 1: Partition pruning [exact]")]
+#[case(
+    "age > 30",
+    "Phase 1: Data skipping (min/max statistics) [conservative]"
+)]
+#[case(
+    "country = 'DE' OR age > 30",
+    "Phase 1: Data skipping (min/max statistics) [incomplete]"
+)]
+fn text_phase_title_carries_confidence_tag(
+    #[case] predicate: &str,
+    #[case] expected_phase_line: &str,
+) {
+    cmd()
+        .args([&test_table(), "-w", predicate])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected_phase_line));
+}
+
+/// Text output: a two-phase run tags both phases independently.
+#[test]
+fn text_two_phases_each_carry_confidence_tag() {
+    cmd()
+        .args([&test_table(), "-w", "country = 'DE' AND age > 40"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Phase 1: Partition pruning [exact]").and(
+                predicate::str::contains(
+                    "Phase 2: Data skipping (min/max statistics) [conservative]",
+                ),
+            ),
+        );
+}
+
+/// Text output: unsplittable predicate triggers a Warnings section with the note code.
+#[test]
+fn text_warnings_section_shows_unsplittable_note() {
+    cmd()
+        .args([&test_table(), "-w", "country = 'DE' OR age > 30"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("Warnings!").and(predicate::str::contains("UNSPLITTABLE_OR")),
+        );
+}
+
+/// JSON output: top-level analysis.confidence reflects the bucket assignment.
+#[rstest]
+#[case("country = 'DE'", "exact")]
+#[case("age > 30", "conservative")]
+#[case("country = 'DE' AND age > 30", "conservative")]
+#[case("country = 'DE' OR age > 30", "incomplete")]
+fn json_analysis_confidence(#[case] predicate: &str, #[case] expected: &str) {
+    let output = cmd()
+        .args([&test_table(), "-w", predicate, "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["analysis"]["confidence"], expected);
+}
+
+/// JSON output: full analysis block shape on an unsplittable predicate.
+#[test]
+fn json_analysis_block_has_all_fields() {
+    let output = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE' OR age > 30",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert!(json["analysis"]["partition_safe"].is_null());
+    assert!(json["analysis"]["stats_safe"].is_null());
+    assert_eq!(
+        json["analysis"]["unsplittable"],
+        "country = 'DE' OR age > 30"
+    );
+    assert_eq!(json["analysis"]["confidence"], "incomplete");
+    assert_eq!(json["analysis"]["notes"][0]["code"], "UNSPLITTABLE_OR");
+}
+
+/// JSON output: each phase carries its own confidence string.
+#[rstest]
+#[case("country = 'DE'", 0, "exact")]
+#[case("age > 30", 0, "conservative")]
+#[case("country = 'DE' AND age > 40", 0, "exact")]
+#[case("country = 'DE' AND age > 40", 1, "conservative")]
+fn json_phase_confidence(
+    #[case] predicate: &str,
+    #[case] phase_idx: usize,
+    #[case] expected: &str,
+) {
+    let output = cmd()
+        .args([&test_table(), "-w", predicate, "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["phases"][phase_idx]["confidence"], expected);
 }

@@ -75,7 +75,7 @@ fn partitioned_table_both_phases(
 #[test]
 fn empty_table_reports_zero_files() {
     cmd()
-        .arg(&fixture("test-table-empty"))
+        .arg(fixture("test-table-empty"))
         .assert()
         .success()
         .stdout(predicate::str::contains("Files in snapshot: 0"));

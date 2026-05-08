@@ -84,6 +84,17 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
     })
 }
 
+impl std::fmt::Display for Confidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Confidence::Exact => "exact",
+            Confidence::Conservative => "conservative",
+            Confidence::Incomplete => "incomplete",
+        };
+        f.write_str(s)
+    }
+}
+
 fn join_opt(frags: Vec<String>) -> Option<String> {
     if frags.is_empty() {
         None

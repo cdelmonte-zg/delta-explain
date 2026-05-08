@@ -20,6 +20,8 @@ use url::Url;
 
 use report::{FileInfo, OutputFormat, PhaseResult, PruningReport};
 
+use predicate_analyzer::Confidence;
+
 #[derive(Parser)]
 #[command(name = "delta-explain", about = "Make Delta pruning visible")]
 #[command(after_help = "\
@@ -185,6 +187,7 @@ fn try_main() -> DeltaResult<()> {
     let file_stats = stats::read_stats_from_log(&url, &store)?;
 
     let mut report = PruningReport {
+        analysis: None,
         table_path: cli.path.clone(),
         version: snapshot.version(),
         total_files: all_files.len(),
@@ -206,6 +209,7 @@ fn try_main() -> DeltaResult<()> {
             let count = surviving.len();
 
             report.phases.push(PhaseResult {
+                confidence: Confidence::Exact,
                 name: "Partition pruning".into(),
                 predicate_display: part_frag.clone(),
                 input_count: report.total_files,
@@ -234,12 +238,19 @@ fn try_main() -> DeltaResult<()> {
 
             report.phases.push(PhaseResult {
                 name: "Data skipping (min/max statistics)".into(),
+                confidence: if analysis.unsplittable.is_some() {
+                    Confidence::Incomplete
+                } else {
+                    Confidence::Conservative
+                },
                 predicate_display: display,
                 input_count: prev_count,
                 output_count: surviving.len(),
                 surviving_paths,
             });
         }
+
+        report.analysis = Some(analysis);
     }
 
     // ── Output ──────────────────────────────────────────────────────
