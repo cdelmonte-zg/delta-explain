@@ -60,6 +60,7 @@ jobs:
 
   upload-binaries:
     needs: [test, github-release]
+    if: always() && needs.test.result == 'success' && needs.github-release.result == 'success'
     permissions:
       contents: write
     strategy:
@@ -92,6 +93,7 @@ jobs:
 
   build-deb:
     needs: [test, github-release]
+    if: always() && needs.test.result == 'success' && needs.github-release.result == 'success'
     permissions:
       contents: write
     strategy:
@@ -139,7 +141,7 @@ jobs:
   update-homebrew-tap:
     needs: [test, upload-binaries]
     runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref_name, '-') }}
+    if: always() && needs.test.result == 'success' && needs.upload-binaries.result == 'success' && !contains(github.ref_name, '-')
     steps:
       - name: Update Homebrew tap formula
         env:
