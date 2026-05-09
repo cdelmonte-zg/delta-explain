@@ -24,7 +24,7 @@ use predicate_analyzer::Confidence;
 use serde_json::json;
 
 #[derive(Parser)]
-#[command(name = "delta-explain", about = "Make Delta pruning visible")]
+#[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
 #[command(after_help = "\
 Examples:
   Diagnostic (local):

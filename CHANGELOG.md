@@ -15,6 +15,9 @@ the JSON `schema_version` remains `0.1.0`.
 
 ### Added
 
+- **`--version` / `-V` flag** on the CLI. Reports the binary version
+  (derived from `CARGO_PKG_VERSION` at build time). Useful for support
+  reports and for verifying which release a CI runner picked up.
 - **Pre-built binaries** on every tagged release for six targets: Linux
   x86_64 (glibc and musl), Linux aarch64, macOS x86_64 and aarch64,
   Windows x86_64. Each archive ships with an SHA256 checksum.
