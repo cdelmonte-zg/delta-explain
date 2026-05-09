@@ -7,6 +7,52 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
+## [0.2.2] — 2026-05-09
+
+This release adds binary distribution channels and aligns the README with
+the companion deep-dive article. The binary itself is unchanged from v0.2.1;
+the JSON `schema_version` remains `0.1.0`.
+
+### Added
+
+- **Pre-built binaries** on every tagged release for six targets: Linux
+  x86_64 (glibc and musl), Linux aarch64, macOS x86_64 and aarch64,
+  Windows x86_64. Each archive ships with an SHA256 checksum.
+- **Debian/Ubuntu `.deb` packages** (`amd64` and `arm64`) built via
+  `cargo-deb` and uploaded as Release assets. Install with
+  `sudo dpkg -i delta-explain_<version>_<arch>.deb`.
+- **Homebrew tap** at `cdelmonte-zg/homebrew-tap`. Install with
+  `brew install cdelmonte-zg/tap/delta-explain`. The formula is
+  regenerated automatically with fresh SHA256s on every tagged release.
+- **Scoop bucket** at `cdelmonte-zg/scoop-bucket`. Install with
+  `scoop bucket add cdelmonte-zg https://github.com/cdelmonte-zg/scoop-bucket && scoop install delta-explain`.
+  Manifests are auto-updated by Scoop's Excavator workflow (every three hours).
+- **MSRV declared**: `rust-version = "1.88"` in `Cargo.toml` (let-chains).
+- `LICENSE` file (MIT) at the repository root, required by `cargo-deb`
+  and other distribution channels.
+
+### Documentation
+
+- README rewritten for clarity and alignment with the deep-dive article:
+  - Install section reorganised: Homebrew, Scoop, `.deb`, pre-built
+    binaries listed alongside crates.io, Git, and Docker.
+  - Current limitations rewritten as headline + paragraph. Corrected
+    the previous slip on `stats.mode` (per-table coverage, not
+    per-predicate reachability). Clarified that older JSON commits are
+    removed by Delta's log cleanup (governed by
+    `delta.logRetentionDuration`), independently from `VACUUM`.
+  - "How it works" step 3 now scans the original predicate, covering
+    the `unsplittable` case correctly. The analyzer's vocabulary is
+    threaded through to the scan steps.
+  - `conservative` confidence now mentions overlapping ranges, not
+    just missing stats.
+  - JSON output framed as pre-1.0 (additive minor, breaking major),
+    not "stable contract from v0.2.0".
+  - New `[!IMPORTANT]` callout in Cloud storage explaining that
+    `--env-creds` does not currently pick up `AWS_*` env vars or
+    `AWS_PROFILE` on a developer laptop. On EC2/ECS/EKS/GKE/AKS the
+    default credential chain works as expected.
+
 ## [0.2.1] — 2026-05-08
 
 ### Documentation
