@@ -4,8 +4,6 @@
 
 A CLI that shows how partition pruning and data skipping reduce the set of candidate files in a Delta table.
 
-Most engineers use Delta Lake without ever seeing what gets skipped. This tool makes that boundary explicit.
-
 ## The problem
 
 You run a query with a filter. The engine reads some files. But how many files were actually eliminated, and *why*?
@@ -15,11 +13,11 @@ Delta Lake uses two mechanisms to skip files before reading data:
 - **Partition pruning** eliminates files at the directory level based on partition column values
 - **Data skipping** eliminates files at the file level based on per-column min/max statistics
 
-Both happen silently inside the query engine. If your partitioning strategy is wrong, or your table is missing statistics, you won't know until performance degrades.
+Both happen silently during scan planning, below the query. If partitioning is wrong or stats are missing, you won't know until performance degrades.
 
 ## What this tool does
 
-`delta-explain` reads the Delta log directly (no Spark, no DuckDB, no runtime) and shows, step by step, how a predicate narrows the set of candidate files.
+`delta-explain` uses [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) to read Delta metadata directly (no Spark, no DuckDB, no query execution engine) and shows, step by step, how a predicate narrows the set of candidate files.
 
 ```
 $ delta-explain ./my-table -w "age > 40 AND country = 'DE'"
@@ -49,14 +47,16 @@ Total reduction: 6 -> 1 files (83% pruned)
 
 The **Predicate Analysis** block tells you how the predicate was split:
 
-- `partition-safe` fragments are evaluated by partition pruning alone (`exact` confidence — no false positives)
-- `stats-safe` fragments rely on per-file min/max statistics (`conservative` confidence — files without stats are kept)
-- `unsplittable` fragments cannot be separated safely (e.g. an `OR` mixing partition and non-partition columns) and degrade the overall confidence to `incomplete`, with an explicit warning code such as `UNSPLITTABLE_OR`
+- `partition-safe` fragments are evaluated by partition pruning alone (`exact` confidence: every dropped file is provably non-matching)
+- `stats-safe` fragments rely on per-file min/max statistics (`conservative` confidence: overlapping ranges and missing stats keep files rather than dropping them unsafely)
+- `unsplittable` fragments cannot be separated safely (currently: any `OR` mixing partition and non-partition columns, emitted as `UNSPLITTABLE_OR`) and degrade the overall confidence to `incomplete`
+
+The global `confidence` reports the least informative label across phases: any `stats-safe` fragment forces `conservative`; any `unsplittable` fragment forces `incomplete`.
 
 With `--verbose`, you see exactly *which* files are kept or dropped and *why*:
 
 ```
-Phase 1: Partition pruning
+Phase 1: Partition pruning [exact]
   predicate:       country = 'DE'
   files remaining: 2  (-4, 67% pruned)
 
@@ -67,7 +67,7 @@ Phase 1: Partition pruning
   [KEPT   ] part-00000-a35083c1.parquet  (1.1 KB  4 records)  partition(country=DE)  stats(age: 40..60)
   [KEPT   ] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 
-Phase 2: Data skipping (min/max statistics)
+Phase 2: Data skipping (min/max statistics) [conservative]
   predicate:       age > 40
   files remaining: 1  (-1, 50% pruned)
 
@@ -75,28 +75,70 @@ Phase 2: Data skipping (min/max statistics)
   [DROPPED] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 ```
 
-Files missing statistics are explicitly flagged as `[no stats]`.
+Files whose `stats` field is missing from the surviving JSON commits appear as `[no stats]`. On checkpointed tables this may reflect a limitation of the JSON-only verbose path, not proof that the table lacks statistics (see Current limitations).
 
 ## Install
 
-From [crates.io](https://crates.io/crates/delta-explain):
+### Homebrew (macOS, Linux)
+
+```bash
+brew tap cdelmonte-zg/tap
+brew install delta-explain
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add cdelmonte-zg https://github.com/cdelmonte-zg/scoop-bucket
+scoop install delta-explain
+```
+
+### Debian / Ubuntu (`.deb`)
+
+Download the `.deb` for your architecture from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest) and install with `dpkg`:
+
+```bash
+wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.2.1/delta-explain_0.2.1-1_amd64.deb
+sudo dpkg -i delta-explain_0.2.1-1_amd64.deb
+```
+
+Available for `amd64` and `arm64`. Uninstall with `sudo apt remove delta-explain`.
+
+### Pre-built binary (any OS, no package manager)
+
+Download the archive for your platform from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest), extract, and place on `$PATH`:
+
+| Platform | Archive |
+|---|---|
+| Linux x86_64 (glibc) | `delta-explain-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86_64 (static, musl) | `delta-explain-x86_64-unknown-linux-musl.tar.gz` |
+| Linux ARM64 | `delta-explain-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Intel | `delta-explain-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `delta-explain-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `delta-explain-x86_64-pc-windows-msvc.zip` |
+
+Each archive ships with a `.sha256` checksum. The musl build is statically linked and runs on any Linux distribution without glibc dependencies.
+
+### From crates.io (requires Rust 1.88+)
 
 ```bash
 cargo install delta-explain
 ```
 
-Or from Git (latest development version):
+### From Git (latest development version)
 
 ```bash
 cargo install --git https://github.com/cdelmonte-zg/delta-explain
 ```
 
-Or with Docker (amd64 + arm64):
+### Docker (amd64 + arm64)
 
 ```bash
 docker pull ghcr.io/cdelmonte-zg/delta-explain
 docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
 ```
+
+For pipelines, pin to a release tag (e.g., `:0.2.1`) or to a digest; `:latest` is for local exploration only.
 
 ## Usage
 
@@ -112,9 +154,9 @@ Options:
       --format <FORMAT>     Output format: text (default) or json
       --min-pruning <PCT>   Fail if total pruning is below this percentage
       --assert-stats        Fail if any file is missing statistics
-      --region <REGION>     AWS region (S3 only)
+      --region <REGION>     AWS region (S3 / S3-compatible)
       --option <KEY=VALUE>  Object store config (repeatable)
-      --env-creds           Get cloud credentials from environment
+      --env-creds           Use the cloud provider's default credential chain
       --public              Access a public bucket (skip auth)
 ```
 
@@ -127,8 +169,24 @@ delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
 
 ### Cloud storage
 
+**Credentials.** With `--env-creds`, the underlying cloud SDKs pick up credentials from the standard provider chain: instance profile (EC2/ECS), IRSA (EKS), Managed Identity (AKS), Workload Identity (GKE). For static keys (MinIO, local development), pass them via `--option` and prefer expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
+
+> [!IMPORTANT]
+> On a developer laptop, `--env-creds` does *not* currently pick up `AWS_*` environment variables, `~/.aws/credentials`, or `AWS_PROFILE`. The credential chain falls through to WebIdentity / EKS Pod / instance profile, which only exist on cloud-deployed instances. Until this is wired up in a future release, pass static keys explicitly via `--option`:
+>
+> ```bash
+> delta-explain \
+>     --option AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+>     --option AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+>     --option AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
+>     --region eu-west-1 \
+>     s3://bucket/table -w "..."
+> ```
+>
+> `AWS_SESSION_TOKEN` is only needed for temporary credentials (SSO, `AssumeRole`). On EC2, ECS, EKS, GKE, and AKS this gap does not apply: the default chain works as expected.
+
 ```bash
-# S3 with environment credentials
+# S3 with default credential chain
 delta-explain --env-creds s3://bucket/path/to/table -w "date = '2024-01-01'"
 
 # S3 public bucket
@@ -137,13 +195,22 @@ delta-explain --region us-east-1 --public s3://my-public-bucket/table -w "id > 1
 # Azure
 delta-explain --env-creds az://container/table -w "region = 'eu-west-1'"
 
-# S3-compatible (MinIO, Akamai, etc.)
-delta-explain --option AWS_ENDPOINT=https://minio.local:9000 --option AWS_ACCESS_KEY_ID=key --option AWS_SECRET_ACCESS_KEY=secret s3://bucket/table -w "col > 5"
+# GCS (Workload Identity on GKE, or service account JSON via env)
+delta-explain --env-creds gs://bucket/table -w "date = '2024-01-01'"
+
+# S3-compatible (MinIO, Akamai, etc.); endpoint via --option, key/secret expanded from env
+delta-explain \
+    --option AWS_ENDPOINT=https://minio.local:9000 \
+    --option AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+    --option AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+    s3://bucket/table -w "col > 5"
 ```
 
 ## CI/CD mode
 
 `delta-explain` doubles as an assertion tool in pipelines. After your ETL writes a Delta table, verify that the pruning layout is healthy.
+
+`--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are independent. Note that `--verbose` only affects text output; the JSON document is summary-only by design.
 
 ### Assert minimum pruning
 
@@ -155,6 +222,8 @@ delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90
 
 Exit code 1 if total pruning is below 90%.
 
+The threshold is per-invocation, applied to the current predicate against the current snapshot. Calibrate it against a baseline pruning percentage in dev (set the gate a few points below it); a flat threshold across heterogeneous partitions will misfire. Note also that 100% pruning can signal a broken or unexpectedly empty predicate, so pair `--min-pruning` with a sanity check on `final_files > 0` when the workload is expected to read data.
+
 ### Assert statistics coverage
 
 Fail if any file in the table is missing min/max statistics:
@@ -163,19 +232,28 @@ Fail if any file in the table is missing min/max statistics:
 delta-explain s3://warehouse/events --assert-stats
 ```
 
+On long-lived tables, files referenced only by checkpoint Parquet appear as `[no stats]` even when statistics exist; see Current limitations before gating on this.
+
+### Predicate parity
+
+The pruning percentage `delta-explain` reports reflects the predicate you pass to `-w`. If the runtime query wraps a column in `LOWER`, `CAST`, or a UDF, the engine may prune less than the gate suggests. Use a CI predicate that is semantically equivalent to the runtime predicate and explicitly track that equivalence: a gate on `country = 'DE'` does not automatically validate a production query using `LOWER(country) = 'de'`.
+
 ### JSON output for downstream processing
 
 ```bash
 delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
 ```
 
-The JSON output is a stable contract from v0.2.0 onwards (`schema_version: "0.1.0"`):
+The JSON output is versioned independently from the CLI binary (`schema_version: "0.1.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`. The document includes:
 
+- top-level summary fields (`table`, `version`, `predicate`, `total_files`, `final_files`, `total_pruning_pct`)
 - `analysis` — the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
 - `phases[]` — one entry per pruning phase, each with its own `confidence` tag
 - `stats` — coverage block with categorical `mode` (`exact` / `partial` / `absent`)
 - `assertions[]` and `result` — outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
 - `schema_version`, `tool_version`, `elapsed_ms` — release and run metadata
+
+Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
@@ -187,29 +265,27 @@ See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
   run: |
     docker run --rm \
       -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-      ghcr.io/cdelmonte-zg/delta-explain \
+      ghcr.io/cdelmonte-zg/delta-explain:0.2.1 \
       --env-creds s3://warehouse/events \
       -w "date = '2024-01-15'" \
       --min-pruning 90 --assert-stats --format json
 ```
 
-Combine flags freely: `--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are all independent.
-
 ## How it works
 
-`delta-explain` uses [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) as a library. It reads the Delta log directly and runs multiple scans with different predicates to isolate the effect of each pruning phase:
+`delta-explain` uses [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) to replay Delta metadata and run multiple metadata scans with different predicates, isolating the effect of each pruning phase:
 
 1. **Scan with no predicate** to count total files
-2. **Scan with partition-only clauses** to measure partition pruning
-3. **Scan with the full predicate** to measure data skipping on top
+2. **Scan with the analyzer's `partition-safe` fragment** to measure partition pruning
+3. **Scan with the original predicate** to measure the final survivor set and the data-skipping contribution on top of partition pruning
+
+When the predicate contains unsplittable fragments, the final scan is still sound, but the drop from the partition-only scan can no longer be attributed cleanly to data skipping alone. This is what the `incomplete` confidence label signals.
 
 The per-file statistics (min/max values) are read directly from the Delta log JSON to show *why* each file was kept or dropped.
 
 No query engine is involved. No data files are read. Only metadata.
 
-### Scope
-
-`delta-explain` explains Delta-level file elimination only: partition pruning and file-level data skipping. Parquet row-group predicate pushdown (filtering *inside* surviving files based on row-group footer statistics) is intentionally out of scope for the current version -- it operates at a different layer (file format, not table protocol) and will be available as a future `--parquet-pushdown` option.
+`delta-explain` explains Delta-level file elimination only: partition pruning and file-level data skipping. Parquet row-group predicate pushdown (filtering *inside* surviving files based on row-group footer statistics) is intentionally out of scope for the current version. It operates at a different layer (file format, not table protocol) and may be added later as a separate `--parquet-pushdown` mode.
 
 ## Predicate syntax
 
@@ -244,13 +320,25 @@ age IS NULL
 payload.age > 30
 ```
 
-Supported types: string, integer, long, float, double, boolean. This is a diagnostic tool -- subqueries, functions, and LIKE are not supported.
+Numeric types, strings, and booleans are handled. Subqueries, functions, and LIKE are not supported. See Current limitations for the type matrix.
 
 ## Current limitations
 
-- **JSON commit log only.** Statistics are read from the Delta log JSON files. Checkpoint Parquet files are not yet supported. Tables that have been vacuumed with only a checkpoint remaining will show incomplete statistics.
+- **JSON commit log only.** On long-lived tables, files referenced only by checkpoint Parquet appear as `[no stats]`, and `--assert-stats` may report false positives.
+
+  Statistics are read from the Delta log JSON files; checkpoint Parquet files are not yet supported. Older JSON commits are removed by Delta's log cleanup (governed by `delta.logRetentionDuration`, default 30 days) once their actions have been consolidated into a checkpoint. Pruning counts (`--min-pruning`) are unaffected because they go through delta-kernel's full log replay, which reads checkpoints. (This is independent of `VACUUM`, which removes data files under `delta.deletedFileRetentionDuration`, default 7 days, not log JSON commits.)
+
+- **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
+
+  Predicates on columns past this index are still classified as `stats-safe` but contribute no pruning, because the column's min/max never appears in the log. (`stats.mode` reflects per-table coverage of the indexed columns, not per-predicate reachability, so it can read `exact` even when the predicate column is unreachable by stats.)
+
+- **DATE, TIMESTAMP, DECIMAL, and narrow integers not yet handled.** SQL literals on these types are not constructed against the Delta schema, so the comparison cannot be evaluated soundly from metadata and files are kept conservatively even when statistics would allow elimination.
+
+  SQL literals are resolved correctly for `INT`, `LONG`, `FLOAT`, and `DOUBLE`. `SHORT` and `BYTE` are the narrow integer types that remain unhandled.
+
 - **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
-- **Top-level AND splitting only.** Predicate classification operates on top-level AND conjuncts. OR expressions mixing partition and non-partition columns are flagged explicitly as `unsplittable` with a `UNSPLITTABLE_OR` note and an `incomplete` confidence — they are not silently downgraded.
+
+- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts. OR expressions mixing partition and non-partition columns are flagged as `unsplittable` per the rule above; they are not silently downgraded.
 
 See [VISION.md](VISION.md) for planned improvements.
 
