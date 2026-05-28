@@ -342,6 +342,39 @@ Numeric types, strings, and booleans are handled. Subqueries, functions, and LIK
 
 See [VISION.md](VISION.md) for planned improvements.
 
+## Development
+
+To build and test from a fresh clone:
+
+```bash
+git clone https://github.com/cdelmonte-zg/delta-explain
+cd delta-explain
+cargo build
+cargo test
+```
+
+The integration tests under `tests/` rely on pre-built Delta tables checked into the repo under `fixtures/`. They are real Delta tables, not synthetic blobs, so the tests exercise the kernel's actual scan planner.
+
+### Regenerating the fixtures
+
+The fixtures only need to be regenerated when you change their schema or the data they contain — for ordinary development you can ignore this step entirely.
+
+The generator is a small Python script (`fixtures/create_test_table.py`) that uses `pyarrow` and `deltalake` to write the tables. Set up a virtual environment and install the pinned dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r fixtures/requirements.txt
+```
+
+Then run the generator:
+
+```bash
+python fixtures/create_test_table.py
+```
+
+The script skips any fixture directory that already exists; delete the directory you want to regenerate first, then re-run.
+
 ## Deep dive
 
 For a detailed walkthrough of the architecture, design decisions, and the reasoning behind the two-phase model, see the companion article: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/deep-dives/delta-explain-making-delta-pruning-visible/).

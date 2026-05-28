@@ -14,7 +14,7 @@ fn cmd() -> Command {
 
 fn partial_table() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/test-table-partial-stats")
+    format!("{manifest_dir}/fixtures/test-table-partial-stats")
 }
 
 // ── Fixture sanity ──────────────────────────────────────────────────

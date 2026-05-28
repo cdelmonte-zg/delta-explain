@@ -1,6 +1,6 @@
 """Create test Delta tables for delta-explain integration tests.
 
-Produces:
+Produces (next to this script):
 - ./test-table              partitioned, full stats (canonical fixture)
 - ./test-table-partial-stats partitioned, half the files have no stats
                              (exercises the `stats.mode = "partial"` path)
@@ -16,8 +16,9 @@ from pathlib import Path
 import pyarrow as pa
 from deltalake import write_deltalake
 
-TABLE_PATH = "./test-table"
-PARTIAL_TABLE_PATH = "./test-table-partial-stats"
+HERE = Path(__file__).resolve().parent
+TABLE_PATH = str(HERE / "test-table")
+PARTIAL_TABLE_PATH = str(HERE / "test-table-partial-stats")
 
 
 def already_exists(path: str) -> bool:

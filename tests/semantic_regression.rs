@@ -19,7 +19,7 @@ fn cmd() -> Command {
 
 fn fixture(name: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/{name}")
+    format!("{manifest_dir}/fixtures/{name}")
 }
 
 /// Run delta-explain with the given args and parse stdout as JSON.

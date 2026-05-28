@@ -64,6 +64,10 @@ Same input string, two independent representations — coupling them would entan
   asserts on stdout/stderr/exit code.
 - `tests/partition_columns.rs` — focused regression tests for the `partitionColumns`
   metadata read path.
+- `tests/partial_stats.rs` — exercises the `stats.mode = "partial"` path against
+  `fixtures/test-table-partial-stats`.
+- `tests/semantic_regression.rs` — one canonical end-to-end JSON check per
+  "minimum case" from the roadmap (Step 1.5).
 - **Use `rstest`** when several cases share the same flow and differ only in inputs
   or expected outputs. Prefer one parameterized test with `#[case]` over four near-duplicate
   `#[test]` functions. When parameters are independent (cartesian product), `#[values]`.
@@ -73,6 +77,24 @@ Same input string, two independent representations — coupling them would entan
 - **JSON assertions** via `serde_json::Value` and path indexing: `json["analysis"]["confidence"]`.
   Don't assert on whole-document equality.
 - Tests live in `tests/`; unit tests in `src/<module>.rs` under `#[cfg(test)] mod tests`.
+
+### Fixtures
+
+Real Delta tables (not synthetic blobs) live under `fixtures/`:
+
+- `test-table` — partitioned by `country` (DE/US/IT), full stats. Canonical fixture.
+- `test-table-flat` — non-partitioned variant, same schema.
+- `test-table-empty` — zero data files, partition metadata only.
+- `test-table-partial-stats` — partitioned, half the files have `stats` stripped.
+
+Tests build paths via a `fixture()` helper that prefixes
+`{CARGO_MANIFEST_DIR}/fixtures/`. Don't hardcode absolute fixture paths in new tests.
+
+The fixtures are checked into the repo, so day-to-day development never needs to
+regenerate them. When the schema or data must change, `fixtures/create_test_table.py`
+rewrites them (Python deps pinned in `fixtures/requirements.txt`; the script skips
+any directory that already exists). See README's *Development* section for the
+exact venv + invocation sequence.
 
 ## Code Style
 

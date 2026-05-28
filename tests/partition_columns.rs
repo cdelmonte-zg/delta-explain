@@ -8,7 +8,7 @@ fn cmd() -> Command {
 
 fn fixture(name: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/{name}")
+    format!("{manifest_dir}/fixtures/{name}")
 }
 
 // ── Partition column detection from metadata ───────────────────────

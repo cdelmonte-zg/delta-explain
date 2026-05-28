@@ -8,12 +8,12 @@ fn cmd() -> Command {
 
 fn test_table() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/test-table")
+    format!("{manifest_dir}/fixtures/test-table")
 }
 
 fn test_table_flat() -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/test-table-flat")
+    format!("{manifest_dir}/fixtures/test-table-flat")
 }
 
 // ── Basic snapshot ──────────────────────────────────────────────────
@@ -1062,7 +1062,7 @@ fn json_result_fail_when_assertion_fails() {
 #[test]
 fn json_stats_mode_absent_for_empty_table() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let empty = format!("{manifest_dir}/test-table-empty");
+    let empty = format!("{manifest_dir}/fixtures/test-table-empty");
     let json = run_json(&[&empty, "--format", "json"]);
     assert_eq!(json["stats"]["mode"], "absent");
     assert_eq!(json["stats"]["files_with_stats"], 0);

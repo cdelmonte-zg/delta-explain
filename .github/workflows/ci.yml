@@ -42,5 +42,5 @@ jobs:
 
       - name: Smoke test
         run: |
-          docker run --rm -v ${{ github.workspace }}/test-table:/data/test-table delta-explain \
+          docker run --rm -v ${{ github.workspace }}/fixtures/test-table:/data/test-table delta-explain \
             /data/test-table -w "age > 40 AND country = 'DE'" --format json
