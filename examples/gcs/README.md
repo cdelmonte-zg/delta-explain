@@ -72,6 +72,23 @@ delta-explain "gs://$GCS_BUCKET/lake/users-flat" \
   -w "country = 'DE' AND age > 55" --min-pruning 50          # exit 1
 ```
 
+## Alternative: write the tables from Jupyter / Spark
+
+If you'd rather create the tables with Spark (e.g. to match a Databricks-style
+workflow), use the bundled notebook instead of `write_tables.py`:
+
+```bash
+cp .env.example .env          # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host path to key.json)
+docker compose up -d          # or: docker-compose up -d
+# open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
+```
+
+The only GCS-specific bit is the Spark config: the **GCS connector**
+(`com.google.cloud.bigdataoss:gcs-connector`) replaces `hadoop-aws`, and auth is
+a service-account keyfile — see the first cell of `gcs-spark.ipynb`. The key is
+mounted into the container at `/home/jovyan/key.json` by `docker-compose.yml`.
+delta-explain still reads from the host exactly as in step 4.
+
 ## Notes
 
 - Credential `--option` aliases accepted: `service_account` / `service_account_path`
