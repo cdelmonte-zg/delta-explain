@@ -1,16 +1,30 @@
-"""Create test Delta tables for delta-explain integration tests.
+"""Create test Delta tables for delta-explain integration tests and the demo.
 
 Produces (next to this script):
 - ./test-table              partitioned, full stats (canonical fixture)
 - ./test-table-partial-stats partitioned, half the files have no stats
                              (exercises the `stats.mode = "partial"` path)
+- ./users                   demo table: same canonical data as test-table,
+                             under the name the live demo uses
+                             (`delta-explain ./users ...`); expect 83% pruned
+- ./users-flat              demo table: flat layout, copied from the committed
+                             synthetic test-table-flat fixture; expect 33% pruned
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
 the target directory by hand to force regeneration.
+
+Note on the flat layout: ./test-table-flat is a hand-crafted synthetic
+fixture. Its Delta-log statistics (interleaved `country` ranges that are NOT
+physically present in the parquet files) are what make data skipping
+ineffective and produce the 33% result. It therefore CANNOT be rebuilt from a
+dataframe via write_deltalake — that would recompute the stats and change the
+number. It is committed to git as the source of truth, and ./users-flat is
+materialised by copying it verbatim.
 """
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pyarrow as pa
@@ -19,6 +33,9 @@ from deltalake import write_deltalake
 HERE = Path(__file__).resolve().parent
 TABLE_PATH = str(HERE / "test-table")
 PARTIAL_TABLE_PATH = str(HERE / "test-table-partial-stats")
+FLAT_TABLE_PATH = str(HERE / "test-table-flat")
+USERS_PATH = str(HERE / "users")
+USERS_FLAT_PATH = str(HERE / "users-flat")
 
 
 def already_exists(path: str) -> bool:
@@ -176,3 +193,45 @@ if not already_exists(PARTIAL_TABLE_PATH):
     print(f"Partial-stats table created at {PARTIAL_TABLE_PATH}")
     print(f"  Files: {len(partial_batches)} ({stripped} without stats, {len(partial_batches) - stripped} with stats)")
     print(f"  stats.mode should be \"partial\"")
+
+
+# === users (demo: partitioned, expect 83% pruned) ========================
+# Same canonical data as test-table, under the name the live demo uses:
+#   delta-explain ./users -w "country = 'DE' AND age > 40"
+# Partitioned by country, so `country = 'DE'` prunes whole partitions and
+# `age > 40` then drops one more file via data skipping.
+
+if not already_exists(USERS_PATH):
+    write_deltalake(
+        USERS_PATH,
+        batches[0],
+        partition_by=["country"],
+        mode="overwrite",
+    )
+    for batch in batches[1:]:
+        write_deltalake(
+            USERS_PATH,
+            batch,
+            partition_by=["country"],
+            mode="append",
+        )
+    print(f"Demo table created at {USERS_PATH}")
+    print(f"  Partitioned by country (DE, US, IT) — expect 83% pruned")
+
+
+# === users-flat (demo: flat layout, expect 33% pruned) ===================
+# The flat demo table is a hand-crafted synthetic fixture (see the module
+# docstring): its Delta-log statistics are what produce the 33% result, so it
+# cannot be rebuilt from a dataframe. We materialise ./users-flat by copying
+# the committed ./test-table-flat verbatim, which preserves those stats.
+
+if not already_exists(USERS_FLAT_PATH):
+    if not Path(FLAT_TABLE_PATH).exists():
+        raise SystemExit(
+            f"ERROR: {FLAT_TABLE_PATH} is missing. It is a committed synthetic "
+            f"fixture and cannot be regenerated here — restore it from git:\n"
+            f"  git checkout -- fixtures/test-table-flat"
+        )
+    shutil.copytree(FLAT_TABLE_PATH, USERS_FLAT_PATH)
+    print(f"Demo table created at {USERS_FLAT_PATH}")
+    print(f"  Flat copy of test-table-flat (no partitions) — expect 33% pruned")
