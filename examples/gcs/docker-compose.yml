@@ -1,0 +1,24 @@
+# Jupyter + Spark for writing Delta tables to a real GCS bucket.
+# (No MinIO here — GCS is remote cloud storage, not a local container.)
+#
+#   cp .env.example .env        # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host path to key.json)
+#   docker compose up -d        # or: docker-compose up -d
+#   open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
+#
+# delta-explain runs on the HOST and reads the same tables:
+#   delta-explain gs://$GCS_BUCKET/lake/users \
+#     --option service_account="$GOOGLE_SERVICE_ACCOUNT" -w "country = 'DE' AND age > 55"
+version: "3.8"
+
+services:
+  jupyter:
+    image: quay.io/jupyter/pyspark-notebook:spark-4.1.2
+    ports:
+      - "8888:8888"
+    environment:
+      JUPYTER_TOKEN: delta
+      GCS_BUCKET: ${GCS_BUCKET}
+    volumes:
+      - ./:/home/jovyan/work
+      # mount the service-account key read-only into the container
+      - ${GOOGLE_SERVICE_ACCOUNT}:/home/jovyan/key.json:ro
