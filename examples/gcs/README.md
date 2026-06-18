@@ -9,6 +9,9 @@ shows that the same data prunes very differently depending on physical layout.
 
 ## 1. One-time GCP setup
 
+> Full step-by-step (install gcloud, billing, teardown): see [GCP_SETUP.md](GCP_SETUP.md).
+> Quick version:
+
 ```bash
 PROJECT=your-project
 BUCKET=my-delta-demo                      # must be globally unique
