@@ -95,10 +95,19 @@ fn main() -> ExitCode {
 }
 
 fn parse_table_uri(path: &str) -> DeltaResult<Url> {
-    if let Ok(url) = Url::parse(path)
+    if let Ok(mut url) = Url::parse(path)
         && url.scheme() != "file"
         && url.has_host()
     {
+        // The kernel locates the log via `url.join("_delta_log/")`. Per RFC 3986
+        // that replaces the last path segment unless the base ends in a slash,
+        // so without this `s3://bucket/prefix/table` would resolve the log at
+        // the bucket root ("No files in log segment"). Local paths are immune
+        // because `Url::from_directory_path` already appends a trailing slash.
+        if !url.path().ends_with('/') {
+            let with_slash = format!("{}/", url.path());
+            url.set_path(&with_slash);
+        }
         return Ok(url);
     }
     let absolute = std::fs::canonicalize(path)
@@ -331,4 +340,43 @@ fn try_main() -> DeltaResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_table_uri;
+
+    #[test]
+    fn s3_uri_gets_trailing_slash_so_log_join_appends() {
+        let url = parse_table_uri("s3://bucket/prefix/table").unwrap();
+        assert_eq!(url.as_str(), "s3://bucket/prefix/table/");
+        // This is exactly how the kernel locates the transaction log:
+        assert_eq!(
+            url.join("_delta_log/").unwrap().as_str(),
+            "s3://bucket/prefix/table/_delta_log/"
+        );
+    }
+
+    #[test]
+    fn s3_uri_with_trailing_slash_is_unchanged() {
+        let url = parse_table_uri("s3://bucket/prefix/table/").unwrap();
+        assert_eq!(url.as_str(), "s3://bucket/prefix/table/");
+    }
+
+    #[test]
+    fn s3_bucket_root_resolves_log_at_root() {
+        let url = parse_table_uri("s3://bucket").unwrap();
+        assert_eq!(
+            url.join("_delta_log/").unwrap().as_str(),
+            "s3://bucket/_delta_log/"
+        );
+    }
+
+    #[test]
+    fn local_path_is_a_directory_url() {
+        // Relative existing dir (crate root) -> file:// URL with trailing slash.
+        let url = parse_table_uri(".").unwrap();
+        assert_eq!(url.scheme(), "file");
+        assert!(url.path().ends_with('/'));
+    }
 }
