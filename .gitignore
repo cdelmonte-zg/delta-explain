@@ -1,2 +1,6 @@
 /target
 .venv/
+
+# never commit GCP service-account keys
+key.json
+*-key.json

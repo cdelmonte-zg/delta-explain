@@ -65,9 +65,9 @@ gcloud iam service-accounts keys create key.json --iam-account="$SA"
 ## 6. Point the example at it
 
 ```bash
-cd examples/gcs
 export GCS_BUCKET=$BUCKET
 export GOOGLE_SERVICE_ACCOUNT="$PWD/key.json"
+cd examples/gcs
 ```
 
 ## 7. Create the tables and explain

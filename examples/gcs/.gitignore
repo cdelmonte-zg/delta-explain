@@ -4,3 +4,6 @@ key*.json
 .env
 
 __pycache__/
+
+jars/
+.ipynb_checkpoints/

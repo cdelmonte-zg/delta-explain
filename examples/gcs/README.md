@@ -82,15 +82,33 @@ workflow), use the bundled notebook instead of `write_tables.py`:
 
 ```bash
 cp .env.example .env          # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host path to key.json)
+
+# download the shaded GCS connector jar (mounted into the container)
+mkdir -p jars
+curl -L -o jars/gcs-connector-hadoop3-2.2.21-shaded.jar \
+  https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar
+
 docker compose up -d          # or: docker-compose up -d
 # open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
 ```
 
-The only GCS-specific bit is the Spark config: the **GCS connector**
-(`com.google.cloud.bigdataoss:gcs-connector`) replaces `hadoop-aws`, and auth is
-a service-account keyfile — see the first cell of `gcs-spark.ipynb`. The key is
-mounted into the container at `/home/jovyan/key.json` by `docker-compose.yml`.
-delta-explain still reads from the host exactly as in step 4.
+The only GCS-specific bit is the Spark config (first cell of `gcs-spark.ipynb`):
+the **GCS connector** replaces `hadoop-aws`, and auth is a service-account
+keyfile mounted at `/home/jovyan/key.json`. delta-explain still reads from the
+host exactly as in step 4.
+
+**Version matrix — the connector must match Spark's bundled Hadoop:**
+
+| Spark image | bundled Hadoop | gcs-connector | auth keys |
+|---|---|---|---|
+| `spark-3.5.x` (this example) | 3.3.4 | `hadoop3-2.2.x` | `google.cloud.auth.service.account.enable` + `…json.keyfile` |
+| `spark-4.x` | 3.4.x | `4.0.x` | `fs.gs.auth.type=SERVICE_ACCOUNT_JSON_KEYFILE` + `fs.gs.auth.service.account.json.keyfile` |
+
+Always use the **`-shaded`** connector jar via `spark.jars` (it relocates Guava);
+the thin jar pulled via `--packages` clashes with Spark's bundled Guava.
+
+> Validated end-to-end against a real GCS bucket with this setup: healthy layout
+> ~88% pruned (gate exit 0), flat rewrite 0% (gate exit 1).
 
 ## Notes
 
