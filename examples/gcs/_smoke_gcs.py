@@ -15,8 +15,8 @@ spark = (
             "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
     .config("spark.hadoop.fs.AbstractFileSystem.gs.impl",
             "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS")
-    .config("spark.hadoop.google.cloud.auth.service.account.enable", "true")
-    .config("spark.hadoop.google.cloud.auth.service.account.json.keyfile", KEYFILE)
+    .config("spark.hadoop.fs.gs.auth.type", "SERVICE_ACCOUNT_JSON_KEYFILE")
+    .config("spark.hadoop.fs.gs.auth.service.account.json.keyfile", KEYFILE)
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")

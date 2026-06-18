@@ -85,8 +85,8 @@ cp .env.example .env          # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host 
 
 # download the shaded GCS connector jar (mounted into the container)
 mkdir -p jars
-curl -L -o jars/gcs-connector-hadoop3-2.2.21-shaded.jar \
-  https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.21/gcs-connector-hadoop3-2.2.21-shaded.jar
+curl -L -o jars/gcs-connector-4.0.4-shaded.jar \
+  https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/4.0.4/gcs-connector-4.0.4-shaded.jar
 
 docker compose up -d          # or: docker-compose up -d
 # open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
@@ -99,16 +99,17 @@ host exactly as in step 4.
 
 **Version matrix — the connector must match Spark's bundled Hadoop:**
 
-| Spark image | bundled Hadoop | gcs-connector | auth keys |
-|---|---|---|---|
-| `spark-3.5.x` (this example) | 3.3.4 | `hadoop3-2.2.x` | `google.cloud.auth.service.account.enable` + `…json.keyfile` |
-| `spark-4.x` | 3.4.x | `4.0.x` | `fs.gs.auth.type=SERVICE_ACCOUNT_JSON_KEYFILE` + `fs.gs.auth.service.account.json.keyfile` |
+| Spark image | bundled Hadoop | delta-spark | gcs-connector | auth keys |
+|---|---|---|---|---|
+| `spark-4.1.x` (this example) | 3.4.x | `_2.13:4.3.0` | `4.0.x` | `fs.gs.auth.type=SERVICE_ACCOUNT_JSON_KEYFILE` + `fs.gs.auth.service.account.json.keyfile` |
+| `spark-3.5.x` | 3.3.4 | `_2.12:3.2.0` | `hadoop3-2.2.x` | `google.cloud.auth.service.account.enable` + `…json.keyfile` |
 
-Always use the **`-shaded`** connector jar via `spark.jars` (it relocates Guava);
-the thin jar pulled via `--packages` clashes with Spark's bundled Guava.
+Spark 4 is Scala **2.13** (hence `delta-spark_2.13`). Always use the **`-shaded`**
+connector jar via `spark.jars` (it relocates Guava); the thin jar pulled via
+`--packages` clashes with Spark's bundled Guava.
 
-> Validated end-to-end against a real GCS bucket with this setup: healthy layout
-> ~88% pruned (gate exit 0), flat rewrite 0% (gate exit 1).
+> Validated end-to-end against a real GCS bucket with this setup (Spark 4.1.2):
+> healthy layout ~88% pruned (gate exit 0), flat rewrite 0% (gate exit 1).
 
 ## Notes
 
