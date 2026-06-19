@@ -162,8 +162,19 @@ fn convert_comparison_pair(
 fn resolve_column_type(expr: &SqlExpr, schema: &SchemaRef) -> Option<DataType> {
     match expr {
         SqlExpr::Identifier(ident) => schema.field(&ident.value).map(|f| f.data_type().clone()),
-        SqlExpr::CompoundIdentifier(parts) if parts.len() == 1 => {
-            schema.field(&parts[0].value).map(|f| f.data_type().clone())
+        SqlExpr::CompoundIdentifier(parts) => {
+            // Walk the dotted path (profile.score) through struct fields so the
+            // literal on the other side coerces to the leaf type. Without this,
+            // a nested double compared to an integer literal aborts the scan
+            // ("Invalid comparison operation: Float64 > Int32").
+            let mut current = schema.field(&parts[0].value)?.data_type().clone();
+            for part in &parts[1..] {
+                let DataType::Struct(st) = &current else {
+                    return None;
+                };
+                current = st.field(&part.value)?.data_type().clone();
+            }
+            Some(current)
         }
         SqlExpr::Nested(inner) => resolve_column_type(inner, schema),
         _ => None,

@@ -148,38 +148,18 @@ fn parse_add_stats(add: &Value) -> FileStats {
 
     let mut columns: HashMap<String, ColumnStats> = HashMap::new();
 
+    // Delta nests stats for struct columns: minValues.profile = {age, score}.
+    // Flatten them to dotted leaf keys (profile.age, profile.score) so each leaf
+    // reports its own min/max, matching how the kernel skips on nested fields.
     if let Some(ref stats) = stats_json {
-        if let Some(min_values) = stats.get("minValues").and_then(|v| v.as_object()) {
-            for (col, val) in min_values {
-                let entry = columns.entry(col.clone()).or_insert_with(|| ColumnStats {
-                    min: None,
-                    max: None,
-                    null_count: None,
-                });
-                entry.min = Some(format_stat_value(val));
-            }
+        for (key, val) in flatten_leaves(stats.get("minValues")) {
+            col_entry(&mut columns, key).min = Some(format_stat_value(val));
         }
-
-        if let Some(max_values) = stats.get("maxValues").and_then(|v| v.as_object()) {
-            for (col, val) in max_values {
-                let entry = columns.entry(col.clone()).or_insert_with(|| ColumnStats {
-                    min: None,
-                    max: None,
-                    null_count: None,
-                });
-                entry.max = Some(format_stat_value(val));
-            }
+        for (key, val) in flatten_leaves(stats.get("maxValues")) {
+            col_entry(&mut columns, key).max = Some(format_stat_value(val));
         }
-
-        if let Some(null_counts) = stats.get("nullCount").and_then(|v| v.as_object()) {
-            for (col, val) in null_counts {
-                let entry = columns.entry(col.clone()).or_insert_with(|| ColumnStats {
-                    min: None,
-                    max: None,
-                    null_count: None,
-                });
-                entry.null_count = val.as_u64();
-            }
+        for (key, val) in flatten_leaves(stats.get("nullCount")) {
+            col_entry(&mut columns, key).null_count = val.as_u64();
         }
     }
 
@@ -265,6 +245,38 @@ async fn read_partition_columns_async(
     Ok(partition_columns)
 }
 
+fn col_entry(columns: &mut HashMap<String, ColumnStats>, key: String) -> &mut ColumnStats {
+    columns.entry(key).or_insert_with(|| ColumnStats {
+        min: None,
+        max: None,
+        null_count: None,
+    })
+}
+
+/// Flatten a stats object (minValues / maxValues / nullCount) into (dotted key,
+/// leaf value) pairs. A scalar leaf is emitted as-is; a struct object recurses,
+/// joining names with `.` (profile -> profile.age, profile.score).
+fn flatten_leaves(value: Option<&Value>) -> Vec<(String, &Value)> {
+    let mut out = Vec::new();
+    if let Some(Value::Object(map)) = value {
+        for (k, v) in map {
+            push_leaves(k, v, &mut out);
+        }
+    }
+    out
+}
+
+fn push_leaves<'a>(prefix: &str, value: &'a Value, out: &mut Vec<(String, &'a Value)>) {
+    match value {
+        Value::Object(map) => {
+            for (k, v) in map {
+                push_leaves(&format!("{prefix}.{k}"), v, out);
+            }
+        }
+        _ => out.push((prefix.to_string(), value)),
+    }
+}
+
 fn format_stat_value(val: &Value) -> String {
     match val {
         Value::String(s) => s.clone(),
@@ -280,5 +292,39 @@ fn format_stat_value(val: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Null => "null".into(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn flattens_nested_struct_stats_to_dotted_keys() {
+        let add = json!({
+            "path": "f.parquet",
+            "stats": "{\"numRecords\":2,\
+                \"minValues\":{\"name\":\"Eve\",\"profile\":{\"age\":45,\"score\":71.5}},\
+                \"maxValues\":{\"name\":\"Frank\",\"profile\":{\"age\":55,\"score\":82.0}},\
+                \"nullCount\":{\"name\":0,\"profile\":{\"age\":0,\"score\":0}}}"
+        });
+
+        let stats = parse_add_stats(&add);
+
+        let age = stats.columns.get("profile.age").expect("profile.age leaf");
+        assert_eq!(age.min.as_deref(), Some("45"));
+        assert_eq!(age.max.as_deref(), Some("55"));
+        assert_eq!(age.null_count, Some(0));
+
+        let score = stats
+            .columns
+            .get("profile.score")
+            .expect("profile.score leaf");
+        assert_eq!(score.min.as_deref(), Some("71.5"));
+
+        // top-level scalar columns stay flat; the raw struct key is gone
+        assert!(stats.columns.contains_key("name"));
+        assert!(!stats.columns.contains_key("profile"));
     }
 }
