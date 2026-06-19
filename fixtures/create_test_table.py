@@ -9,6 +9,13 @@ Produces (next to this script):
                              (`delta-explain ./users ...`); expect 83% pruned
 - ./users-flat              demo table: flat layout, copied from the committed
                              synthetic test-table-flat fixture; expect 33% pruned
+- ./test-table-nested       partitioned, with a `profile` struct column whose
+                             leaves (age, score, geo.zip — two levels deep) carry
+                             min/max stats — exercises data skipping on nested
+                             (dotted) columns at arbitrary depth
+- ./test-table-stats-budget  dataSkippingNumIndexedCols=4: a 5-leaf struct eats
+                             the stats budget, so the trailing root column `tail`
+                             gets no stats and cannot be skipped
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
@@ -36,6 +43,8 @@ PARTIAL_TABLE_PATH = str(HERE / "test-table-partial-stats")
 FLAT_TABLE_PATH = str(HERE / "test-table-flat")
 USERS_PATH = str(HERE / "users")
 USERS_FLAT_PATH = str(HERE / "users-flat")
+NESTED_TABLE_PATH = str(HERE / "test-table-nested")
+BUDGET_TABLE_PATH = str(HERE / "test-table-stats-budget")
 
 
 def already_exists(path: str) -> bool:
@@ -235,3 +244,80 @@ if not already_exists(USERS_FLAT_PATH):
     shutil.copytree(FLAT_TABLE_PATH, USERS_FLAT_PATH)
     print(f"Demo table created at {USERS_FLAT_PATH}")
     print(f"  Flat copy of test-table-flat (no partitions) — expect 33% pruned")
+
+
+# === test-table-nested (struct column, nested data skipping) =============
+# A `profile` struct with an int leaf (age), a double leaf (score), and a
+# *second-level* struct `geo` with an int leaf (zip). Delta records min/max for
+# every leaf at any depth, so data skipping works on the dotted columns
+# profile.age, profile.score, and profile.geo.zip. Partitioned by country, two
+# files per partition with disjoint nested ranges so each leaf can rule files out.
+
+
+def nested_batch(names, ages, scores, zips, country):
+    geo = pa.StructArray.from_arrays([pa.array(zips, type=pa.int32())], names=["zip"])
+    profile = pa.StructArray.from_arrays(
+        [pa.array(ages, type=pa.int32()), pa.array(scores, type=pa.float64()), geo],
+        names=["age", "score", "geo"],
+    )
+    return pa.table({
+        "name": pa.array(names),
+        "country": pa.array([country] * len(names)),
+        "profile": profile,
+    })
+
+
+nested_batches = [
+    nested_batch(["Hans", "Greta", "Klaus"], [25, 30, 35], [75.3, 92.0, 88.5], [1000, 1001, 1002], "DE"),
+    nested_batch(["Dieter", "Helga"], [45, 60], [65.5, 70.0], [2000, 2001], "DE"),
+    nested_batch(["Alice", "Bob"], [22, 29], [78.2, 95.0], [3000, 3001], "US"),
+    nested_batch(["Eve", "Frank"], [45, 55], [71.5, 82.0], [4000, 4001], "US"),
+    nested_batch(["Marco", "Sofia"], [28, 38], [76.8, 89.3], [5000, 5001], "IT"),
+    nested_batch(["Giovanni", "Roberto"], [41, 65], [68.0, 80.1], [6000, 6001], "IT"),
+]
+
+if not already_exists(NESTED_TABLE_PATH):
+    write_deltalake(
+        NESTED_TABLE_PATH,
+        nested_batches[0],
+        partition_by=["country"],
+        mode="overwrite",
+    )
+    for batch in nested_batches[1:]:
+        write_deltalake(
+            NESTED_TABLE_PATH,
+            batch,
+            partition_by=["country"],
+            mode="append",
+        )
+    print(f"Nested-struct table created at {NESTED_TABLE_PATH}")
+    print(f"  6 files across DE/US/IT; profile.age / profile.score / profile.geo.zip carry min/max")
+
+
+# === test-table-stats-budget (nested leaves exhaust the stats budget) =====
+# Delta indexes only the first `delta.dataSkippingNumIndexedCols` *leaf* columns
+# (default 32), and each nested struct leaf counts as one. Here the property is
+# lowered to 4 to demonstrate the mechanism compactly: struct `s` has 5 leaves
+# (a..e), so a..d consume the budget and `s.e` plus the trailing root column
+# `tail` get NO statistics. A predicate on `tail` therefore cannot be skipped,
+# even though its values would allow it -- the budget was eaten by the struct.
+
+INDEXED_COLS = 4
+
+
+def budget_batch(base):
+    leaves = [pa.array([base + i, base + i + 1], type=pa.int32()) for i in range(5)]
+    s = pa.StructArray.from_arrays(leaves, names=list("abcde"))
+    return pa.table({"s": s, "tail": pa.array([base, base + 100], type=pa.int32())})
+
+
+if not already_exists(BUDGET_TABLE_PATH):
+    write_deltalake(
+        BUDGET_TABLE_PATH,
+        budget_batch(0),
+        mode="overwrite",
+        configuration={"delta.dataSkippingNumIndexedCols": str(INDEXED_COLS)},
+    )
+    write_deltalake(BUDGET_TABLE_PATH, budget_batch(1000), mode="append")
+    print(f"Stats-budget table created at {BUDGET_TABLE_PATH}")
+    print(f"  dataSkippingNumIndexedCols={INDEXED_COLS}; s.a..s.d have stats, s.e and tail do not")
