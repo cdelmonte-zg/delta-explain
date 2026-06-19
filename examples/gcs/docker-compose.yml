@@ -17,8 +17,12 @@ services:
       - "8888:8888"
     environment:
       JUPYTER_TOKEN: delta
-      GCS_BUCKET: ${GCS_BUCKET}
+      GCS_BUCKET: ${GCS_BUCKET:?set GCS_BUCKET in .env to your bucket name}
     volumes:
       - ./:/home/jovyan/work
       # mount the service-account key read-only into the container
-      - ${GOOGLE_SERVICE_ACCOUNT}:/home/jovyan/key.json:ro
+      - ${GOOGLE_SERVICE_ACCOUNT:?set GOOGLE_SERVICE_ACCOUNT in .env to the host path of your service-account key.json}:/home/jovyan/key.json:ro
+      # mount the GCS connector onto Spark's base classpath (run the README curl step first).
+      # this is more robust than spark.jars: the FS class is loaded at JVM boot, immune to
+      # session/kernel staleness that can make spark.jars silently ignored.
+      - ./jars/gcs-connector-4.0.4-shaded.jar:/usr/local/spark/jars/gcs-connector-4.0.4-shaded.jar:ro
