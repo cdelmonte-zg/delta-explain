@@ -7,6 +7,29 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
+## [Unreleased]
+
+Data skipping on nested (struct) columns addressed by dotted paths
+(`profile.age`). The JSON `schema_version` is unchanged (`0.1.0`): per-column
+statistics are surfaced only in verbose text output, so this is additive.
+
+### Added
+
+- **Nested stats display.** Per-file statistics for struct columns are now
+  flattened to dotted leaf keys (`profile.age: 25..35, profile.score: 75.3..92`)
+  in `--verbose` output, instead of the raw struct object blob. Works at any
+  nesting depth (`profile.geo.zip`). New `test-table-nested` fixture exercises
+  the path; `test-table-stats-budget` documents the ceiling — each nested leaf
+  counts toward `dataSkippingNumIndexedCols`, so a wide struct can starve later
+  columns of statistics.
+
+### Fixed
+
+- **Type coercion on nested columns.** A predicate comparing a nested
+  double/long/float leaf to an integer literal (e.g. `profile.score > 90`) no
+  longer aborts with `Invalid comparison operation: Float64 > Int32`; the
+  literal now coerces to the nested leaf type resolved from the schema.
+
 ## [0.2.2] — 2026-05-09
 
 This release adds binary distribution channels and aligns the README with
