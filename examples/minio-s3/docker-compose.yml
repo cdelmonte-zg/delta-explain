@@ -30,3 +30,20 @@ services:
       /bin/sh -c "
       until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done &&
       mc mb -p local/lake && echo 'bucket ready: lake'"
+
+  # optional: write the tables from a notebook instead of host `write_tables.py`.
+  # no Spark here -- delta-rs (deltalake) writes s3:// directly. Port 8889 keeps
+  # it clear of the GCS example's Jupyter (8888), so both can run at once.
+  jupyter:
+    image: quay.io/jupyter/minimal-notebook:latest
+    depends_on: [createbucket]
+    ports:
+      - "8889:8888"
+    environment:
+      JUPYTER_TOKEN: delta
+      # inside the compose network MinIO is "minio", not localhost
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    volumes:
+      - ./:/home/jovyan/work

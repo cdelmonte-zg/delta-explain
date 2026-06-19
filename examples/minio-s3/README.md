@@ -57,6 +57,21 @@ The good layout prunes most files; the flat one prunes nothing:
 
 (Exact counts depend on data volume; the point is high-vs-zero.)
 
+## Alternative: write the tables from Jupyter
+
+`docker compose up -d` also starts a minimal (no-Spark) Jupyter on port **8889**,
+with `deltalake` available, that writes the same two layouts from a notebook:
+
+```bash
+docker compose up -d          # or: docker-compose up -d
+# open http://localhost:8889/?token=delta  and run minio-s3.ipynb
+```
+
+The notebook mirrors `write_tables.py` but runs inside the compose network, so it
+reaches MinIO at `minio:9000` (vs `localhost:9000` from the host). It uses port
+8889, so it can run **at the same time as the GCS example's notebook** (8888).
+`delta-explain` still reads from the host exactly as in step 3.
+
 ## 4. Use it as a CI gate
 
 `--min-pruning` turns the analysis into a pass/fail check:
