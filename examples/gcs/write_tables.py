@@ -9,7 +9,7 @@ Auth: set GOOGLE_SERVICE_ACCOUNT to the path of a service-account JSON key with
 write access to the bucket, and GCS_BUCKET to the bucket name. Run:
 
     pip install -r requirements.txt
-    export GCS_BUCKET=my-delta-demo
+    export GCS_BUCKET=your-bucket
     export GOOGLE_SERVICE_ACCOUNT=/path/to/key.json
     python write_tables.py
 """

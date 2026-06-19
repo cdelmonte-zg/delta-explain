@@ -14,7 +14,7 @@ shows that the same data prunes very differently depending on physical layout.
 
 ```bash
 PROJECT=your-project
-BUCKET=my-delta-demo                      # must be globally unique
+BUCKET=your-bucket                        # must be globally unique
 
 gcloud config set project "$PROJECT"
 gcloud storage buckets create "gs://$BUCKET" --location=EU
@@ -32,7 +32,7 @@ gcloud iam service-accounts keys create key.json --iam-account="$SA"
 ## 2. Point the tools at it
 
 ```bash
-export GCS_BUCKET=my-delta-demo
+export GCS_BUCKET=your-bucket
 export GOOGLE_SERVICE_ACCOUNT="$PWD/key.json"
 ```
 
@@ -81,9 +81,11 @@ If you'd rather create the tables with Spark (e.g. to match a Databricks-style
 workflow), use the bundled notebook instead of `write_tables.py`:
 
 ```bash
-cp .env.example .env          # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host path to key.json)
+cp .env.example .env          # then edit it (see below)
 
-# download the shaded GCS connector jar (mounted into the container)
+# download the shaded GCS connector jar (compose mounts it onto Spark's classpath).
+# do this BEFORE `up`: it is bind-mounted as a file, so if it is missing Docker
+# would create an empty directory at that path instead and Spark wouldn't find it.
 mkdir -p jars
 curl -L -o jars/gcs-connector-4.0.4-shaded.jar \
   https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/4.0.4/gcs-connector-4.0.4-shaded.jar
@@ -91,6 +93,16 @@ curl -L -o jars/gcs-connector-4.0.4-shaded.jar \
 docker compose up -d          # or: docker-compose up -d
 # open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
 ```
+
+The `.env` file is **required** — both variables must be set to real values:
+
+- `GCS_BUCKET` — your bucket name
+- `GOOGLE_SERVICE_ACCOUNT` — absolute **host** path to `key.json` (mounted
+  read-only into the container at `/home/jovyan/key.json`)
+
+If either is missing or blank, `docker compose up` aborts immediately with a
+message telling you which one to set (rather than a cryptic Docker volume
+error). Exporting them in your shell instead of using `.env` works too.
 
 The only GCS-specific bit is the Spark config (first cell of `gcs-spark.ipynb`):
 the **GCS connector** replaces `hadoop-aws`, and auth is a service-account
@@ -105,8 +117,11 @@ host exactly as in step 4.
 | `spark-3.5.x` | 3.3.4 | `_2.12:3.2.0` | `hadoop3-2.2.x` | `google.cloud.auth.service.account.enable` + `…json.keyfile` |
 
 Spark 4 is Scala **2.13** (hence `delta-spark_2.13`). Always use the **`-shaded`**
-connector jar via `spark.jars` (it relocates Guava); the thin jar pulled via
-`--packages` clashes with Spark's bundled Guava.
+connector jar (it relocates Guava); the thin jar pulled via `--packages` clashes
+with Spark's bundled Guava. The compose file mounts the shaded jar onto Spark's
+base classpath (`/usr/local/spark/jars/`) rather than passing it via `spark.jars`:
+the filesystem class is then loaded at JVM boot, immune to the session/kernel
+staleness that can make a `spark.jars` entry silently ignored in a notebook.
 
 > Validated end-to-end against a real GCS bucket with this setup (Spark 4.1.2):
 > healthy layout ~88% pruned (gate exit 0), flat rewrite 0% (gate exit 1).
