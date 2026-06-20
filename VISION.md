@@ -26,7 +26,7 @@ The tool works end-to-end for the common case: given a predicate and a Delta tab
 
 ## v0.2 — Confidence and classification — shipped (May 2026)
 
-Released as the v0.2.0 → v0.2.2 series. The tool now explains *why* pruning worked or failed, not just the file counts.
+Released as the v0.2.0 → v0.2.3 series. The tool now explains *why* pruning worked or failed, not just the file counts.
 
 - **Confidence model** — each result tagged as `exact`, `conservative`, or `incomplete` depending on stats completeness and predicate separability
 - **Predicate classification** — each clause explicitly labeled as `partition_safe`, `stats_safe`, or `unsplittable`, with coded notes explaining why

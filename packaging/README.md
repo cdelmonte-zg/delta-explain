@@ -42,8 +42,8 @@ scoop install delta-explain
 The `build-deb` job in `release.yml` builds `delta-explain_<version>_amd64.deb` and `delta-explain_<version>_arm64.deb` on every `v*` tag and uploads them as Release assets. Users install via:
 
 ```bash
-wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.2.1/delta-explain_0.2.1-1_amd64.deb
-sudo dpkg -i delta-explain_0.2.1-1_amd64.deb
+wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.2.3/delta-explain_0.2.3-1_amd64.deb
+sudo dpkg -i delta-explain_0.2.3-1_amd64.deb
 ```
 
 This is `dpkg`-managed (uninstall via `sudo apt remove delta-explain`) but not served from an apt repository. Hosting a real apt repo (e.g., on Cloudsmith) is a separate, later step.
@@ -58,4 +58,4 @@ Before tagging the first `v*` release after this setup:
 - [ ] `scoop-bucket` repo created, initial manifest committed (with placeholder SHA).
 - [ ] `HOMEBREW_TAP_TOKEN` secret added to `cdelmonte-zg/delta-explain` settings.
 
-Then tag a `v0.2.2-test` release first to validate the full pipeline (6 binary targets + 2 deb files + tap update). Once green, tag the real `v0.3.0`.
+Then tag a `vX.Y.Z-test` release first to validate the full pipeline (6 binary targets + 2 deb files + tap update). Once green, tag the real `vX.Y.Z`.
