@@ -1,6 +1,6 @@
 [package]
 name = "delta-explain"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 rust-version = "1.88"
 description = "Make Delta pruning visible. A CLI that shows step-by-step how partition pruning and data skipping reduce candidate files in a Delta table."

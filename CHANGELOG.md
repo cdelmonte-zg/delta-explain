@@ -9,6 +9,8 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-06-20
+
 Data skipping on nested (struct) columns addressed by dotted paths
 (`profile.age`). The JSON `schema_version` is unchanged (`0.1.0`): per-column
 statistics are surfaced only in verbose text output, so this is additive.
@@ -22,6 +24,9 @@ statistics are surfaced only in verbose text output, so this is additive.
   the path; `test-table-stats-budget` documents the ceiling — each nested leaf
   counts toward `dataSkippingNumIndexedCols`, so a wide struct can starve later
   columns of statistics.
+- **Runnable cloud examples.** `examples/minio-s3/` and `examples/gcs/` provide
+  end-to-end notebooks and Docker Compose stacks so contributors can reproduce
+  the S3 and GCS paths locally without a cloud account.
 
 ### Fixed
 
@@ -29,6 +34,10 @@ statistics are surfaced only in verbose text output, so this is additive.
   double/long/float leaf to an integer literal (e.g. `profile.score > 90`) no
   longer aborts with `Invalid comparison operation: Float64 > Int32`; the
   literal now coerces to the nested leaf type resolved from the schema.
+- **S3/GCS bucket-prefix resolution.** `delta-explain` now reads a Delta table
+  at any bucket sub-prefix, not only at the bucket root. Previously, tables
+  located under a prefix (e.g. `s3://my-bucket/warehouse/sales/`) were never
+  resolved and the tool exited with a storage error. Fixes #3.
 
 ## [0.2.2] — 2026-05-09
 
