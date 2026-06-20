@@ -30,6 +30,21 @@ statistics are surfaced only in verbose text output, so this is additive.
   longer aborts with `Invalid comparison operation: Float64 > Int32`; the
   literal now coerces to the nested leaf type resolved from the schema.
 
+## [0.2.3] — 2026-06-20
+
+### Fixed
+
+- **S3/GCS bucket-prefix resolution.** `delta-explain` now reads a Delta table
+  at any bucket sub-prefix, not only at the bucket root. Previously, tables
+  located under a prefix (e.g. `s3://my-bucket/warehouse/sales/`) were never
+  resolved and the tool exited with a storage error. Fixes #3.
+
+### Added
+
+- **Runnable cloud examples.** `examples/minio-s3/` and `examples/gcs/` provide
+  end-to-end notebooks and Docker Compose stacks so contributors can reproduce
+  the S3 and GCS paths locally without a cloud account.
+
 ## [0.2.2] — 2026-05-09
 
 This release adds binary distribution channels and aligns the README with
