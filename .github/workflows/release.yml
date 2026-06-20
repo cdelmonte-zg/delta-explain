@@ -210,3 +210,63 @@ jobs:
             git commit -m "delta-explain ${VERSION}"
             git push
           fi
+
+  update-scoop-bucket:
+    needs: [test, upload-binaries]
+    runs-on: ubuntu-latest
+    if: always() && needs.test.result == 'success' && needs.upload-binaries.result == 'success' && !contains(github.ref_name, '-')
+    steps:
+      - name: Update Scoop bucket manifest
+        env:
+          VERSION_TAG: ${{ github.ref_name }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_TAG#v}"
+
+          URL="https://github.com/cdelmonte-zg/delta-explain/releases/download/${VERSION_TAG}/delta-explain-x86_64-pc-windows-msvc.zip"
+          curl -fsSL -o /tmp/dx.zip "$URL"
+          HASH=$(sha256sum /tmp/dx.zip | awk '{print $1}')
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/cdelmonte-zg/scoop-bucket.git" bucket
+          cd bucket
+          mkdir -p bucket
+
+          cat > bucket/delta-explain.json <<EOF
+          {
+              "version": "${VERSION}",
+              "description": "Make Delta pruning visible: CLI for partition pruning and data skipping in Delta Lake.",
+              "homepage": "https://github.com/cdelmonte-zg/delta-explain",
+              "license": "MIT",
+              "architecture": {
+                  "64bit": {
+                      "url": "https://github.com/cdelmonte-zg/delta-explain/releases/download/${VERSION_TAG}/delta-explain-x86_64-pc-windows-msvc.zip",
+                      "hash": "${HASH}"
+                  }
+              },
+              "bin": "delta-explain.exe",
+              "checkver": {
+                  "github": "https://github.com/cdelmonte-zg/delta-explain"
+              },
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/cdelmonte-zg/delta-explain/releases/download/v\$version/delta-explain-x86_64-pc-windows-msvc.zip",
+                          "hash": {
+                              "url": "https://github.com/cdelmonte-zg/delta-explain/releases/download/v\$version/delta-explain-x86_64-pc-windows-msvc.sha256"
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/delta-explain.json
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date"
+          else
+            git commit -m "delta-explain ${VERSION}"
+            git push
+          fi
