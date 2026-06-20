@@ -8,7 +8,7 @@ Distribution channels other than crates.io and the GHCR Docker image. Each chann
 |---|---|---|---|
 | Debian/Ubuntu `.deb` | `Cargo.toml` `[package.metadata.deb]` | release workflow `build-deb` job | none (already wired) |
 | Homebrew tap | `homebrew/delta-explain.rb` | release workflow `update-homebrew-tap` job | create tap repo + PAT secret |
-| Scoop bucket | `scoop/delta-explain.json` | bucket repo's own `checkver`/`autoupdate` workflow | create bucket repo |
+| Scoop bucket | `scoop/delta-explain.json` | release workflow `update-scoop-bucket` job | create bucket repo |
 
 ## Homebrew tap setup (one-time)
 
@@ -28,7 +28,7 @@ brew install delta-explain
 
 1. Create a public GitHub repo named `scoop-bucket` under your account: `cdelmonte-zg/scoop-bucket`. The repo name is conventional (Scoop accepts any name, but `scoop-bucket` is the de facto standard).
 2. Copy `scoop/delta-explain.json` into the bucket repo at `bucket/delta-explain.json`. After the first release, replace the `REPLACE_WITH_SHA256_AFTER_FIRST_RELEASE` placeholder with the SHA256 of `delta-explain-x86_64-pc-windows-msvc.zip`.
-3. Add Scoop's auto-update workflow to the bucket repo (the canonical one is shipped at `https://github.com/ScoopInstaller/GithubActions`). Once configured, the workflow runs `scoop checkver -u` periodically against the manifest's `checkver`/`autoupdate` blocks and commits the new version automatically.
+3. From the second release onwards, the `update-scoop-bucket` job in `release.yml` regenerates `bucket/delta-explain.json` automatically with the fresh SHA256 and commits to the bucket, reusing the `HOMEBREW_TAP_TOKEN` secret (a classic PAT with `repo` scope reaches both repos). The manifest still carries `checkver`/`autoupdate` blocks so Scoop's own excavator can serve as a fallback.
 
 End-user install:
 
