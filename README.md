@@ -98,8 +98,8 @@ scoop install delta-explain
 Download the `.deb` for your architecture from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest) and install with `dpkg`:
 
 ```bash
-wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.2.1/delta-explain_0.2.1-1_amd64.deb
-sudo dpkg -i delta-explain_0.2.1-1_amd64.deb
+wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.2.3/delta-explain_0.2.3-1_amd64.deb
+sudo dpkg -i delta-explain_0.2.3-1_amd64.deb
 ```
 
 Available for `amd64` and `arm64`. Uninstall with `sudo apt remove delta-explain`.
@@ -138,7 +138,7 @@ docker pull ghcr.io/cdelmonte-zg/delta-explain
 docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
 ```
 
-For pipelines, pin to a release tag (e.g., `:0.2.1`) or to a digest; `:latest` is for local exploration only.
+For pipelines, pin to a release tag (e.g., `:0.2.3`) or to a digest; `:latest` is for local exploration only.
 
 ## Usage
 
@@ -265,7 +265,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
   run: |
     docker run --rm \
       -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-      ghcr.io/cdelmonte-zg/delta-explain:0.2.1 \
+      ghcr.io/cdelmonte-zg/delta-explain:0.2.3 \
       --env-creds s3://warehouse/events \
       -w "date = '2024-01-15'" \
       --min-pruning 90 --assert-stats --format json
