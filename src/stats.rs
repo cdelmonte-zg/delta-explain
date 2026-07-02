@@ -1,9 +1,14 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
+use delta_kernel::engine_data::{FilteredRowVisitor, GetData, RowIndexIterator, TypedGetData};
+use delta_kernel::expressions::ColumnName;
+use delta_kernel::scan::ScanBuilder;
+use delta_kernel::schema::DataType;
+use delta_kernel::{DeltaResult, Engine, Snapshot};
 use futures::TryStreamExt;
 use object_store::path::Path as ObjectPath;
-use object_store::{DynObjectStore, ObjectStore};
+use object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
 use serde_json::Value;
 use url::Url;
 
@@ -51,107 +56,86 @@ impl FileStats {
     }
 }
 
-/// Read stats from delta log JSON files via object_store (works for local and remote).
-pub fn read_stats_from_log(
-    table_url: &Url,
-    store: &Arc<DynObjectStore>,
+/// Read per-file stats from the kernel's scan metadata.
+///
+/// Runs a predicate-less scan and reads the `stats` JSON string the kernel
+/// carries on each scan row. Because the kernel's log replay merges the JSON
+/// commits with checkpoint Parquet, this also covers files whose `add` action
+/// survives only inside a checkpoint — the blind spot of reading the JSON
+/// commits directly. Files whose Add action carries no `stats` payload get no
+/// entry; the report layer treats their absence as "no stats".
+pub fn read_stats_from_scan(
+    snapshot: Arc<Snapshot>,
+    engine: &dyn Engine,
 ) -> Result<HashMap<String, FileStats>, delta_kernel::Error> {
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot create tokio runtime: {e}")))?;
-    rt.block_on(read_stats_async(table_url, store))
+    // include_all_stats_columns() requests the parsed stats schema, which is
+    // what makes the kernel populate the scan row's `stats` field via
+    // COALESCE(add.stats, ToJson(add.stats_parsed)). Without it, a checkpoint
+    // written with delta.checkpoint.writeStatsAsJson=false (structured
+    // stats_parsed only, no JSON stats) would come back with no stats at all.
+    let scan = ScanBuilder::new(snapshot)
+        .include_all_stats_columns()
+        .build()?;
+    let mut visitor = StatsVisitor {
+        stats: HashMap::new(),
+    };
+    for res in scan.scan_metadata(engine)? {
+        let scan_meta = res?;
+        visitor.visit_rows_of(&scan_meta.scan_files)?;
+    }
+    Ok(visitor.stats)
 }
 
-async fn read_stats_async(
-    table_url: &Url,
-    store: &Arc<DynObjectStore>,
-) -> Result<HashMap<String, FileStats>, delta_kernel::Error> {
-    // store_from_url_opts returns a store rooted at some prefix.
-    // For local files, the store is rooted at "/" and the table path is absolute.
-    // We need to compute the object_store path prefix for the _delta_log directory.
-    let (_, table_prefix) = object_store::parse_url(table_url)
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot parse table URL: {e}")))?;
+struct StatsVisitor {
+    stats: HashMap<String, FileStats>,
+}
 
-    let log_prefix = if table_prefix.as_ref().is_empty() {
-        ObjectPath::from("_delta_log")
-    } else {
-        ObjectPath::from(format!(
-            "{}/_delta_log",
-            table_prefix.as_ref().trim_end_matches('/')
-        ))
-    };
+static STATS_COLUMNS: LazyLock<(Vec<ColumnName>, Vec<DataType>)> = LazyLock::new(|| {
+    (
+        vec![ColumnName::new(["path"]), ColumnName::new(["stats"])],
+        vec![DataType::STRING, DataType::STRING],
+    )
+});
 
-    let objects: Vec<_> = store
-        .list(Some(&log_prefix))
-        .try_collect()
-        .await
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot list delta log: {e}")))?;
-
-    let mut json_paths: Vec<ObjectPath> = objects
-        .into_iter()
-        .filter(|obj| obj.location.to_string().ends_with(".json"))
-        .map(|obj| obj.location)
-        .collect();
-    json_paths.sort();
-
-    let mut result = HashMap::new();
-
-    for path in json_paths {
-        let data = store
-            .get(&path)
-            .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read {path}: {e}")))?
-            .bytes()
-            .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read bytes {path}: {e}")))?;
-
-        let content = String::from_utf8_lossy(&data);
-
-        for line in content.lines() {
-            let Ok(action) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-
-            if let Some(add) = action.get("add") {
-                let Some(file_path) = add.get("path").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                // Only track files whose Add action actually carries a `stats`
-                // payload. Files without log-level stats are skipped here; the
-                // report layer treats their absence as "no stats".
-                if add.get("stats").and_then(|v| v.as_str()).is_some() {
-                    let stats = parse_add_stats(add);
-                    result.insert(file_path.to_string(), stats);
-                }
-            }
-
-            if let Some(remove) = action.get("remove")
-                && let Some(file_path) = remove.get("path").and_then(|v| v.as_str())
-            {
-                result.remove(file_path);
-            }
-        }
+impl FilteredRowVisitor for StatsVisitor {
+    fn selected_column_names_and_types(&self) -> (&'static [ColumnName], &'static [DataType]) {
+        (&STATS_COLUMNS.0, &STATS_COLUMNS.1)
     }
 
-    Ok(result)
+    fn visit_filtered<'a>(
+        &mut self,
+        getters: &[&'a dyn GetData<'a>],
+        rows: RowIndexIterator<'_>,
+    ) -> DeltaResult<()> {
+        for row_index in rows {
+            let path: Option<String> = getters[0].get_opt(row_index, "scanFile.path")?;
+            let Some(path) = path else {
+                continue;
+            };
+            let stats_str: Option<String> = getters[1].get_opt(row_index, "scanFile.stats")?;
+            if let Some(parsed) = stats_str.as_deref().and_then(parse_stats_json) {
+                self.stats.insert(path, parsed);
+            }
+        }
+        Ok(())
+    }
 }
 
-fn parse_add_stats(add: &Value) -> FileStats {
-    let stats_json = add
-        .get("stats")
-        .and_then(|v| v.as_str())
-        .and_then(|s| serde_json::from_str::<Value>(s).ok());
+/// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
+/// payload is not valid JSON, so a malformed stats string counts as missing
+/// statistics (`[no stats]` in the verbose view, flagged by `--assert-stats`)
+/// rather than silently passing as an empty entry.
+fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
+    let stats = serde_json::from_str::<Value>(stats_str).ok()?;
 
-    let num_records = stats_json
-        .as_ref()
-        .and_then(|s| s.get("numRecords"))
-        .and_then(|v| v.as_u64());
+    let num_records = stats.get("numRecords").and_then(|v| v.as_u64());
 
     let mut columns: HashMap<String, ColumnStats> = HashMap::new();
 
     // Delta nests stats for struct columns: minValues.profile = {age, score}.
     // Flatten them to dotted leaf keys (profile.age, profile.score) so each leaf
     // reports its own min/max, matching how the kernel skips on nested fields.
-    if let Some(ref stats) = stats_json {
+    {
         for (key, val) in flatten_leaves(stats.get("minValues")) {
             col_entry(&mut columns, key).min = Some(format_stat_value(val));
         }
@@ -163,10 +147,10 @@ fn parse_add_stats(add: &Value) -> FileStats {
         }
     }
 
-    FileStats {
+    Some(FileStats {
         num_records,
         columns,
-    }
+    })
 }
 
 /// Read partition columns from the `metadata` action in the Delta log.
@@ -298,19 +282,15 @@ fn format_stat_value(val: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn flattens_nested_struct_stats_to_dotted_keys() {
-        let add = json!({
-            "path": "f.parquet",
-            "stats": "{\"numRecords\":2,\
-                \"minValues\":{\"name\":\"Eve\",\"profile\":{\"age\":45,\"score\":71.5}},\
-                \"maxValues\":{\"name\":\"Frank\",\"profile\":{\"age\":55,\"score\":82.0}},\
-                \"nullCount\":{\"name\":0,\"profile\":{\"age\":0,\"score\":0}}}"
-        });
+        let stats_str = "{\"numRecords\":2,\
+            \"minValues\":{\"name\":\"Eve\",\"profile\":{\"age\":45,\"score\":71.5}},\
+            \"maxValues\":{\"name\":\"Frank\",\"profile\":{\"age\":55,\"score\":82.0}},\
+            \"nullCount\":{\"name\":0,\"profile\":{\"age\":0,\"score\":0}}}";
 
-        let stats = parse_add_stats(&add);
+        let stats = parse_stats_json(stats_str).expect("valid stats JSON");
 
         let age = stats.columns.get("profile.age").expect("profile.age leaf");
         assert_eq!(age.min.as_deref(), Some("45"));
@@ -326,5 +306,11 @@ mod tests {
         // top-level scalar columns stay flat; the raw struct key is gone
         assert!(stats.columns.contains_key("name"));
         assert!(!stats.columns.contains_key("profile"));
+    }
+
+    #[test]
+    fn malformed_stats_json_counts_as_missing() {
+        assert!(parse_stats_json("not json").is_none());
+        assert!(parse_stats_json("").is_none());
     }
 }

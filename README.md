@@ -75,7 +75,7 @@ Phase 2: Data skipping (min/max statistics) [conservative]
   [DROPPED] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 ```
 
-Files whose `stats` field is missing from the surviving JSON commits appear as `[no stats]`. On checkpointed tables this may reflect a limitation of the JSON-only verbose path, not proof that the table lacks statistics (see Current limitations).
+Files whose `add` action carries no `stats` payload appear as `[no stats]`. Statistics are resolved through the kernel's log replay, which merges JSON commits with checkpoint Parquet, so `[no stats]` means the writer really recorded none — not that the file's commit has been consolidated into a checkpoint.
 
 ## Install
 
@@ -232,7 +232,7 @@ Fail if any file in the table is missing min/max statistics:
 delta-explain s3://warehouse/events --assert-stats
 ```
 
-On long-lived tables, files referenced only by checkpoint Parquet appear as `[no stats]` even when statistics exist; see Current limitations before gating on this.
+Statistics are resolved through the kernel's log replay, checkpoint Parquet included, so a file is flagged only when its `add` action genuinely carries no statistics. Long-lived tables whose older commits have been consolidated into a checkpoint do not produce false positives.
 
 ### Predicate parity
 
@@ -281,7 +281,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
 When the predicate contains unsplittable fragments, the final scan is still sound, but the drop from the partition-only scan can no longer be attributed cleanly to data skipping alone. This is what the `incomplete` confidence label signals.
 
-The per-file statistics (min/max values) are read directly from the Delta log JSON to show *why* each file was kept or dropped.
+The per-file statistics (min/max values) shown in the verbose view come from the `stats` payload the kernel carries on each scan row — produced by the same log replay that drives the counts, checkpoint Parquet included — and are joined with the survivor sets at display time to show *why* each file was kept or dropped.
 
 No query engine is involved. No data files are read. Only metadata.
 
@@ -324,9 +324,9 @@ Numeric types, strings, and booleans are handled. Subqueries, functions, and LIK
 
 ## Current limitations
 
-- **JSON commit log only.** On long-lived tables, files referenced only by checkpoint Parquet appear as `[no stats]`, and `--assert-stats` may report false positives.
+- **Partition columns from JSON commits only.** Partition columns are identified from the `metaData` action in the JSON commits. On a partitioned table whose entire log has been consolidated into a checkpoint (no JSON commits remain after log cleanup, governed by `delta.logRetentionDuration`, default 30 days), partition columns are not detected and partition predicates are misclassified as `stats-safe`.
 
-  Statistics are read from the Delta log JSON files; checkpoint Parquet files are not yet supported. Older JSON commits are removed by Delta's log cleanup (governed by `delta.logRetentionDuration`, default 30 days) once their actions have been consolidated into a checkpoint. Pruning counts (`--min-pruning`) are unaffected because they go through delta-kernel's full log replay, which reads checkpoints. (This is independent of `VACUUM`, which removes data files under `delta.deletedFileRetentionDuration`, default 7 days, not log JSON commits.)
+  Total pruning counts stay correct — the kernel evaluates the full predicate, partition values included — but the Phase 1 / Phase 2 attribution degrades: everything shows up as data skipping. Per-file statistics and `--assert-stats` are unaffected; they go through the kernel's full log replay, which reads checkpoints.
 
 - **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
 

@@ -1,6 +1,6 @@
 [package]
 name = "delta-explain"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Make Delta pruning visible. A CLI that shows step-by-step how partition pruning and data skipping reduce candidate files in a Delta table."
@@ -13,12 +13,12 @@ categories = ["command-line-utilities", "database"]
 authors = ["Christian Del Monte"]
 
 [dependencies]
-delta_kernel = { version = "0.20", features = ["default-engine-rustls", "arrow"] }
+delta_kernel = { version = "0.24", features = ["default-engine-rustls", "arrow"] }
 clap = { version = "4", features = ["derive"] }
 url = "2"
 num-format = "0.4"
 serde_json = "1"
-object_store = "0.12"
+object_store = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
 sqlparser = "0.61"

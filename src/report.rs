@@ -195,8 +195,12 @@ impl PruningReport {
 
             let tag = if kept { "KEPT   " } else { "DROPPED" };
             let size_str = format_size(file.size);
+            // The kernel's ScanFile carries num_records only when the add
+            // action has JSON stats; on stats_parsed-only checkpoints it is
+            // None, so fall back to the parsed stats map.
             let records_str = file
                 .num_records
+                .or_else(|| self.file_stats.get(&file.path).and_then(|s| s.num_records))
                 .map(|n| format!("  {n} records"))
                 .unwrap_or_default();
 
