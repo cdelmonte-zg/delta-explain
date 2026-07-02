@@ -210,10 +210,10 @@ delta-explain \
 
 ### GitHub Action
 
-The repo doubles as a composite action, so the gate is one step:
+The repo doubles as a composite action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@main
+- uses: cdelmonte-zg/delta-explain@v0.3.0
   with:
     table: s3://warehouse/events
     where: "country = 'DE' AND age > 40"
