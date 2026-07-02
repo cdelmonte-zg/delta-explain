@@ -38,20 +38,18 @@ The architecture and design rationale behind v0.2 are written up in detail in th
 
 ## v0.3: Checkpoint support (shipped July 2026)
 
-Goal: work reliably on production tables that have been checkpointed and vacuumed. Shipped as v0.3.0, with one deliberate deviation from the plan: rather than parsing checkpoint Parquet ourselves, the per-file statistics now ride on the kernel's log replay, which reads checkpoints anyway. Less code, same source of truth as the pruning counts.
+Works reliably on production tables that have been checkpointed and vacuumed. The whole analysis rides on the kernel's log replay, which reads checkpoint Parquet natively: one source of truth for counts, per-file statistics, and assertions.
 
-- **Checkpoint coverage without opening checkpoints**: per-file statistics come from the stats payload the kernel carries on each scan row, produced by the same replay that drives the counts, JSON commits and checkpoint Parquet alike. Both checkpoint layouts are covered (`add.stats` JSON and structured `stats_parsed`). `[no stats]` on long-lived tables and the `--assert-stats` false positives are gone.
-- **Partition columns on checkpoint-only logs**: the `metaData` action in the JSON commits stays the primary source; when log cleanup has removed it, partition columns fall back to the kernel-replayed `partitionValues` keys, preserving the two-phase attribution.
-- **delta-kernel-rs 0.20 → 0.24** (and `object_store` 0.13).
+- **Checkpoint coverage**: per-file statistics come from the stats payload the kernel carries on each scan row, JSON commits and checkpoint Parquet alike, in both layouts (`add.stats` JSON and structured `stats_parsed`). No more `[no stats]` on long-lived tables, no more `--assert-stats` false positives.
+- **Partition columns on checkpoint-only logs**: the `metaData` action in the JSON commits is the primary source; when log cleanup has removed it, partition columns fall back to the kernel-replayed `partitionValues` keys, preserving the two-phase attribution.
+- **delta-kernel-rs 0.24**, `object_store` 0.13.
 - **Internal architecture**: lib/bin split; `scan`, `attribution`, `gates`, `render`, and `error` modules; the attribution arithmetic and the CI gates are pure and unit-tested.
-
-Not shipped, moved to v0.4: type coercions.
 
 ## v0.4: Type hardening and smarter predicate analysis (planned)
 
 Goal: reduce false negatives for common patterns, without becoming an optimizer.
 
-- **Type coercions** (moved from v0.3): correct handling of decimal, date, timestamp, boolean, and narrow-integer comparisons against column types
+- **Type coercions**: correct handling of decimal, date, timestamp, boolean, and narrow-integer comparisons against column types
 - **Light normalization**: flatten nested ANDs, push down simple negations, simplify constant expressions, treat IN as OR-on-same-column
 - **OR factoring on single column**: recognize `(col = 'A' OR col = 'B')` as partition-safe when `col` is a partition column
 - **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.)
