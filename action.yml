@@ -35,6 +35,10 @@ inputs:
     description: "Use the cloud provider's default credential chain"
     required: false
     default: "false"
+  profile:
+    description: "AWS profile from ~/.aws/credentials and ~/.aws/config"
+    required: false
+    default: ""
   version:
     description: "delta-explain release to install (e.g. 0.4.0), or 'latest'"
     required: false
@@ -56,9 +60,11 @@ runs:
   steps:
     - name: Install delta-explain
       shell: bash
+      env:
+        DX_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        VERSION="${{ inputs.version }}"
+        VERSION="$DX_VERSION"
         ASSET="delta-explain-x86_64-unknown-linux-gnu.tar.gz"
         # The latest/download shortcut avoids the API, which is rate-limited
         # for unauthenticated calls from shared runner IPs.
@@ -75,17 +81,29 @@ runs:
     - name: Run delta-explain
       id: run
       shell: bash
+      # Inputs come in through env, never interpolated into the script:
+      # quotes, $(), or newlines in an input stay data instead of code.
+      env:
+        DX_TABLE: ${{ inputs.table }}
+        DX_WHERE: ${{ inputs.where }}
+        DX_MIN_PRUNING: ${{ inputs.min-pruning }}
+        DX_ASSERT_STATS: ${{ inputs.assert-stats }}
+        DX_AT_VERSION: ${{ inputs.at-version }}
+        DX_ENV_CREDS: ${{ inputs.env-creds }}
+        DX_PROFILE: ${{ inputs.profile }}
+        DX_OPTIONS: ${{ inputs.options }}
       run: |
         set -uo pipefail
-        args=("${{ inputs.table }}" --format json)
-        [ -n "${{ inputs.where }}" ] && args+=(-w "${{ inputs.where }}")
-        [ -n "${{ inputs.min-pruning }}" ] && args+=(--min-pruning "${{ inputs.min-pruning }}")
-        [ "${{ inputs.assert-stats }}" = "true" ] && args+=(--assert-stats)
-        [ -n "${{ inputs.at-version }}" ] && args+=(--at-version "${{ inputs.at-version }}")
-        [ "${{ inputs.env-creds }}" = "true" ] && args+=(--env-creds)
+        args=("$DX_TABLE" --format json)
+        [ -n "$DX_WHERE" ] && args+=(-w "$DX_WHERE")
+        [ -n "$DX_MIN_PRUNING" ] && args+=(--min-pruning "$DX_MIN_PRUNING")
+        [ "$DX_ASSERT_STATS" = "true" ] && args+=(--assert-stats)
+        [ -n "$DX_AT_VERSION" ] && args+=(--at-version "$DX_AT_VERSION")
+        [ "$DX_ENV_CREDS" = "true" ] && args+=(--env-creds)
+        [ -n "$DX_PROFILE" ] && args+=(--profile "$DX_PROFILE")
         while IFS= read -r opt; do
           [ -n "$opt" ] && args+=(--option "$opt")
-        done <<< "${{ inputs.options }}"
+        done <<< "$DX_OPTIONS"
 
         set +e
         delta-explain "${args[@]}" | tee "$RUNNER_TEMP/dx-report.json"

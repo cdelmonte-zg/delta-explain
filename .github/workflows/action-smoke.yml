@@ -4,6 +4,9 @@ name: action-smoke
 # with the latest released binary. Keeps the action honest on every change to
 # action.yml and catches release-asset renames.
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
