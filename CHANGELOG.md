@@ -34,6 +34,12 @@ follow SemVer relative to that field.
   `--env-creds` fell through to instance-only providers. SSO,
   `credential_process`, and role-assumption profiles are not resolved; the
   error points at `aws configure export-credentials`.
+- **GitHub Action.** The repo doubles as a composite action:
+  `uses: cdelmonte-zg/delta-explain@<ref>` installs a released binary and
+  runs the gate with CLI-mirroring inputs, failing the job when an
+  assertion fails and exposing `pruning-pct`, `final-files`, and `result`
+  as step outputs. An action-smoke workflow exercises pass and fail paths
+  against the committed fixtures.
 
 ## [0.3.0] — 2026-07-02
 

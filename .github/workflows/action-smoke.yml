@@ -1,0 +1,47 @@
+name: action-smoke
+
+# Exercises the composite action in this repo against the committed fixtures,
+# with the latest released binary. Keeps the action honest on every change to
+# action.yml and catches release-asset renames.
+
+on:
+  push:
+    branches: [main]
+    paths: ["action.yml", ".github/workflows/action-smoke.yml"]
+  pull_request:
+    paths: ["action.yml", ".github/workflows/action-smoke.yml"]
+
+jobs:
+  gate-passes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Healthy layout passes the gate
+        id: gate
+        uses: ./
+        with:
+          table: fixtures/test-table
+          where: "country = 'DE' AND age > 40"
+          min-pruning: "60"
+      - name: Outputs are populated
+        run: |
+          test "${{ steps.gate.outputs.result }}" = "pass"
+          test -n "${{ steps.gate.outputs.pruning-pct }}"
+          test "${{ steps.gate.outputs.final-files }}" = "1"
+
+  gate-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flat layout fails the gate
+        id: gate
+        continue-on-error: true
+        uses: ./
+        with:
+          table: fixtures/test-table-flat
+          where: "country = 'DE' AND age > 40"
+          min-pruning: "60"
+      - name: The failure is the assertion, with outputs intact
+        run: |
+          test "${{ steps.gate.outcome }}" = "failure"
+          test "${{ steps.gate.outputs.result }}" = "fail"
