@@ -9,6 +9,13 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- **`--at-version <N>` (time travel).** Analyze the table at a historical
+  version instead of the latest: the kernel replays the log only up to that
+  version, so pruning is computed against the historical layout. Enables
+  before/after comparisons around OPTIMIZE or a careless rewrite.
+
 ## [0.3.0] — 2026-07-02
 
 Per-file statistics now come from delta-kernel's log replay instead of a
