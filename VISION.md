@@ -45,18 +45,25 @@ Works reliably on production tables that have been checkpointed and vacuumed. Th
 - **delta-kernel-rs 0.24**, `object_store` 0.13.
 - **Internal architecture**: lib/bin split; `scan`, `attribution`, `gates`, `render`, and `error` modules; the attribution arithmetic and the CI gates are pure and unit-tested.
 
-## v0.4: Type hardening and smarter predicate analysis (planned)
+## v0.4: Type hardening and the production sprint (shipped July 2026)
 
-Goal: make predicates on real tables work, without becoming an optimizer. Date and timestamp coercion is the gate: most production tables are partitioned or clustered by date, and a predicate that cannot be typed cannot prune, so today `event_date = '2026-07-01'` shows 0% where an engine prunes almost everything.
+Date and timestamp coercion was the gate to real tables: most production tables are partitioned or clustered by date, and a predicate that cannot be typed cannot prune. Shipped as v0.4.0, together with the adoption and trust items from the tracks below.
 
-- **Type coercions**: correct handling of date, timestamp, decimal, boolean, and narrow-integer comparisons against column types
+- **Type coercions**: `DATE`, `TIMESTAMP` (UTC-normalized), `TIMESTAMP_NTZ` (wall-clock, offsets rejected as ambiguous), `DECIMAL` (exact scale), and narrow integers, resolved against the Delta schema; `DATE '...'` / `TIMESTAMP '...'` literal forms accepted
+- **Time travel**: `--at-version <N>`
+- Shipped alongside: `--profile` (AWS shared config), the composite GitHub Action, and the first differential harness
+
+## v0.5: Smarter predicate analysis (planned)
+
+Goal: reduce false negatives for common patterns, without becoming an optimizer. The substrate comes first: replace sqlparser with a small Pratt parser producing our own minimal predicate AST (one parse, positions in errors, no dependency churn), on which the rewrites below become straightforward.
+
 - **Light normalization**: flatten nested ANDs, push down simple negations, simplify constant expressions, treat IN as OR-on-same-column
 - **OR factoring on single column**: recognize `(col = 'A' OR col = 'B')` as partition-safe when `col` is a partition column
 - **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.)
 
 This is the complexity ceiling for the predicate analyzer. Anything beyond this crosses into optimizer territory.
 
-## v0.5: Production tables (planned)
+## v0.6: Production tables (planned)
 
 Goal: honest and usable on tables that look like production, not like fixtures.
 
@@ -65,7 +72,7 @@ Goal: honest and usable on tables that look like production, not like fixtures.
 - **Time travel**: `--at-version <N>` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode. Shipped ahead of schedule in the pre-webinar sprint.
 - **Exotic log shapes**: multi-part and V2/UUID-named checkpoints, log compaction. The kernel handles them; the test matrix should prove delta-explain does too.
 
-## v0.6: Diagnostic layer (planned)
+## v0.7: Diagnostic layer (planned)
 
 Goal: shift from "file counter" to "pruning advisor".
 
@@ -74,8 +81,9 @@ Goal: shift from "file counter" to "pruning advisor".
 
 ## Adoption track
 
-- **Standard AWS credential chain** (profiles, SSO): today `--env-creds` reads raw environment variables only, which is the first wall an AWS user hits
-- **GitHub Action** wrapping the published container, so the CI gate is a one-line `uses:` instead of an install script
+- **AWS shared-config profiles**: shipped in v0.4.0 (`--profile`; SSO and `credential_process` produce an actionable error pointing at `aws configure export-credentials`)
+- **GitHub Action**: shipped in v0.4.0 as a composite action at the repo root, one-line `uses:` with CLI-mirroring inputs and step outputs
+- Next: full SSO resolution if demand shows up, and richer Action outputs
 
 ## Trust track
 
