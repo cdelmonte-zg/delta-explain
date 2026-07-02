@@ -9,6 +9,46 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-02
+
+Per-file statistics now come from delta-kernel's log replay instead of a
+direct read of the JSON commits. The JSON `schema_version` is unchanged
+(`0.1.0`): the document shape is identical, but `stats` coverage now includes
+files whose `add` action survives only inside checkpoint Parquet.
+
+### Changed
+
+- **Per-file statistics are sourced from the kernel scan.** The verbose view
+  reads the `stats` payload the kernel carries on each scan row, produced by
+  the same log replay that drives the pruning counts, checkpoint Parquet
+  included. On long-lived tables after log cleanup, files referenced only by
+  a checkpoint now show real min/max statistics instead of `[no stats]`.
+- **`--assert-stats` no longer false-positives on checkpointed logs.** A file
+  is flagged only when its `add` action genuinely carries no statistics. On
+  tables whose older commits were consolidated into a checkpoint, the
+  assertion previously failed even though statistics existed; it now passes.
+  If a pipeline relied on that failure as a proxy for "the log was
+  checkpointed", it will now (correctly) pass.
+- **delta-kernel-rs 0.20 → 0.24** (and `object_store` 0.12 → 0.13). No
+  behavioral change beyond the stats sourcing above; the full test suite
+  passes unchanged on the new kernel.
+
+### Added
+
+- **`test-table-checkpointed` fixture**: three appends, a checkpoint at v2,
+  every JSON commit removed — the shape `delta.logRetentionDuration` cleanup
+  produces. Integration tests lock in stats display, pruning, and
+  `--assert-stats` behavior on a checkpoint-only log.
+
+### Known limitations
+
+- Partition columns are still identified from the `metaData` action in the
+  JSON commits. On a *partitioned* table whose entire log lives in a
+  checkpoint, partition predicates are misclassified as `stats-safe`: total
+  pruning counts stay correct, but the per-phase attribution degrades. Needs
+  either checkpoint parsing for `metaData` or a public partition-columns
+  accessor in the kernel.
+
 ## [0.2.3] — 2026-06-20
 
 Data skipping on nested (struct) columns addressed by dotted paths
