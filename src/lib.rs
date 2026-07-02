@@ -8,4 +8,5 @@
 pub mod predicate_analyzer;
 pub mod predicate_parser;
 pub mod report;
+pub mod scan;
 pub mod stats;

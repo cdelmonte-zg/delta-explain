@@ -1,11 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
-use delta_kernel::engine_data::{FilteredRowVisitor, GetData, RowIndexIterator, TypedGetData};
-use delta_kernel::expressions::ColumnName;
-use delta_kernel::scan::ScanBuilder;
-use delta_kernel::schema::DataType;
-use delta_kernel::{DeltaResult, Engine, Snapshot};
 use futures::TryStreamExt;
 use object_store::path::Path as ObjectPath;
 use object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
@@ -56,76 +51,11 @@ impl FileStats {
     }
 }
 
-/// Read per-file stats from the kernel's scan metadata.
-///
-/// Runs a predicate-less scan and reads the `stats` JSON string the kernel
-/// carries on each scan row. Because the kernel's log replay merges the JSON
-/// commits with checkpoint Parquet, this also covers files whose `add` action
-/// survives only inside a checkpoint — the blind spot of reading the JSON
-/// commits directly. Files whose Add action carries no `stats` payload get no
-/// entry; the report layer treats their absence as "no stats".
-pub fn read_stats_from_scan(
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
-) -> Result<HashMap<String, FileStats>, delta_kernel::Error> {
-    // include_all_stats_columns() requests the parsed stats schema, which is
-    // what makes the kernel populate the scan row's `stats` field via
-    // COALESCE(add.stats, ToJson(add.stats_parsed)). Without it, a checkpoint
-    // written with delta.checkpoint.writeStatsAsJson=false (structured
-    // stats_parsed only, no JSON stats) would come back with no stats at all.
-    let scan = ScanBuilder::new(snapshot)
-        .include_all_stats_columns()
-        .build()?;
-    let mut visitor = StatsVisitor {
-        stats: HashMap::new(),
-    };
-    for res in scan.scan_metadata(engine)? {
-        let scan_meta = res?;
-        visitor.visit_rows_of(&scan_meta.scan_files)?;
-    }
-    Ok(visitor.stats)
-}
-
-struct StatsVisitor {
-    stats: HashMap<String, FileStats>,
-}
-
-static STATS_COLUMNS: LazyLock<(Vec<ColumnName>, Vec<DataType>)> = LazyLock::new(|| {
-    (
-        vec![ColumnName::new(["path"]), ColumnName::new(["stats"])],
-        vec![DataType::STRING, DataType::STRING],
-    )
-});
-
-impl FilteredRowVisitor for StatsVisitor {
-    fn selected_column_names_and_types(&self) -> (&'static [ColumnName], &'static [DataType]) {
-        (&STATS_COLUMNS.0, &STATS_COLUMNS.1)
-    }
-
-    fn visit_filtered<'a>(
-        &mut self,
-        getters: &[&'a dyn GetData<'a>],
-        rows: RowIndexIterator<'_>,
-    ) -> DeltaResult<()> {
-        for row_index in rows {
-            let path: Option<String> = getters[0].get_opt(row_index, "scanFile.path")?;
-            let Some(path) = path else {
-                continue;
-            };
-            let stats_str: Option<String> = getters[1].get_opt(row_index, "scanFile.stats")?;
-            if let Some(parsed) = stats_str.as_deref().and_then(parse_stats_json) {
-                self.stats.insert(path, parsed);
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
 /// payload is not valid JSON, so a malformed stats string counts as missing
 /// statistics (`[no stats]` in the verbose view, flagged by `--assert-stats`)
 /// rather than silently passing as an empty entry.
-fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
+pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
     let stats = serde_json::from_str::<Value>(stats_str).ok()?;
 
     let num_records = stats.get("numRecords").and_then(|v| v.as_u64());
