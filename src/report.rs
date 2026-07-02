@@ -200,11 +200,7 @@ impl PruningReport {
             // None, so fall back to the parsed stats map.
             let records_str = file
                 .num_records
-                .or_else(|| {
-                    self.file_stats
-                        .get(&file.path)
-                        .and_then(|s| s.num_records)
-                })
+                .or_else(|| self.file_stats.get(&file.path).and_then(|s| s.num_records))
                 .map(|n| format!("  {n} records"))
                 .unwrap_or_default();
 
