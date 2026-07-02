@@ -222,7 +222,7 @@ The repo doubles as a composite action, so the gate is one step:
     env-creds: "true"
 ```
 
-Inputs mirror the CLI flags (`table`, `where`, `min-pruning`, `assert-stats`, `at-version`, `env-creds`, plus `options` as one `KEY=VALUE` per line, and `version` to pin a release; default `latest`). The step fails when a gate fails, and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps:
+Inputs mirror the CLI flags (`table`, `where`, `min-pruning`, `assert-stats`, `at-version`, `env-creds`, `profile`, plus `options` as one `KEY=VALUE` per line, and `version` to pin a release; default `latest`). The step fails when a gate fails, and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps:
 
 ```yaml
 - name: Comment the pruning percentage
