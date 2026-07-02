@@ -56,9 +56,11 @@ def spark_ground_truth():
     # docker exec + bash -lc mangles SQL string-literal quoting.
     with open(HERE / "work" / "predicates.json", "w") as f:
         json.dump(PREDICATES, f)
+    fresh = os.environ.get("DX_DIFF_FRESH", "")
     subprocess.run(
         [
-            "docker", "exec", CONTAINER, "bash", "-lc",
+            "docker", "exec", "-e", f"DX_DIFF_FRESH={fresh}",
+            CONTAINER, "bash", "-lc",
             "cd /home/jovyan/work && $SPARK_HOME/bin/spark-submit "
             "--packages io.delta:delta-spark_2.13:4.3.0,"
             "org.apache.hadoop:hadoop-aws:3.4.2 "
