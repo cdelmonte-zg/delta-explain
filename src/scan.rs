@@ -15,6 +15,7 @@ use delta_kernel::scan::state::ScanFile;
 use delta_kernel::schema::DataType;
 use delta_kernel::{DeltaResult, Engine, Snapshot};
 
+use crate::error::Result;
 use crate::report::FileInfo;
 use crate::stats::{FileStats, parse_stats_json};
 
@@ -30,7 +31,7 @@ pub struct BaselineScan {
 /// single time. The stats come from the `stats` JSON string the kernel
 /// carries on each scan row. Files whose Add action carries no `stats`
 /// payload get no entry; the report layer treats their absence as "no stats".
-pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> DeltaResult<BaselineScan> {
+pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<BaselineScan> {
     // include_all_stats_columns() requests the parsed stats schema, which is
     // what makes the kernel populate the scan row's `stats` field via
     // COALESCE(add.stats, ToJson(add.stats_parsed)). Without it, a checkpoint
@@ -59,7 +60,7 @@ pub fn collect_files(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
     predicate: Option<&Predicate>,
-) -> DeltaResult<Vec<FileInfo>> {
+) -> Result<Vec<FileInfo>> {
     let mut builder = ScanBuilder::new(snapshot);
     if let Some(pred) = predicate {
         builder = builder.with_predicate(Arc::new(pred.clone()));

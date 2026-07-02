@@ -743,6 +743,7 @@ dependencies = [
  "rstest",
  "serde_json",
  "sqlparser",
+ "thiserror 2.0.18",
  "tokio",
  "url",
 ]

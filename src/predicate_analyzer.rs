@@ -2,6 +2,8 @@ use sqlparser::ast::{BinaryOperator, Expr as SqlExpr};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::error::Error;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
     Exact,
@@ -24,15 +26,15 @@ pub struct PredicateAnalysis {
     pub notes: Vec<AnalysisNote>,
 }
 
-pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, String> {
+pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, Error> {
     // 1. Parse sql
     let dialect = GenericDialect {};
     let mut parser = Parser::new(&dialect)
         .try_with_sql(input)
-        .map_err(|e| format!("Parse error: {e}"))?;
+        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
     let sql_expr = parser
         .parse_expr()
-        .map_err(|e| format!("Parse error: {e}"))?;
+        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
 
     let mut partition_frags: Vec<String> = Vec::new();
     let mut stats_frags: Vec<String> = Vec::new();

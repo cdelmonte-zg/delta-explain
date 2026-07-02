@@ -1,0 +1,35 @@
+//! delta-explain's error type.
+//!
+//! Kernel errors pass through transparently (log replay, scanning, and cloud
+//! storage all surface as [`delta_kernel::Error`]); the other variants name
+//! the failure domains delta-explain owns itself. Before this enum existed,
+//! everything was funneled through `delta_kernel::Error::Generic(String)`.
+
+/// Errors produced by delta-explain.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// Errors surfaced by delta-kernel-rs: log replay, metadata scans,
+    /// snapshot resolution, object-store access made through the kernel.
+    #[error(transparent)]
+    Kernel(#[from] delta_kernel::Error),
+
+    /// The predicate could not be classified or lowered: invalid SQL, an
+    /// unsupported construct, or a literal that cannot be typed.
+    #[error("{0}")]
+    Predicate(String),
+
+    /// The table path or URI could not be resolved.
+    #[error("{0}")]
+    TableUri(String),
+
+    /// Invalid command-line input (e.g. a malformed --option value).
+    #[error("{0}")]
+    Options(String),
+
+    /// Reading the Delta log directly through the object store failed
+    /// (currently only the partition-columns reader takes this path).
+    #[error("{0}")]
+    Storage(String),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

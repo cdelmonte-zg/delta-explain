@@ -7,6 +7,8 @@ use object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
 use serde_json::Value;
 use url::Url;
 
+use crate::error::Error;
+
 /// Per-file statistics extracted from the Delta log.
 pub struct FileStats {
     pub num_records: Option<u64>,
@@ -91,18 +93,18 @@ pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
 pub fn read_partition_columns_from_log(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, delta_kernel::Error> {
+) -> Result<Vec<String>, Error> {
     let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot create tokio runtime: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot create tokio runtime: {e}")))?;
     rt.block_on(read_partition_columns_async(table_url, store))
 }
 
 async fn read_partition_columns_async(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, delta_kernel::Error> {
+) -> Result<Vec<String>, Error> {
     let (_, table_prefix) = object_store::parse_url(table_url)
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot parse table URL: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot parse table URL: {e}")))?;
 
     let log_prefix = if table_prefix.as_ref().is_empty() {
         ObjectPath::from("_delta_log")
@@ -117,7 +119,7 @@ async fn read_partition_columns_async(
         .list(Some(&log_prefix))
         .try_collect()
         .await
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot list delta log: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot list delta log: {e}")))?;
 
     let mut json_paths: Vec<ObjectPath> = objects
         .into_iter()
@@ -133,10 +135,10 @@ async fn read_partition_columns_async(
         let data = store
             .get(&path)
             .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read {path}: {e}")))?
+            .map_err(|e| Error::Storage(format!("Cannot read {path}: {e}")))?
             .bytes()
             .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read bytes {path}: {e}")))?;
+            .map_err(|e| Error::Storage(format!("Cannot read bytes {path}: {e}")))?;
 
         let content = String::from_utf8_lossy(&data);
 

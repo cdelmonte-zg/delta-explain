@@ -5,10 +5,11 @@ use std::sync::Arc;
 use clap::Parser;
 use delta_kernel::engine::default::DefaultEngineBuilder;
 use delta_kernel::engine::default::storage::store_from_url_opts;
-use delta_kernel::{DeltaResult, Engine, Snapshot};
+use delta_kernel::{Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
 
+use delta_explain::error::{Error, Result};
 use delta_explain::report::{OutputFormat, OverallResult, PhaseResult, PruningReport};
 use delta_explain::{predicate_analyzer, predicate_parser, scan, stats};
 
@@ -86,7 +87,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse_table_uri(path: &str) -> DeltaResult<Url> {
+fn parse_table_uri(path: &str) -> Result<Url> {
     if let Ok(mut url) = Url::parse(path)
         && url.scheme() != "file"
         && url.has_host()
@@ -103,10 +104,9 @@ fn parse_table_uri(path: &str) -> DeltaResult<Url> {
         return Ok(url);
     }
     let absolute = std::fs::canonicalize(path)
-        .map_err(|e| delta_kernel::Error::Generic(format!("Invalid path '{path}': {e}")))?;
-    Url::from_directory_path(&absolute).map_err(|_| {
-        delta_kernel::Error::Generic(format!("Cannot convert path to URL: {absolute:?}"))
-    })
+        .map_err(|e| Error::TableUri(format!("Invalid path '{path}': {e}")))?;
+    Url::from_directory_path(&absolute)
+        .map_err(|_| Error::TableUri(format!("Cannot convert path to URL: {absolute:?}")))
 }
 
 struct EngineAndStore {
@@ -114,7 +114,7 @@ struct EngineAndStore {
     store: Arc<DynObjectStore>,
 }
 
-fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
+fn build_engine(url: &Url, cli: &Cli) -> Result<EngineAndStore> {
     let mut opts: HashMap<String, String> = HashMap::new();
 
     if let Some(ref region) = cli.region {
@@ -128,7 +128,7 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     }
     for option in &cli.options {
         let (key, value) = option.split_once('=').ok_or_else(|| {
-            delta_kernel::Error::Generic(format!(
+            Error::Options(format!(
                 "Invalid option format '{option}', expected KEY=VALUE"
             ))
         })?;
@@ -144,7 +144,7 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     })
 }
 
-fn try_main() -> DeltaResult<()> {
+fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let start = std::time::Instant::now();
 
@@ -178,12 +178,10 @@ fn try_main() -> DeltaResult<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)
-            .map_err(delta_kernel::Error::Generic)?;
+        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)?;
 
         let prev_count = if let Some(part_frag) = &analysis.partition_safe {
-            let part_pred = predicate_parser::parse_predicate(part_frag, &schema)
-                .map_err(delta_kernel::Error::Generic)?;
+            let part_pred = predicate_parser::parse_predicate(part_frag, &schema)?;
             let surviving =
                 scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
             let surviving_paths: HashSet<String> =
@@ -205,8 +203,7 @@ fn try_main() -> DeltaResult<()> {
         };
 
         if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
-            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)
-                .map_err(delta_kernel::Error::Generic)?;
+            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)?;
             let surviving =
                 scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
             let surviving_paths: HashSet<String> =
