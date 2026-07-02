@@ -499,3 +499,55 @@ if not already_exists(CHECKPOINTED_PART_TABLE_PATH):
         removed += 1
     print(f"Checkpointed partitioned table created at {CHECKPOINTED_PART_TABLE_PATH}")
     print(f"  6 files across DE/US/IT, checkpoint at v5, {removed} JSON commits removed")
+
+
+# === test-table-temporal (date partition + timestamp/decimal/narrow ints) ==
+# The production-shaped table: partitioned by a DATE column (the single most
+# common layout in the wild), with per-file ranges on a TIMESTAMP column, a
+# DECIMAL(9,2) amount, and narrow integer columns. Exercises literal coercion:
+# without it, `event_date = '2026-07-02'` is a string-vs-date mismatch and the
+# kernel conservatively keeps everything.
+
+TEMPORAL_TABLE_PATH = str(HERE / "test-table-temporal")
+
+
+def temporal_batch(day, hours, amounts, smalls, tinies):
+    import datetime as dt
+    base = dt.datetime(2026, 7, day, tzinfo=dt.timezone.utc)
+    return pa.table({
+        "event_date": pa.array([dt.date(2026, 7, day)] * len(hours), pa.date32()),
+        "ts": pa.array([base + dt.timedelta(hours=h) for h in hours],
+                       pa.timestamp("us", tz="UTC")),
+        "amount": pa.array([str(a) for a in amounts], pa.string()).cast(pa.decimal128(9, 2)),
+        "small": pa.array(smalls, pa.int16()),
+        "tiny": pa.array(tinies, pa.int8()),
+    })
+
+
+if not already_exists(TEMPORAL_TABLE_PATH):
+    batches_t = [
+        # day 1: two files, morning and evening
+        temporal_batch(1, [1, 2, 3], ["10.00", "20.50", "30.00"], [10, 20, 30], [1, 2, 3]),
+        temporal_batch(1, [20, 21, 22], ["40.00", "50.25", "60.00"], [40, 50, 60], [4, 5, 6]),
+        # day 2: two files
+        temporal_batch(2, [1, 2, 3], ["70.00", "80.75", "90.00"], [70, 80, 90], [7, 8, 9]),
+        temporal_batch(2, [20, 21, 22], ["100.00", "110.50", "120.00"], [100, 110, 120], [10, 11, 12]),
+        # day 3: two files
+        temporal_batch(3, [1, 2, 3], ["130.00", "140.25", "150.00"], [-30, -20, -10], [13, 14, 15]),
+        temporal_batch(3, [20, 21, 22], ["160.00", "170.75", "180.00"], [-60, -50, -40], [16, 17, 18]),
+    ]
+    write_deltalake(
+        TEMPORAL_TABLE_PATH,
+        batches_t[0],
+        partition_by=["event_date"],
+        mode="overwrite",
+    )
+    for batch in batches_t[1:]:
+        write_deltalake(
+            TEMPORAL_TABLE_PATH,
+            batch,
+            partition_by=["event_date"],
+            mode="append",
+        )
+    print(f"Temporal table created at {TEMPORAL_TABLE_PATH}")
+    print(f"  6 files across 2026-07-01/02/03; ts, decimal(9,2), int16, int8 ranges per file")

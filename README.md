@@ -321,17 +321,13 @@ age IS NULL
 payload.age > 30
 ```
 
-Numeric types, strings, and booleans are handled. Subqueries, functions, and LIKE are not supported. See Current limitations for the type matrix.
+Literals are resolved against the Delta schema: numeric types (including `SHORT`, `BYTE`, and `DECIMAL`), strings, booleans, and temporal types. A quoted `'2026-07-01'` compared to a `DATE` or `TIMESTAMP` column coerces to the column type, and the explicit `DATE '...'` / `TIMESTAMP '...'` forms work too. Subqueries, functions, and LIKE are not supported. See Current limitations for the type matrix.
 
 ## Current limitations
 
 - **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
 
   Predicates on columns past this index are still classified as `stats-safe` but contribute no pruning, because the column's min/max never appears in the log. (`stats.mode` reflects per-table coverage of the indexed columns, not per-predicate reachability, so it can read `exact` even when the predicate column is unreachable by stats.)
-
-- **DATE, TIMESTAMP, DECIMAL, and narrow integers not yet handled.** SQL literals on these types are not constructed against the Delta schema, so the comparison cannot be evaluated soundly from metadata and files are kept conservatively even when statistics would allow elimination.
-
-  SQL literals are resolved correctly for `INT`, `LONG`, `FLOAT`, and `DOUBLE`. `SHORT` and `BYTE` are the narrow integer types that remain unhandled.
 
 - **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
 
