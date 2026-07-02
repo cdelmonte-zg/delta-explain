@@ -10,7 +10,9 @@
 //! change between releases without semver guarantees. The CLI surface and the
 //! versioned JSON output schema are the stable contracts.
 
+pub mod attribution;
 pub mod error;
+pub mod gates;
 pub mod predicate_analyzer;
 pub mod predicate_parser;
 pub mod report;
