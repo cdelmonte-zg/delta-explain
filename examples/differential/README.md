@@ -22,6 +22,10 @@ docker compose up -d        # MinIO on :9010, Spark container (first run
 python3 run_differential.py # delta-explain on PATH, or DX_BIN=/path/to/bin
 ```
 
+The table is written once and reused across runs. After changing the layout
+in `spark_ground_truth.py`, or on a stale MinIO volume, force a rewrite with
+`DX_DIFF_FRESH=1 python3 run_differential.py`.
+
 The predicate matrix covers equality and ranges on partition and data
 columns, AND/OR mixes (including the `unsplittable` OR case), `IN`,
 `BETWEEN`, `NOT`, a floating-point bound, and an empty-result predicate.

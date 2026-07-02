@@ -44,10 +44,18 @@ with open("/home/jovyan/work/predicates.json") as f:
     predicates = json.load(f)
 
 # ── Table: written once, layout with real pruning structure ─────────
-try:
-    spark.read.format("delta").load(TABLE).limit(1).collect()
-    print("table exists, reusing")
-except Exception:
+# DX_DIFF_FRESH=1 forces a rewrite: an old MinIO volume would otherwise keep
+# serving a table whose layout no longer matches what this script writes.
+fresh = os.environ.get("DX_DIFF_FRESH") == "1"
+exists = False
+if not fresh:
+    try:
+        spark.read.format("delta").load(TABLE).limit(1).collect()
+        exists = True
+        print("table exists, reusing (DX_DIFF_FRESH=1 to rewrite)")
+    except Exception:
+        pass
+if not exists:
     N = 60000
     df = (
         spark.range(N)
