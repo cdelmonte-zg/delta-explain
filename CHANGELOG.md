@@ -15,6 +15,18 @@ follow SemVer relative to that field.
   version instead of the latest: the kernel replays the log only up to that
   version, so pruning is computed against the historical layout. Enables
   before/after comparisons around OPTIMIZE or a careless rewrite.
+- **Temporal and narrow-type literal coercion.** Predicates on `DATE`,
+  `TIMESTAMP`, `TIMESTAMP_NTZ`, `DECIMAL`, `SHORT`, and `BYTE` columns now
+  resolve their literals against the Delta schema, so
+  `event_date = '2026-07-02'` prunes date partitions instead of being kept
+  conservatively as a string-vs-date mismatch. Quoted strings coerce by
+  column type; the explicit `DATE '...'` / `TIMESTAMP '...'` forms are also
+  accepted (for TIMESTAMP, RFC 3339 offsets normalize to UTC and bare dates
+  mean midnight UTC; TIMESTAMP_NTZ is wall-clock and rejects offset-bearing
+  literals as ambiguous). Decimal literals must fit the column scale; rounding a predicate
+  bound silently would change its meaning. New `test-table-temporal`
+  fixture: date-partitioned, with timestamp, decimal, and narrow-int
+  per-file ranges.
 
 ## [0.3.0] — 2026-07-02
 
