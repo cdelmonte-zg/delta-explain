@@ -10,8 +10,11 @@ use object_store::DynObjectStore;
 use url::Url;
 
 use delta_explain::error::{Error, Result};
-use delta_explain::report::{OutputFormat, OverallResult, PruningReport};
-use delta_explain::{attribution, gates, predicate_analyzer, predicate_parser, scan, stats};
+use delta_explain::render::OutputFormat;
+use delta_explain::report::{OverallResult, PruningReport};
+use delta_explain::{
+    attribution, gates, predicate_analyzer, predicate_parser, render, scan, stats,
+};
 
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
@@ -229,8 +232,8 @@ fn try_main() -> Result<()> {
     // ── Output ──────────────────────────────────────────────────────
 
     match output_format {
-        OutputFormat::Text => report.print_text(cli.verbose, cli.predicate.as_deref()),
-        OutputFormat::Json => report.print_json(cli.predicate.as_deref()),
+        OutputFormat::Text => render::print_text(&report, cli.verbose, cli.predicate.as_deref()),
+        OutputFormat::Json => render::print_json(&report, cli.predicate.as_deref()),
     }
 
     if matches!(report.overall_result, Some(OverallResult::Fail)) {

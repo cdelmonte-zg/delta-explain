@@ -15,6 +15,7 @@ pub mod error;
 pub mod gates;
 pub mod predicate_analyzer;
 pub mod predicate_parser;
+pub mod render;
 pub mod report;
 pub mod scan;
 pub mod stats;

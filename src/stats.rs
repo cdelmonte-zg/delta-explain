@@ -22,37 +22,6 @@ pub struct ColumnStats {
     pub null_count: Option<u64>,
 }
 
-impl FileStats {
-    pub fn format_compact(&self) -> String {
-        if self.columns.is_empty() {
-            return if self.num_records.is_some() {
-                String::new()
-            } else {
-                "  [no stats]".into()
-            };
-        }
-
-        let mut parts: Vec<String> = Vec::new();
-        let mut cols: Vec<(&String, &ColumnStats)> = self.columns.iter().collect();
-        cols.sort_by_key(|(k, _)| *k);
-
-        for (col, stats) in cols {
-            match (&stats.min, &stats.max) {
-                (Some(min), Some(max)) => parts.push(format!("{col}: {min}..{max}")),
-                (Some(min), None) => parts.push(format!("{col}: min={min}")),
-                (None, Some(max)) => parts.push(format!("{col}: max={max}")),
-                (None, None) => {}
-            }
-        }
-
-        if parts.is_empty() {
-            String::new()
-        } else {
-            format!("  stats({})", parts.join(", "))
-        }
-    }
-}
-
 /// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
 /// payload is not valid JSON, so a malformed stats string counts as missing
 /// statistics (`[no stats]` in the verbose view, flagged by `--assert-stats`)
