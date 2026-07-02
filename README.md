@@ -154,6 +154,7 @@ Options:
       --format <FORMAT>     Output format: text (default) or json
       --min-pruning <PCT>   Fail if total pruning is below this percentage
       --assert-stats        Fail if any file is missing statistics
+      --at-version <N>      Analyze the table at this version (time travel)
       --region <REGION>     AWS region (S3 / S3-compatible)
       --option <KEY=VALUE>  Object store config (repeatable)
       --env-creds           Use the cloud provider's default credential chain

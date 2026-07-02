@@ -32,6 +32,9 @@ Examples:
   Cloud:
     delta-explain --env-creds s3://bucket/table -w \"age > 30\"
     delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
+
+  Time travel:
+    delta-explain ./my-table -w \"age > 30\" --at-version 3
 ")]
 struct Cli {
     /// Path to the Delta table (local path, s3://, az://, gs://)
@@ -58,6 +61,10 @@ struct Cli {
     /// Fail (exit 1) if any file in the snapshot is missing statistics.
     #[arg(long)]
     assert_stats: bool,
+
+    /// Analyze the table at this version instead of the latest (time travel).
+    #[arg(long, value_name = "N")]
+    at_version: Option<u64>,
 
     // ── Cloud storage flags ─────────────────────────────────────────
     /// AWS region (S3 only)
@@ -155,7 +162,11 @@ fn try_main() -> Result<()> {
 
     let url = parse_table_uri(&cli.path)?;
     let EngineAndStore { engine, store } = build_engine(&url, &cli)?;
-    let snapshot = Snapshot::builder_for(url.clone()).build(engine.as_ref())?;
+    let mut snapshot_builder = Snapshot::builder_for(url.clone());
+    if let Some(version) = cli.at_version {
+        snapshot_builder = snapshot_builder.at_version(version);
+    }
+    let snapshot = snapshot_builder.build(engine.as_ref())?;
     let schema = snapshot.schema();
 
     let scan::BaselineScan {
