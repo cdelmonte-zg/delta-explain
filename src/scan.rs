@@ -36,6 +36,9 @@ pub struct BaselineScan {
 /// when no `metaData` action survives in the JSON commits (a fully
 /// checkpointed log after retention cleanup); the `metaData` action stays the
 /// primary source because it is authoritative and also covers empty tables.
+/// The residual blind spot is the intersection of the two: an empty
+/// partitioned table whose log is fully checkpointed has no files to derive
+/// from, and its partition columns stay undetected.
 pub fn partition_columns_from_files(files: &[FileInfo]) -> Vec<String> {
     let mut columns: Vec<String> = files
         .iter()
