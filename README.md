@@ -155,6 +155,7 @@ Options:
       --min-pruning <PCT>   Fail if total pruning is below this percentage
       --assert-stats        Fail if any file is missing statistics
       --at-version <N>      Analyze the table at this version (time travel)
+      --profile <NAME>      Static AWS credentials from ~/.aws/credentials (S3)
       --region <REGION>     AWS region (S3 / S3-compatible)
       --option <KEY=VALUE>  Object store config (repeatable)
       --env-creds           Use the cloud provider's default credential chain
@@ -170,21 +171,15 @@ delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
 
 ### Cloud storage
 
-**Credentials.** With `--env-creds`, the underlying cloud SDKs pick up credentials from the standard provider chain: instance profile (EC2/ECS), IRSA (EKS), Managed Identity (AKS), Workload Identity (GKE). For static keys (MinIO, local development), pass them via `--option` and prefer expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
+**Credentials.** Three ways in, by environment:
 
-> [!IMPORTANT]
-> On a developer laptop, `--env-creds` does *not* currently pick up `AWS_*` environment variables, `~/.aws/credentials`, or `AWS_PROFILE`. The credential chain falls through to WebIdentity / EKS Pod / instance profile, which only exist on cloud-deployed instances. Until this is wired up in a future release, pass static keys explicitly via `--option`:
->
-> ```bash
-> delta-explain \
->     --option AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
->     --option AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
->     --option AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
->     --region eu-west-1 \
->     s3://bucket/table -w "..."
-> ```
->
-> `AWS_SESSION_TOKEN` is only needed for temporary credentials (SSO, `AssumeRole`). On EC2, ECS, EKS, GKE, and AKS this gap does not apply: the default chain works as expected.
+- **On cloud infrastructure** (EC2/ECS, EKS, AKS, GKE): `--env-creds` picks up the provider chain (instance profile, IRSA, Managed Identity, Workload Identity).
+- **On a developer laptop** (AWS): `--profile <name>` resolves static keys, session token, and region from `~/.aws/credentials` and `~/.aws/config`, the same files the AWS CLI reads (including the `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` overrides). Profiles that rely on SSO, `credential_process`, or role assumption are not resolved; export them first and use `--env-creds`:
+  ```bash
+  eval $(aws configure export-credentials --profile corp --format env)
+  delta-explain --env-creds s3://bucket/table -w "..."
+  ```
+- **Static keys** (MinIO, local development): pass them via `--option`, expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
 
 ```bash
 # S3 with default credential chain
