@@ -21,8 +21,9 @@ follow SemVer relative to that field.
   `event_date = '2026-07-02'` prunes date partitions instead of being kept
   conservatively as a string-vs-date mismatch. Quoted strings coerce by
   column type; the explicit `DATE '...'` / `TIMESTAMP '...'` forms are also
-  accepted (RFC 3339 offsets normalize to UTC, bare dates mean midnight
-  UTC). Decimal literals must fit the column scale; rounding a predicate
+  accepted (for TIMESTAMP, RFC 3339 offsets normalize to UTC and bare dates
+  mean midnight UTC; TIMESTAMP_NTZ is wall-clock and rejects offset-bearing
+  literals as ambiguous). Decimal literals must fit the column scale; rounding a predicate
   bound silently would change its meaning. New `test-table-temporal`
   fixture: date-partitioned, with timestamp, decimal, and narrow-int
   per-file ranges.

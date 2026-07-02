@@ -66,6 +66,34 @@ fn timestamp_literal_skips_files(#[case] predicate: &str) {
         ));
 }
 
+// ── TIMESTAMP_NTZ: wall-clock semantics ─────────────────────────────
+
+#[test]
+fn ntz_naive_literal_skips_files() {
+    // ts_ntz mirrors ts as wall-clock values, so the same bound survives
+    // the same three files.
+    cmd()
+        .args([&temporal_table(), "-w", "ts_ntz > '2026-07-02 12:00:00'"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "files remaining: 3  (-3, 50% pruned)",
+        ));
+}
+
+#[test]
+fn ntz_offset_literal_is_rejected() {
+    cmd()
+        .args([
+            &temporal_table(),
+            "-w",
+            "ts_ntz > '2026-07-02T12:00:00+01:00'",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("timezone-naive"));
+}
+
 // ── DECIMAL ─────────────────────────────────────────────────────────
 
 #[test]
@@ -77,6 +105,19 @@ fn decimal_literal_skips_files() {
         .success()
         .stdout(predicate::str::contains(
             "files remaining: 3  (-3, 50% pruned)",
+        ));
+}
+
+#[test]
+fn negative_decimal_literal_is_supported() {
+    // All amounts are positive, so nothing prunes; the point is that the
+    // unary minus coerces instead of erroring.
+    cmd()
+        .args([&temporal_table(), "-w", "amount > -100.50"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "files remaining: 6  (-0, 0% pruned)",
         ));
 }
 

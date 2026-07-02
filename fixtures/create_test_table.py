@@ -20,6 +20,9 @@ Produces (next to this script):
                              action lives only inside the checkpoint Parquet,
                              no JSON commits remain — per-file stats must come
                              from the kernel's log replay
+- ./test-table-temporal      partitioned by a DATE column, with per-file
+                             ranges on TIMESTAMP, TIMESTAMP_NTZ, DECIMAL(9,2),
+                             INT16, INT8 — exercises literal coercion
 - ./test-table-checkpointed-part  the canonical partitioned layout with a
                              checkpoint-only log: partition columns must be
                              derived from the kernel-replayed partitionValues
@@ -514,10 +517,13 @@ TEMPORAL_TABLE_PATH = str(HERE / "test-table-temporal")
 def temporal_batch(day, hours, amounts, smalls, tinies):
     import datetime as dt
     base = dt.datetime(2026, 7, day, tzinfo=dt.timezone.utc)
+    naive = dt.datetime(2026, 7, day)
     return pa.table({
         "event_date": pa.array([dt.date(2026, 7, day)] * len(hours), pa.date32()),
         "ts": pa.array([base + dt.timedelta(hours=h) for h in hours],
                        pa.timestamp("us", tz="UTC")),
+        "ts_ntz": pa.array([naive + dt.timedelta(hours=h) for h in hours],
+                           pa.timestamp("us")),
         "amount": pa.array([str(a) for a in amounts], pa.string()).cast(pa.decimal128(9, 2)),
         "small": pa.array(smalls, pa.int16()),
         "tiny": pa.array(tinies, pa.int8()),
@@ -550,4 +556,4 @@ if not already_exists(TEMPORAL_TABLE_PATH):
             mode="append",
         )
     print(f"Temporal table created at {TEMPORAL_TABLE_PATH}")
-    print(f"  6 files across 2026-07-01/02/03; ts, decimal(9,2), int16, int8 ranges per file")
+    print(f"  6 files across 2026-07-01/02/03; ts, ts_ntz, decimal(9,2), int16, int8 ranges per file")

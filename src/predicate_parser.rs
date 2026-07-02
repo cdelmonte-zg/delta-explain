@@ -242,6 +242,11 @@ fn negate_literal(expr: Expression) -> Result<Expression, String> {
                 Scalar::Long(v) => Ok(Expression::literal(-v)),
                 Scalar::Short(v) => Ok(Expression::literal(-v)),
                 Scalar::Byte(v) => Ok(Expression::literal(-v)),
+                Scalar::Decimal(d) => {
+                    delta_kernel::expressions::DecimalData::try_new(-d.bits(), *d.ty())
+                        .map(|nd| Expression::literal(Scalar::Decimal(nd)))
+                        .map_err(|e| format!("Cannot negate decimal: {e}"))
+                }
                 Scalar::Float(v) => Ok(Expression::literal(-v)),
                 Scalar::Double(v) => Ok(Expression::literal(-v)),
                 _ => Err(format!("Cannot negate: {scalar:?}")),
@@ -360,7 +365,7 @@ fn coerce_string_literal(text: &str, hint: &DataType) -> Result<Option<Expressio
             parse_timestamp_micros(text)?,
         )))),
         PrimitiveType::TimestampNtz => Ok(Some(Expression::literal(Scalar::TimestampNtz(
-            parse_timestamp_micros(text)?,
+            parse_timestamp_ntz_micros(text)?,
         )))),
         _ => Ok(None),
     }
@@ -374,10 +379,9 @@ fn parse_date_days(text: &str) -> Result<i32, String> {
     Ok(chrono::Datelike::num_days_from_ce(&d) - EPOCH_DAYS_FROM_CE)
 }
 
-/// Microseconds since the Unix epoch for a timestamp string. Accepts RFC 3339
-/// (with offset), `YYYY-MM-DD[ T]HH:MM:SS[.ffffff]` treated as UTC, and a bare
-/// date as midnight UTC. Delta TIMESTAMP is UTC-normalized; TIMESTAMP_NTZ
-/// reuses the same wall-clock parse.
+/// Microseconds since the Unix epoch for a TIMESTAMP string. Accepts RFC 3339
+/// (with offset, normalized to UTC), `YYYY-MM-DD[ T]HH:MM:SS[.ffffff]` treated
+/// as UTC, and a bare date as midnight UTC: Delta TIMESTAMP is UTC-normalized.
 fn parse_timestamp_micros(text: &str) -> Result<i64, String> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(text) {
         return Ok(dt.timestamp_micros());
@@ -397,6 +401,34 @@ fn parse_timestamp_micros(text: &str) -> Result<i64, String> {
     }
     Err(format!(
         "Invalid timestamp '{text}': expected YYYY-MM-DD[ HH:MM:SS[.ffffff]][+HH:MM]"
+    ))
+}
+
+/// Wall-clock microseconds for a TIMESTAMP_NTZ string. The column is
+/// timezone-naive, so `2026-07-01 09:00:00` means nine o'clock as written,
+/// wherever it was written; an explicit offset would silently shift the
+/// value, so it is rejected instead of normalized.
+fn parse_timestamp_ntz_micros(text: &str) -> Result<i64, String> {
+    for fmt in [
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+    ] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(text, fmt) {
+            return Ok(ndt.and_utc().timestamp_micros());
+        }
+    }
+    if let Ok(days) = parse_date_days(text) {
+        return Ok(i64::from(days) * 86_400_000_000);
+    }
+    if chrono::DateTime::parse_from_rfc3339(text).is_ok() {
+        return Err(format!(
+            "Timestamp '{text}' carries an offset, but TIMESTAMP_NTZ is timezone-naive: drop the offset, or compare against a TIMESTAMP column"
+        ));
+    }
+    Err(format!(
+        "Invalid timestamp '{text}': expected YYYY-MM-DD[ HH:MM:SS[.ffffff]] (no offset)"
     ))
 }
 
@@ -452,6 +484,31 @@ mod tests {
         // bare date is midnight UTC
         assert_eq!(parse_timestamp_micros("1970-01-02"), Ok(86_400_000_000));
         assert!(parse_timestamp_micros("teatime").is_err());
+    }
+
+    #[test]
+    fn ntz_is_wall_clock_and_rejects_offsets() {
+        // same digits as the TIMESTAMP parse when naive...
+        assert_eq!(
+            parse_timestamp_ntz_micros("1970-01-01 01:00:00"),
+            Ok(3_600_000_000)
+        );
+        // ...but an explicit offset is ambiguous for a naive column
+        let err = parse_timestamp_ntz_micros("1970-01-01T01:00:00+01:00");
+        assert!(err.is_err_and(|e| e.contains("timezone-naive")));
+    }
+
+    #[test]
+    fn negated_decimal_scales_correctly() {
+        let dt = DecimalType::try_new(9, 2).unwrap();
+        let lit = Expression::literal(match parse_decimal("100.50", &dt) {
+            Ok(s) => s,
+            Err(e) => panic!("{e}"),
+        });
+        match negate_literal(lit) {
+            Ok(Expression::Literal(Scalar::Decimal(d))) => assert_eq!(d.bits(), -10_050),
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 
     #[test]
