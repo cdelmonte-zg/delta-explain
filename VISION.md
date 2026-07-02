@@ -36,7 +36,7 @@ Released as the v0.2.0 → v0.2.3 series. The tool now explains *why* pruning wo
 
 The architecture and design rationale behind v0.2 are written up in detail in the companion deep-dive: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/deep-dives/delta-explain-making-delta-pruning-visible/).
 
-## v0.3: Checkpoint support (shipped July 2026)
+## v0.3: Checkpoint support and type hardening (shipped July 2026)
 
 Works reliably on production tables that have been checkpointed and vacuumed. The whole analysis rides on the kernel's log replay, which reads checkpoint Parquet natively: one source of truth for counts, per-file statistics, and assertions.
 
@@ -45,15 +45,13 @@ Works reliably on production tables that have been checkpointed and vacuumed. Th
 - **delta-kernel-rs 0.24**, `object_store` 0.13.
 - **Internal architecture**: lib/bin split; `scan`, `attribution`, `gates`, `render`, and `error` modules; the attribution arithmetic and the CI gates are pure and unit-tested.
 
-## v0.4: Type hardening and the production sprint (shipped July 2026)
-
-Date and timestamp coercion was the gate to real tables: most production tables are partitioned or clustered by date, and a predicate that cannot be typed cannot prune. Shipped as v0.4.0, together with the adoption and trust items from the tracks below.
+Shipped in the same v0.3.0 release: type hardening and the production sprint. Date and timestamp coercion was the gate to real tables: most production tables are partitioned or clustered by date, and a predicate that cannot be typed cannot prune.
 
 - **Type coercions**: `DATE`, `TIMESTAMP` (UTC-normalized), `TIMESTAMP_NTZ` (wall-clock, offsets rejected as ambiguous), `DECIMAL` (exact scale), and narrow integers, resolved against the Delta schema; `DATE '...'` / `TIMESTAMP '...'` literal forms accepted
 - **Time travel**: `--at-version <N>`
-- Shipped alongside: `--profile` (AWS shared config), the composite GitHub Action, and the first differential harness
+- Alongside: `--profile` (AWS shared config), the composite GitHub Action, and the first differential harness
 
-## v0.5: Smarter predicate analysis (planned)
+## v0.4: Smarter predicate analysis (planned)
 
 Goal: reduce false negatives for common patterns, without becoming an optimizer. The substrate comes first: replace sqlparser with a small Pratt parser producing our own minimal predicate AST (one parse, positions in errors, no dependency churn), on which the rewrites below become straightforward.
 
@@ -63,7 +61,7 @@ Goal: reduce false negatives for common patterns, without becoming an optimizer.
 
 This is the complexity ceiling for the predicate analyzer. Anything beyond this crosses into optimizer territory.
 
-## v0.6: Production tables (planned)
+## v0.5: Production tables (planned)
 
 Goal: honest and usable on tables that look like production, not like fixtures.
 
@@ -72,7 +70,7 @@ Goal: honest and usable on tables that look like production, not like fixtures.
 - **Time travel**: `--at-version <N>` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode. Shipped ahead of schedule in the pre-webinar sprint.
 - **Exotic log shapes**: multi-part and V2/UUID-named checkpoints, log compaction. The kernel handles them; the test matrix should prove delta-explain does too.
 
-## v0.7: Diagnostic layer (planned)
+## v0.6: Diagnostic layer (planned)
 
 Goal: shift from "file counter" to "pruning advisor".
 
@@ -81,8 +79,8 @@ Goal: shift from "file counter" to "pruning advisor".
 
 ## Adoption track
 
-- **AWS shared-config profiles**: shipped in v0.4.0 (`--profile`; SSO and `credential_process` produce an actionable error pointing at `aws configure export-credentials`)
-- **GitHub Action**: shipped in v0.4.0 as a composite action at the repo root, one-line `uses:` with CLI-mirroring inputs and step outputs
+- **AWS shared-config profiles**: shipped in v0.3.0 (`--profile`; SSO and `credential_process` produce an actionable error pointing at `aws configure export-credentials`)
+- **GitHub Action**: shipped in v0.3.0 as a composite action at the repo root, one-line `uses:` with CLI-mirroring inputs and step outputs
 - Next: full SSO resolution if demand shows up, and richer Action outputs
 
 ## Trust track
