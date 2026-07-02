@@ -208,6 +208,27 @@ delta-explain \
 
 `--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are independent. Note that `--verbose` only affects text output; the JSON document is summary-only by design.
 
+### GitHub Action
+
+The repo doubles as a composite action, so the gate is one step:
+
+```yaml
+- uses: cdelmonte-zg/delta-explain@main
+  with:
+    table: s3://warehouse/events
+    where: "country = 'DE' AND age > 40"
+    min-pruning: "60"
+    assert-stats: "true"
+    env-creds: "true"
+```
+
+Inputs mirror the CLI flags (`table`, `where`, `min-pruning`, `assert-stats`, `at-version`, `env-creds`, plus `options` as one `KEY=VALUE` per line, and `version` to pin a release; default `latest`). The step fails when a gate fails, and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps:
+
+```yaml
+- name: Comment the pruning percentage
+  run: echo "Pruning ${{ steps.gate.outputs.pruning-pct }}%"
+```
+
 ### Assert minimum pruning
 
 Fail the pipeline if a predicate doesn't eliminate enough files:

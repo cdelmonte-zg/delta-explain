@@ -1,0 +1,100 @@
+name: "delta-explain"
+description: >-
+  Delta Lake pruning gate: fail the pipeline when partition pruning and data
+  skipping fall below a threshold, or when files are missing statistics.
+author: "Christian Del Monte"
+branding:
+  icon: "filter"
+  color: "blue"
+
+inputs:
+  table:
+    description: "Path or URI of the Delta table (local, s3://, az://, gs://)"
+    required: true
+  where:
+    description: "SQL WHERE predicate to analyze"
+    required: false
+    default: ""
+  min-pruning:
+    description: "Fail if total pruning percentage is below this threshold"
+    required: false
+    default: ""
+  assert-stats:
+    description: "Fail if any file in the snapshot is missing statistics"
+    required: false
+    default: "false"
+  at-version:
+    description: "Analyze the table at this historical version"
+    required: false
+    default: ""
+  options:
+    description: "Object-store options, one KEY=VALUE per line"
+    required: false
+    default: ""
+  env-creds:
+    description: "Use the cloud provider's default credential chain"
+    required: false
+    default: "false"
+  version:
+    description: "delta-explain release to install (e.g. 0.4.0), or 'latest'"
+    required: false
+    default: "latest"
+
+outputs:
+  pruning-pct:
+    description: "Total pruning percentage reported by the analysis"
+    value: ${{ steps.run.outputs.pruning-pct }}
+  final-files:
+    description: "Files surviving the predicate"
+    value: ${{ steps.run.outputs.final-files }}
+  result:
+    description: "Overall assertion result: pass, fail, or null"
+    value: ${{ steps.run.outputs.result }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install delta-explain
+      shell: bash
+      run: |
+        set -euo pipefail
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          VERSION="$(curl -fsSL https://api.github.com/repos/cdelmonte-zg/delta-explain/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+        fi
+        VERSION="${VERSION#v}"
+        DEST="$RUNNER_TEMP/delta-explain-bin"
+        mkdir -p "$DEST"
+        curl -fsSL "https://github.com/cdelmonte-zg/delta-explain/releases/download/v${VERSION}/delta-explain-x86_64-unknown-linux-gnu.tar.gz" \
+          | tar -xz -C "$DEST"
+        echo "$DEST" >> "$GITHUB_PATH"
+
+    - name: Run delta-explain
+      id: run
+      shell: bash
+      run: |
+        set -uo pipefail
+        args=("${{ inputs.table }}" --format json)
+        [ -n "${{ inputs.where }}" ] && args+=(-w "${{ inputs.where }}")
+        [ -n "${{ inputs.min-pruning }}" ] && args+=(--min-pruning "${{ inputs.min-pruning }}")
+        [ "${{ inputs.assert-stats }}" = "true" ] && args+=(--assert-stats)
+        [ -n "${{ inputs.at-version }}" ] && args+=(--at-version "${{ inputs.at-version }}")
+        [ "${{ inputs.env-creds }}" = "true" ] && args+=(--env-creds)
+        while IFS= read -r opt; do
+          [ -n "$opt" ] && args+=(--option "$opt")
+        done <<< "${{ inputs.options }}"
+
+        set +e
+        delta-explain "${args[@]}" | tee "$RUNNER_TEMP/dx-report.json"
+        code=$?
+        set -e
+
+        report="$RUNNER_TEMP/dx-report.json"
+        if [ -s "$report" ] && command -v jq >/dev/null; then
+          {
+            echo "pruning-pct=$(jq -r '.total_pruning_pct' "$report")"
+            echo "final-files=$(jq -r '.final_files' "$report")"
+            echo "result=$(jq -r '.result' "$report")"
+          } >> "$GITHUB_OUTPUT"
+        fi
+        exit "$code"
