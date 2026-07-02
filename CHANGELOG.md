@@ -47,14 +47,17 @@ files whose `add` action survives only inside checkpoint Parquet.
   deltalake always writes JSON stats). Integration tests lock in stats
   display, pruning, and `--assert-stats` behavior on both layouts.
 
-### Known limitations
+### Fixed
 
-- Partition columns are still identified from the `metaData` action in the
-  JSON commits. On a *partitioned* table whose entire log lives in a
-  checkpoint, partition predicates are misclassified as `stats-safe`: total
-  pruning counts stay correct, but the per-phase attribution degrades. Needs
-  either checkpoint parsing for `metaData` or a public partition-columns
-  accessor in the kernel.
+- **Partition columns on fully checkpointed logs.** Partition columns are
+  identified from the `metaData` action in the JSON commits, which no longer
+  exists after log cleanup consolidates everything into a checkpoint; the
+  two-phase attribution collapsed into a single data-skipping phase (totals
+  stayed correct). When no `metaData` is found, partition columns now fall
+  back to the `partitionValues` keys the kernel replays out of the
+  checkpoint: protocol data per `add` action, not an inference from paths.
+  New `test-table-checkpointed-part` fixture locks the two-phase attribution
+  in on a checkpoint-only partitioned log.
 
 ## [0.2.3] — 2026-06-20
 

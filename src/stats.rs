@@ -57,8 +57,11 @@ pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
 /// Read partition columns from the `metadata` action in the Delta log.
 ///
 /// Scans the JSON log files for the last `metaData` action and extracts the
-/// `partitionColumns` array. This is the correct way to determine partition
-/// columns per the Delta protocol — never infer from file partition values.
+/// `partitionColumns` array: the authoritative source per the Delta protocol,
+/// and the only one that covers empty tables. On a fully checkpointed log no
+/// JSON `metaData` survives and this returns empty; the caller then falls
+/// back to `scan::partition_columns_from_files`, which derives the columns
+/// from the kernel-replayed `partitionValues` keys.
 pub fn read_partition_columns_from_log(
     table_url: &Url,
     store: &Arc<DynObjectStore>,

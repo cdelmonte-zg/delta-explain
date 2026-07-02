@@ -162,7 +162,12 @@ fn try_main() -> Result<()> {
         files: all_files,
         stats: file_stats,
     } = scan::scan_baseline(snapshot.clone(), engine.as_ref())?;
-    let partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
+    let mut partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
+    if partition_columns.is_empty() {
+        // On a fully checkpointed log no metaData action survives in the JSON
+        // commits; fall back to the partitionValues keys the kernel replayed.
+        partition_columns = scan::partition_columns_from_files(&all_files);
+    }
 
     let mut report = PruningReport {
         analysis: None,

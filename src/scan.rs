@@ -26,6 +26,26 @@ pub struct BaselineScan {
     pub stats: HashMap<String, FileStats>,
 }
 
+/// Derive partition columns from the `partitionValues` keys of the baseline
+/// scan's files.
+///
+/// Per the Delta protocol every `add` action of a partitioned table carries
+/// its partition values keyed by partition column, and the kernel returns
+/// them from its full log replay, checkpoint Parquet included. This is
+/// protocol data, not an inference from directory names. Used as a fallback
+/// when no `metaData` action survives in the JSON commits (a fully
+/// checkpointed log after retention cleanup); the `metaData` action stays the
+/// primary source because it is authoritative and also covers empty tables.
+pub fn partition_columns_from_files(files: &[FileInfo]) -> Vec<String> {
+    let mut columns: Vec<String> = files
+        .iter()
+        .flat_map(|f| f.partition_values.keys().cloned())
+        .collect();
+    columns.sort();
+    columns.dedup();
+    columns
+}
+
 /// Run the baseline scan once, collecting the file listing and the per-file
 /// statistics from the same `scan_metadata` pass, so the log is replayed a
 /// single time. The stats come from the `stats` JSON string the kernel
@@ -115,5 +135,40 @@ impl FilteredRowVisitor for StatsVisitor {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(path: &str, parts: &[(&str, &str)]) -> FileInfo {
+        FileInfo {
+            path: path.into(),
+            size: 1,
+            partition_values: parts
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            num_records: None,
+        }
+    }
+
+    #[test]
+    fn partition_columns_are_deduped_and_sorted() {
+        let files = vec![
+            file("a", &[("country", "DE"), ("year", "2026")]),
+            file("b", &[("year", "2025"), ("country", "IT")]),
+        ];
+        assert_eq!(
+            partition_columns_from_files(&files),
+            vec!["country".to_string(), "year".to_string()]
+        );
+    }
+
+    #[test]
+    fn unpartitioned_files_yield_no_columns() {
+        let files = vec![file("a", &[]), file("b", &[])];
+        assert!(partition_columns_from_files(&files).is_empty());
     }
 }

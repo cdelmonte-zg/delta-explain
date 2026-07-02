@@ -20,6 +20,9 @@ Produces (next to this script):
                              action lives only inside the checkpoint Parquet,
                              no JSON commits remain — per-file stats must come
                              from the kernel's log replay
+- ./test-table-checkpointed-part  the canonical partitioned layout with a
+                             checkpoint-only log: partition columns must be
+                             derived from the kernel-replayed partitionValues
 - ./test-table-checkpointed-struct  same shape, but the checkpoint carries
                              stats only as the structured `stats_parsed`
                              column (add.stats JSON nulled out) — the
@@ -462,3 +465,37 @@ if not already_exists(CHECKPOINTED_STRUCT_TABLE_PATH):
     rewrite_checkpoint_stats_as_struct(CHECKPOINTED_STRUCT_TABLE_PATH)
     print(f"Checkpointed-struct table created at {CHECKPOINTED_STRUCT_TABLE_PATH}")
     print(f"  3 files, checkpoint at v2, {removed} JSON commits removed, stats moved to stats_parsed")
+
+
+# === test-table-checkpointed-part (partitioned, checkpoint-only log) ======
+# The canonical partitioned layout (6 files, DE/US/IT, distinct age ranges)
+# after log cleanup: checkpoint at v5, every JSON commit deleted. With no
+# metaData action left in JSON commits, partition columns must be derived
+# from the partitionValues keys the kernel replays out of the checkpoint,
+# or the two-phase attribution collapses into a single data-skipping phase.
+
+CHECKPOINTED_PART_TABLE_PATH = str(HERE / "test-table-checkpointed-part")
+
+if not already_exists(CHECKPOINTED_PART_TABLE_PATH):
+    from deltalake import DeltaTable
+
+    write_deltalake(
+        CHECKPOINTED_PART_TABLE_PATH,
+        batches[0],
+        partition_by=["country"],
+        mode="overwrite",
+    )
+    for batch in batches[1:]:
+        write_deltalake(
+            CHECKPOINTED_PART_TABLE_PATH,
+            batch,
+            partition_by=["country"],
+            mode="append",
+        )
+    DeltaTable(CHECKPOINTED_PART_TABLE_PATH).create_checkpoint()
+    removed = 0
+    for f in (Path(CHECKPOINTED_PART_TABLE_PATH) / "_delta_log").glob("*.json"):
+        f.unlink()
+        removed += 1
+    print(f"Checkpointed partitioned table created at {CHECKPOINTED_PART_TABLE_PATH}")
+    print(f"  6 files across DE/US/IT, checkpoint at v5, {removed} JSON commits removed")

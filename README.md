@@ -324,10 +324,6 @@ Numeric types, strings, and booleans are handled. Subqueries, functions, and LIK
 
 ## Current limitations
 
-- **Partition columns from JSON commits only.** Partition columns are identified from the `metaData` action in the JSON commits. On a partitioned table whose entire log has been consolidated into a checkpoint (no JSON commits remain after log cleanup, governed by `delta.logRetentionDuration`, default 30 days), partition columns are not detected and partition predicates are misclassified as `stats-safe`.
-
-  Total pruning counts stay correct — the kernel evaluates the full predicate, partition values included — but the Phase 1 / Phase 2 attribution degrades: everything shows up as data skipping. Per-file statistics and `--assert-stats` are unaffected; they go through the kernel's full log replay, which reads checkpoints.
-
 - **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
 
   Predicates on columns past this index are still classified as `stats-safe` but contribute no pruning, because the column's min/max never appears in the log. (`stats.mode` reflects per-table coverage of the indexed columns, not per-predicate reachability, so it can read `exact` even when the predicate column is unreachable by stats.)
