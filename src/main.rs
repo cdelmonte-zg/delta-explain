@@ -1,8 +1,3 @@
-mod predicate_analyzer;
-mod predicate_parser;
-mod report;
-mod stats;
-
 use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -17,7 +12,8 @@ use delta_kernel::{DeltaResult, Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
 
-use report::{FileInfo, OutputFormat, OverallResult, PhaseResult, PruningReport};
+use delta_explain::report::{FileInfo, OutputFormat, OverallResult, PhaseResult, PruningReport};
+use delta_explain::{predicate_analyzer, predicate_parser, stats};
 
 use predicate_analyzer::Confidence;
 use serde_json::json;
