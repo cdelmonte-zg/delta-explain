@@ -4,20 +4,24 @@ use sqlparser::ast::{BinaryOperator, Expr as SqlExpr, UnaryOperator, Value as Sq
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
+use crate::error::Error;
+
 /// Parse a SQL WHERE-clause expression into a delta-kernel Predicate.
 ///
 /// Supports: comparisons, AND, OR, NOT, IN (...), BETWEEN, IS [NOT] NULL,
 /// parentheses, nested column references (a.b), and standard SQL literals.
-pub fn parse_predicate(input: &str, schema: &SchemaRef) -> Result<Predicate, String> {
+/// The conversion helpers below carry plain `String` errors; this boundary
+/// wraps them into [`Error::Predicate`].
+pub fn parse_predicate(input: &str, schema: &SchemaRef) -> Result<Predicate, Error> {
     let dialect = GenericDialect {};
     let mut parser = Parser::new(&dialect)
         .try_with_sql(input)
-        .map_err(|e| format!("Parse error: {e}"))?;
+        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
     let sql_expr = parser
         .parse_expr()
-        .map_err(|e| format!("Parse error: {e}"))?;
+        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
 
-    convert_to_predicate(&sql_expr, schema)
+    convert_to_predicate(&sql_expr, schema).map_err(Error::Predicate)
 }
 
 // ── SQL AST -> kernel Predicate ─────────────────────────────────────

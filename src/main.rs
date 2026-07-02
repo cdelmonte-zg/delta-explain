@@ -5,15 +5,16 @@ use std::sync::Arc;
 use clap::Parser;
 use delta_kernel::engine::default::DefaultEngineBuilder;
 use delta_kernel::engine::default::storage::store_from_url_opts;
-use delta_kernel::{DeltaResult, Engine, Snapshot};
+use delta_kernel::{Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
 
-use delta_explain::report::{OutputFormat, OverallResult, PhaseResult, PruningReport};
-use delta_explain::{predicate_analyzer, predicate_parser, scan, stats};
-
-use predicate_analyzer::Confidence;
-use serde_json::json;
+use delta_explain::error::{Error, Result};
+use delta_explain::render::OutputFormat;
+use delta_explain::report::{OverallResult, PruningReport};
+use delta_explain::{
+    attribution, gates, predicate_analyzer, predicate_parser, render, scan, stats,
+};
 
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
@@ -86,7 +87,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse_table_uri(path: &str) -> DeltaResult<Url> {
+fn parse_table_uri(path: &str) -> Result<Url> {
     if let Ok(mut url) = Url::parse(path)
         && url.scheme() != "file"
         && url.has_host()
@@ -103,10 +104,9 @@ fn parse_table_uri(path: &str) -> DeltaResult<Url> {
         return Ok(url);
     }
     let absolute = std::fs::canonicalize(path)
-        .map_err(|e| delta_kernel::Error::Generic(format!("Invalid path '{path}': {e}")))?;
-    Url::from_directory_path(&absolute).map_err(|_| {
-        delta_kernel::Error::Generic(format!("Cannot convert path to URL: {absolute:?}"))
-    })
+        .map_err(|e| Error::TableUri(format!("Invalid path '{path}': {e}")))?;
+    Url::from_directory_path(&absolute)
+        .map_err(|_| Error::TableUri(format!("Cannot convert path to URL: {absolute:?}")))
 }
 
 struct EngineAndStore {
@@ -114,7 +114,7 @@ struct EngineAndStore {
     store: Arc<DynObjectStore>,
 }
 
-fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
+fn build_engine(url: &Url, cli: &Cli) -> Result<EngineAndStore> {
     let mut opts: HashMap<String, String> = HashMap::new();
 
     if let Some(ref region) = cli.region {
@@ -128,7 +128,7 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     }
     for option in &cli.options {
         let (key, value) = option.split_once('=').ok_or_else(|| {
-            delta_kernel::Error::Generic(format!(
+            Error::Options(format!(
                 "Invalid option format '{option}', expected KEY=VALUE"
             ))
         })?;
@@ -144,7 +144,7 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     })
 }
 
-fn try_main() -> DeltaResult<()> {
+fn try_main() -> Result<()> {
     let cli = Cli::parse();
     let start = std::time::Instant::now();
 
@@ -178,130 +178,62 @@ fn try_main() -> DeltaResult<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)
-            .map_err(delta_kernel::Error::Generic)?;
+        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)?;
 
-        let prev_count = if let Some(part_frag) = &analysis.partition_safe {
-            let part_pred = predicate_parser::parse_predicate(part_frag, &schema)
-                .map_err(delta_kernel::Error::Generic)?;
-            let surviving =
-                scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
-            let surviving_paths: HashSet<String> =
-                surviving.iter().map(|f| f.path.clone()).collect();
-            let count = surviving.len();
-
-            report.phases.push(PhaseResult {
-                confidence: Confidence::Exact,
-                name: "Partition pruning".into(),
-                predicate_display: part_frag.clone(),
-                input_count: report.total_files,
-                output_count: count,
-                surviving_paths,
-            });
-
-            count
-        } else {
-            report.total_files
+        let partition_survivors = match &analysis.partition_safe {
+            Some(part_frag) => {
+                let part_pred = predicate_parser::parse_predicate(part_frag, &schema)?;
+                let surviving =
+                    scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
+                Some(
+                    surviving
+                        .into_iter()
+                        .map(|f| f.path)
+                        .collect::<HashSet<String>>(),
+                )
+            }
+            None => None,
         };
 
-        if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
-            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)
-                .map_err(delta_kernel::Error::Generic)?;
+        let full_survivors = if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
+            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)?;
             let surviving =
                 scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
-            let surviving_paths: HashSet<String> =
-                surviving.iter().map(|f| f.path.clone()).collect();
+            Some(
+                surviving
+                    .into_iter()
+                    .map(|f| f.path)
+                    .collect::<HashSet<String>>(),
+            )
+        } else {
+            None
+        };
 
-            let display = [&analysis.stats_safe, &analysis.unsplittable]
-                .iter()
-                .filter_map(|f| f.as_ref())
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(" AND ");
-
-            report.phases.push(PhaseResult {
-                name: "Data skipping (min/max statistics)".into(),
-                confidence: if analysis.unsplittable.is_some() {
-                    Confidence::Incomplete
-                } else {
-                    Confidence::Conservative
-                },
-                predicate_display: display,
-                input_count: prev_count,
-                output_count: surviving.len(),
-                surviving_paths,
-            });
-        }
-
+        report.phases = attribution::build_phases(
+            &analysis,
+            report.total_files,
+            partition_survivors,
+            full_survivors,
+        );
         report.analysis = Some(analysis);
     }
 
     // ── Assertions (CI mode) ────────────────────────────────────────
 
-    let mut any_assertion = false;
-    let mut all_pass = true;
-
-    if let Some(threshold) = cli.min_pruning {
-        any_assertion = true;
-        let actual = report.total_pruning_pct();
-        let pass = actual >= threshold;
-        all_pass &= pass;
-        if !pass {
-            eprintln!(
-                "ASSERTION FAILED: total pruning {actual:.1}% is below threshold {threshold:.1}%"
-            );
-        }
-        report.assertions.push(json!({
-            "name": "min_pruning",
-            "threshold": threshold,
-            "actual": actual,
-            "result": if pass { "pass" } else { "fail" },
-        }));
+    let outcome = gates::evaluate(&report, cli.min_pruning, cli.assert_stats);
+    for failure in &outcome.failures {
+        eprintln!("{failure}");
     }
-
-    if cli.assert_stats {
-        any_assertion = true;
-        let missing: Vec<&str> = report
-            .all_files
-            .iter()
-            .filter(|f| !report.file_stats.contains_key(&f.path))
-            .map(|f| f.path.as_str())
-            .collect();
-        let pass = missing.is_empty();
-        all_pass &= pass;
-        if !pass {
-            eprintln!(
-                "ASSERTION FAILED: {} file(s) missing statistics:",
-                missing.len()
-            );
-            for path in &missing {
-                eprintln!("  {path}");
-            }
-        }
-        report.assertions.push(json!({
-            "name": "stats_complete",
-            "missing_count": missing.len(),
-            "result": if pass { "pass" } else { "fail" },
-        }));
-    }
-
-    report.overall_result = if any_assertion {
-        Some(if all_pass {
-            OverallResult::Pass
-        } else {
-            OverallResult::Fail
-        })
-    } else {
-        None
-    };
+    report.assertions = outcome.assertions;
+    report.overall_result = outcome.overall;
 
     report.elapsed_ms = start.elapsed().as_millis();
 
     // ── Output ──────────────────────────────────────────────────────
 
     match output_format {
-        OutputFormat::Text => report.print_text(cli.verbose, cli.predicate.as_deref()),
-        OutputFormat::Json => report.print_json(cli.predicate.as_deref()),
+        OutputFormat::Text => render::print_text(&report, cli.verbose, cli.predicate.as_deref()),
+        OutputFormat::Json => render::print_json(&report, cli.predicate.as_deref()),
     }
 
     if matches!(report.overall_result, Some(OverallResult::Fail)) {

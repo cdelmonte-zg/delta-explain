@@ -7,6 +7,8 @@ use object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
 use serde_json::Value;
 use url::Url;
 
+use crate::error::Error;
+
 /// Per-file statistics extracted from the Delta log.
 pub struct FileStats {
     pub num_records: Option<u64>,
@@ -18,37 +20,6 @@ pub struct ColumnStats {
     pub min: Option<String>,
     pub max: Option<String>,
     pub null_count: Option<u64>,
-}
-
-impl FileStats {
-    pub fn format_compact(&self) -> String {
-        if self.columns.is_empty() {
-            return if self.num_records.is_some() {
-                String::new()
-            } else {
-                "  [no stats]".into()
-            };
-        }
-
-        let mut parts: Vec<String> = Vec::new();
-        let mut cols: Vec<(&String, &ColumnStats)> = self.columns.iter().collect();
-        cols.sort_by_key(|(k, _)| *k);
-
-        for (col, stats) in cols {
-            match (&stats.min, &stats.max) {
-                (Some(min), Some(max)) => parts.push(format!("{col}: {min}..{max}")),
-                (Some(min), None) => parts.push(format!("{col}: min={min}")),
-                (None, Some(max)) => parts.push(format!("{col}: max={max}")),
-                (None, None) => {}
-            }
-        }
-
-        if parts.is_empty() {
-            String::new()
-        } else {
-            format!("  stats({})", parts.join(", "))
-        }
-    }
 }
 
 /// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
@@ -91,18 +62,18 @@ pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
 pub fn read_partition_columns_from_log(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, delta_kernel::Error> {
+) -> Result<Vec<String>, Error> {
     let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot create tokio runtime: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot create tokio runtime: {e}")))?;
     rt.block_on(read_partition_columns_async(table_url, store))
 }
 
 async fn read_partition_columns_async(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, delta_kernel::Error> {
+) -> Result<Vec<String>, Error> {
     let (_, table_prefix) = object_store::parse_url(table_url)
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot parse table URL: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot parse table URL: {e}")))?;
 
     let log_prefix = if table_prefix.as_ref().is_empty() {
         ObjectPath::from("_delta_log")
@@ -117,7 +88,7 @@ async fn read_partition_columns_async(
         .list(Some(&log_prefix))
         .try_collect()
         .await
-        .map_err(|e| delta_kernel::Error::Generic(format!("Cannot list delta log: {e}")))?;
+        .map_err(|e| Error::Storage(format!("Cannot list delta log: {e}")))?;
 
     let mut json_paths: Vec<ObjectPath> = objects
         .into_iter()
@@ -133,10 +104,10 @@ async fn read_partition_columns_async(
         let data = store
             .get(&path)
             .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read {path}: {e}")))?
+            .map_err(|e| Error::Storage(format!("Cannot read {path}: {e}")))?
             .bytes()
             .await
-            .map_err(|e| delta_kernel::Error::Generic(format!("Cannot read bytes {path}: {e}")))?;
+            .map_err(|e| Error::Storage(format!("Cannot read bytes {path}: {e}")))?;
 
         let content = String::from_utf8_lossy(&data);
 
