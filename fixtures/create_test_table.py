@@ -20,6 +20,12 @@ Produces (next to this script):
                              action lives only inside the checkpoint Parquet,
                              no JSON commits remain — per-file stats must come
                              from the kernel's log replay
+- ./test-table-checkpointed-struct  same shape, but the checkpoint carries
+                             stats only as the structured `stats_parsed`
+                             column (add.stats JSON nulled out) — the
+                             delta.checkpoint.writeStatsAsJson=false layout.
+                             Hand-crafted: deltalake always writes JSON stats,
+                             so the checkpoint is rewritten post-hoc
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
@@ -371,3 +377,88 @@ if not already_exists(CHECKPOINTED_TABLE_PATH):
         removed += 1
     print(f"Checkpointed table created at {CHECKPOINTED_TABLE_PATH}")
     print(f"  3 files, checkpoint at v2, {removed} JSON commits removed")
+
+
+# === test-table-checkpointed-struct (stats_parsed only, no JSON stats) ====
+# Same shape as test-table-checkpointed, but the checkpoint carries statistics
+# only as the structured `stats_parsed` column: the layout a writer with
+# delta.checkpoint.writeStatsAsJson=false produces. deltalake (delta-rs)
+# always writes add.stats JSON and ignores that property, so the checkpoint is
+# rewritten post-hoc: parse each add.stats JSON into a stats_parsed struct,
+# then null the JSON field. delta-explain must request the parsed stats schema
+# from the kernel (include_all_stats_columns) for these files to show stats.
+
+CHECKPOINTED_STRUCT_TABLE_PATH = str(HERE / "test-table-checkpointed-struct")
+
+
+def rewrite_checkpoint_stats_as_struct(table_path: str):
+    import pyarrow.parquet as pq
+
+    cp_path = next((Path(table_path) / "_delta_log").glob("*.checkpoint.parquet"))
+    tbl = pq.read_table(cp_path)
+    add = tbl.column("add").combine_chunks()
+
+    # stats_parsed leaf types mirror the table schema (age int32, name string);
+    # nullCount leaves are always long.
+    mm_t = pa.struct([("age", pa.int32()), ("name", pa.string())])
+    nc_t = pa.struct([("age", pa.int64()), ("name", pa.int64())])
+    sp_t = pa.struct([
+        ("numRecords", pa.int64()),
+        ("minValues", mm_t),
+        ("maxValues", mm_t),
+        ("nullCount", nc_t),
+    ])
+
+    new_rows = []
+    for i in range(len(add)):
+        row = add[i].as_py()
+        if row is None:
+            new_rows.append(None)
+            continue
+        stats = json.loads(row["stats"])
+        row = dict(row)
+        row["stats"] = None
+        row["stats_parsed"] = {
+            "numRecords": stats["numRecords"],
+            "minValues": stats["minValues"],
+            "maxValues": stats["maxValues"],
+            "nullCount": stats["nullCount"],
+        }
+        new_rows.append(row)
+
+    old_t = add.type
+    fields = [old_t.field(i) for i in range(old_t.num_fields)]
+    fields.append(pa.field("stats_parsed", sp_t))
+    new_add = pa.array(new_rows, type=pa.struct(fields))
+
+    idx = tbl.schema.get_field_index("add")
+    new_tbl = tbl.set_column(idx, pa.field("add", new_add.type), new_add)
+    pq.write_table(new_tbl, cp_path)
+
+
+if not already_exists(CHECKPOINTED_STRUCT_TABLE_PATH):
+    from deltalake import DeltaTable
+
+    write_deltalake(
+        CHECKPOINTED_STRUCT_TABLE_PATH,
+        checkpointed_batch(["Hans", "Greta"], [20, 30]),
+        mode="overwrite",
+    )
+    write_deltalake(
+        CHECKPOINTED_STRUCT_TABLE_PATH,
+        checkpointed_batch(["Dieter", "Helga"], [40, 50]),
+        mode="append",
+    )
+    write_deltalake(
+        CHECKPOINTED_STRUCT_TABLE_PATH,
+        checkpointed_batch(["Alice", "Bob"], [60, 70]),
+        mode="append",
+    )
+    DeltaTable(CHECKPOINTED_STRUCT_TABLE_PATH).create_checkpoint()
+    removed = 0
+    for f in (Path(CHECKPOINTED_STRUCT_TABLE_PATH) / "_delta_log").glob("*.json"):
+        f.unlink()
+        removed += 1
+    rewrite_checkpoint_stats_as_struct(CHECKPOINTED_STRUCT_TABLE_PATH)
+    print(f"Checkpointed-struct table created at {CHECKPOINTED_STRUCT_TABLE_PATH}")
+    print(f"  3 files, checkpoint at v2, {removed} JSON commits removed, stats moved to stats_parsed")

@@ -68,7 +68,14 @@ pub fn read_stats_from_scan(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
 ) -> Result<HashMap<String, FileStats>, delta_kernel::Error> {
-    let scan = ScanBuilder::new(snapshot).build()?;
+    // include_all_stats_columns() requests the parsed stats schema, which is
+    // what makes the kernel populate the scan row's `stats` field via
+    // COALESCE(add.stats, ToJson(add.stats_parsed)). Without it, a checkpoint
+    // written with delta.checkpoint.writeStatsAsJson=false (structured
+    // stats_parsed only, no JSON stats) would come back with no stats at all.
+    let scan = ScanBuilder::new(snapshot)
+        .include_all_stats_columns()
+        .build()?;
     let mut visitor = StatsVisitor {
         stats: HashMap::new(),
     };
@@ -106,28 +113,29 @@ impl FilteredRowVisitor for StatsVisitor {
                 continue;
             };
             let stats_str: Option<String> = getters[1].get_opt(row_index, "scanFile.stats")?;
-            if let Some(stats_str) = stats_str {
-                self.stats.insert(path, parse_stats_json(&stats_str));
+            if let Some(parsed) = stats_str.as_deref().and_then(parse_stats_json) {
+                self.stats.insert(path, parsed);
             }
         }
         Ok(())
     }
 }
 
-fn parse_stats_json(stats_str: &str) -> FileStats {
-    let stats_json = serde_json::from_str::<Value>(stats_str).ok();
+/// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
+/// payload is not valid JSON, so a malformed stats string counts as missing
+/// statistics (`[no stats]` in the verbose view, flagged by `--assert-stats`)
+/// rather than silently passing as an empty entry.
+fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
+    let stats = serde_json::from_str::<Value>(stats_str).ok()?;
 
-    let num_records = stats_json
-        .as_ref()
-        .and_then(|s| s.get("numRecords"))
-        .and_then(|v| v.as_u64());
+    let num_records = stats.get("numRecords").and_then(|v| v.as_u64());
 
     let mut columns: HashMap<String, ColumnStats> = HashMap::new();
 
     // Delta nests stats for struct columns: minValues.profile = {age, score}.
     // Flatten them to dotted leaf keys (profile.age, profile.score) so each leaf
     // reports its own min/max, matching how the kernel skips on nested fields.
-    if let Some(ref stats) = stats_json {
+    {
         for (key, val) in flatten_leaves(stats.get("minValues")) {
             col_entry(&mut columns, key).min = Some(format_stat_value(val));
         }
@@ -139,10 +147,10 @@ fn parse_stats_json(stats_str: &str) -> FileStats {
         }
     }
 
-    FileStats {
+    Some(FileStats {
         num_records,
         columns,
-    }
+    })
 }
 
 /// Read partition columns from the `metadata` action in the Delta log.
@@ -282,7 +290,7 @@ mod tests {
             \"maxValues\":{\"name\":\"Frank\",\"profile\":{\"age\":55,\"score\":82.0}},\
             \"nullCount\":{\"name\":0,\"profile\":{\"age\":0,\"score\":0}}}";
 
-        let stats = parse_stats_json(stats_str);
+        let stats = parse_stats_json(stats_str).expect("valid stats JSON");
 
         let age = stats.columns.get("profile.age").expect("profile.age leaf");
         assert_eq!(age.min.as_deref(), Some("45"));
@@ -298,5 +306,11 @@ mod tests {
         // top-level scalar columns stay flat; the raw struct key is gone
         assert!(stats.columns.contains_key("name"));
         assert!(!stats.columns.contains_key("profile"));
+    }
+
+    #[test]
+    fn malformed_stats_json_counts_as_missing() {
+        assert!(parse_stats_json("not json").is_none());
+        assert!(parse_stats_json("").is_none());
     }
 }

@@ -23,6 +23,11 @@ files whose `add` action survives only inside checkpoint Parquet.
   the same log replay that drives the pruning counts, checkpoint Parquet
   included. On long-lived tables after log cleanup, files referenced only by
   a checkpoint now show real min/max statistics instead of `[no stats]`.
+  Both checkpoint layouts are covered: `add.stats` JSON and structured
+  `stats_parsed` (`delta.checkpoint.writeStatsAsJson=false`); the scan
+  requests the parsed stats schema so the kernel falls back to
+  `COALESCE(add.stats, ToJson(add.stats_parsed))`. A malformed stats payload
+  now counts as missing statistics instead of passing as an empty entry.
 - **`--assert-stats` no longer false-positives on checkpointed logs.** A file
   is flagged only when its `add` action genuinely carries no statistics. On
   tables whose older commits were consolidated into a checkpoint, the
@@ -35,10 +40,12 @@ files whose `add` action survives only inside checkpoint Parquet.
 
 ### Added
 
-- **`test-table-checkpointed` fixture**: three appends, a checkpoint at v2,
-  every JSON commit removed — the shape `delta.logRetentionDuration` cleanup
-  produces. Integration tests lock in stats display, pruning, and
-  `--assert-stats` behavior on a checkpoint-only log.
+- **`test-table-checkpointed` and `test-table-checkpointed-struct` fixtures**:
+  three appends, a checkpoint at v2, every JSON commit removed — the shape
+  `delta.logRetentionDuration` cleanup produces. The struct variant carries
+  stats only as the `stats_parsed` column (hand-rewritten checkpoint, since
+  deltalake always writes JSON stats). Integration tests lock in stats
+  display, pruning, and `--assert-stats` behavior on both layouts.
 
 ### Known limitations
 
