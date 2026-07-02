@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use clap::Parser;
 use delta_kernel::engine::default::DefaultEngineBuilder;
-use delta_kernel::engine::default::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel::engine::default::storage::store_from_url_opts;
 use delta_kernel::expressions::Predicate;
 use delta_kernel::scan::ScanBuilder;
@@ -144,7 +143,7 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     }
 
     let store = store_from_url_opts(url, opts)?;
-    let engine = DefaultEngineBuilder::<TokioBackgroundExecutor>::new(store.clone()).build();
+    let engine = DefaultEngineBuilder::new(store.clone()).build();
 
     Ok(EngineAndStore {
         engine: Box::new(engine),
@@ -195,7 +194,7 @@ fn try_main() -> DeltaResult<()> {
     let all_files = collect_files(snapshot.clone(), engine.as_ref(), None)?;
     let partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
 
-    let file_stats = stats::read_stats_from_log(&url, &store)?;
+    let file_stats = stats::read_stats_from_scan(snapshot.clone(), engine.as_ref())?;
 
     let mut report = PruningReport {
         analysis: None,

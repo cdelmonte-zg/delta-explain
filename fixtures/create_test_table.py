@@ -16,6 +16,10 @@ Produces (next to this script):
 - ./test-table-stats-budget  dataSkippingNumIndexedCols=4: a 5-leaf struct eats
                              the stats budget, so the trailing root column `tail`
                              gets no stats and cannot be skipped
+- ./test-table-checkpointed  long-lived table after log cleanup: every `add`
+                             action lives only inside the checkpoint Parquet,
+                             no JSON commits remain — per-file stats must come
+                             from the kernel's log replay
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
@@ -45,6 +49,7 @@ USERS_PATH = str(HERE / "users")
 USERS_FLAT_PATH = str(HERE / "users-flat")
 NESTED_TABLE_PATH = str(HERE / "test-table-nested")
 BUDGET_TABLE_PATH = str(HERE / "test-table-stats-budget")
+CHECKPOINTED_TABLE_PATH = str(HERE / "test-table-checkpointed")
 
 
 def already_exists(path: str) -> bool:
@@ -321,3 +326,48 @@ if not already_exists(BUDGET_TABLE_PATH):
     write_deltalake(BUDGET_TABLE_PATH, budget_batch(1000), mode="append")
     print(f"Stats-budget table created at {BUDGET_TABLE_PATH}")
     print(f"  dataSkippingNumIndexedCols={INDEXED_COLS}; s.a..s.d have stats, s.e and tail do not")
+
+
+# === test-table-checkpointed (adds live only in checkpoint Parquet) =======
+# Simulates a long-lived production table after log cleanup: three appends,
+# a checkpoint at v2, then every JSON commit is deleted — the same shape
+# `delta.logRetentionDuration` cleanup produces. All surviving `add` actions
+# (and their stats) live only inside the checkpoint Parquet, so per-file
+# statistics are only reachable through the kernel's log replay; reading the
+# JSON commits directly finds nothing. Unpartitioned on purpose: partition
+# columns are still read from the JSON metaData action, which this fixture
+# no longer has.
+
+
+def checkpointed_batch(names, ages):
+    return pa.table({
+        "name": pa.array(names),
+        "age": pa.array(ages, type=pa.int32()),
+    })
+
+
+if not already_exists(CHECKPOINTED_TABLE_PATH):
+    from deltalake import DeltaTable
+
+    write_deltalake(
+        CHECKPOINTED_TABLE_PATH,
+        checkpointed_batch(["Hans", "Greta"], [20, 30]),
+        mode="overwrite",
+    )
+    write_deltalake(
+        CHECKPOINTED_TABLE_PATH,
+        checkpointed_batch(["Dieter", "Helga"], [40, 50]),
+        mode="append",
+    )
+    write_deltalake(
+        CHECKPOINTED_TABLE_PATH,
+        checkpointed_batch(["Alice", "Bob"], [60, 70]),
+        mode="append",
+    )
+    DeltaTable(CHECKPOINTED_TABLE_PATH).create_checkpoint()
+    removed = 0
+    for f in (Path(CHECKPOINTED_TABLE_PATH) / "_delta_log").glob("*.json"):
+        f.unlink()
+        removed += 1
+    print(f"Checkpointed table created at {CHECKPOINTED_TABLE_PATH}")
+    print(f"  3 files, checkpoint at v2, {removed} JSON commits removed")
