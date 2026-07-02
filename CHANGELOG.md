@@ -28,6 +28,13 @@ follow SemVer relative to that field.
   fixture: date-partitioned, with timestamp, decimal, and narrow-int
   per-file ranges.
 
+- **`--profile <name>` (AWS shared config).** Resolves static credentials,
+  session token, and region from `~/.aws/credentials` and `~/.aws/config`,
+  the same files the AWS CLI reads. Closes the laptop gap where
+  `--env-creds` fell through to instance-only providers. SSO,
+  `credential_process`, and role-assumption profiles are not resolved; the
+  error points at `aws configure export-credentials`.
+
 ## [0.3.0] — 2026-07-02
 
 Per-file statistics now come from delta-kernel's log replay instead of a
