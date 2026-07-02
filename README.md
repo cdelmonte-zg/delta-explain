@@ -75,7 +75,7 @@ Phase 2: Data skipping (min/max statistics) [conservative]
   [DROPPED] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 ```
 
-Files whose `add` action carries no `stats` payload appear as `[no stats]`. Statistics are resolved through the kernel's log replay, which merges JSON commits with checkpoint Parquet, so `[no stats]` means the writer really recorded none — not that the file's commit has been consolidated into a checkpoint.
+Files whose `add` action carries no `stats` payload appear as `[no stats]`. Statistics are resolved through the kernel's log replay, which merges JSON commits with checkpoint Parquet, so `[no stats]` means the writer really recorded none, not that the file's commit has been consolidated into a checkpoint.
 
 ## Install
 
@@ -247,11 +247,11 @@ delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_
 The JSON output is versioned independently from the CLI binary (`schema_version: "0.1.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`. The document includes:
 
 - top-level summary fields (`table`, `version`, `predicate`, `total_files`, `final_files`, `total_pruning_pct`)
-- `analysis` — the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
-- `phases[]` — one entry per pruning phase, each with its own `confidence` tag
-- `stats` — coverage block with categorical `mode` (`exact` / `partial` / `absent`)
-- `assertions[]` and `result` — outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
-- `schema_version`, `tool_version`, `elapsed_ms` — release and run metadata
+- `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
+- `phases[]`: one entry per pruning phase, each with its own `confidence` tag
+- `stats`: coverage block with categorical `mode` (`exact` / `partial` / `absent`)
+- `assertions[]` and `result`: outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
+- `schema_version`, `tool_version`, `elapsed_ms`: release and run metadata
 
 Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
 
@@ -281,7 +281,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
 When the predicate contains unsplittable fragments, the final scan is still sound, but the drop from the partition-only scan can no longer be attributed cleanly to data skipping alone. This is what the `incomplete` confidence label signals.
 
-The per-file statistics (min/max values) shown in the verbose view come from the `stats` payload the kernel carries on each scan row — produced by the same log replay that drives the counts, checkpoint Parquet included — and are joined with the survivor sets at display time to show *why* each file was kept or dropped.
+The per-file statistics (min/max values) shown in the verbose view come from the `stats` payload the kernel carries on each scan row, produced by the same log replay that drives the counts, checkpoint Parquet included, and are joined with the survivor sets at display time to show *why* each file was kept or dropped.
 
 No query engine is involved. No data files are read. Only metadata.
 
@@ -324,10 +324,6 @@ Numeric types, strings, and booleans are handled. Subqueries, functions, and LIK
 
 ## Current limitations
 
-- **Partition columns from JSON commits only.** Partition columns are identified from the `metaData` action in the JSON commits. On a partitioned table whose entire log has been consolidated into a checkpoint (no JSON commits remain after log cleanup, governed by `delta.logRetentionDuration`, default 30 days), partition columns are not detected and partition predicates are misclassified as `stats-safe`.
-
-  Total pruning counts stay correct — the kernel evaluates the full predicate, partition values included — but the Phase 1 / Phase 2 attribution degrades: everything shows up as data skipping. Per-file statistics and `--assert-stats` are unaffected; they go through the kernel's full log replay, which reads checkpoints.
-
 - **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
 
   Predicates on columns past this index are still classified as `stats-safe` but contribute no pruning, because the column's min/max never appears in the log. (`stats.mode` reflects per-table coverage of the indexed columns, not per-predicate reachability, so it can read `exact` even when the predicate column is unreachable by stats.)
@@ -357,7 +353,7 @@ The integration tests under `tests/` rely on pre-built Delta tables checked into
 
 ### Regenerating the fixtures
 
-The fixtures only need to be regenerated when you change their schema or the data they contain — for ordinary development you can ignore this step entirely.
+The fixtures only need to be regenerated when you change their schema or the data they contain, for ordinary development you can ignore this step entirely.
 
 The generator is a small Python script (`fixtures/create_test_table.py`) that uses `pyarrow` and `deltalake` to write the tables. Set up a virtual environment and install the pinned dependencies:
 
