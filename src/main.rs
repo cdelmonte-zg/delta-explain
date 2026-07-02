@@ -1,8 +1,3 @@
-mod predicate_analyzer;
-mod predicate_parser;
-mod report;
-mod stats;
-
 use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -10,14 +5,12 @@ use std::sync::Arc;
 use clap::Parser;
 use delta_kernel::engine::default::DefaultEngineBuilder;
 use delta_kernel::engine::default::storage::store_from_url_opts;
-use delta_kernel::expressions::Predicate;
-use delta_kernel::scan::ScanBuilder;
-use delta_kernel::scan::state::ScanFile;
 use delta_kernel::{DeltaResult, Engine, Snapshot};
 use object_store::DynObjectStore;
 use url::Url;
 
-use report::{FileInfo, OutputFormat, OverallResult, PhaseResult, PruningReport};
+use delta_explain::report::{OutputFormat, OverallResult, PhaseResult, PruningReport};
+use delta_explain::{predicate_analyzer, predicate_parser, scan, stats};
 
 use predicate_analyzer::Confidence;
 use serde_json::json;
@@ -151,32 +144,6 @@ fn build_engine(url: &Url, cli: &Cli) -> DeltaResult<EngineAndStore> {
     })
 }
 
-fn collect_files(
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
-    predicate: Option<&Predicate>,
-) -> DeltaResult<Vec<FileInfo>> {
-    let mut builder = ScanBuilder::new(snapshot);
-    if let Some(pred) = predicate {
-        builder = builder.with_predicate(Arc::new(pred.clone()));
-    }
-    let scan = builder.build()?;
-    let mut files = Vec::new();
-    for res in scan.scan_metadata(engine)? {
-        let scan_meta = res?;
-        files =
-            scan_meta.visit_scan_files(files, |files: &mut Vec<FileInfo>, file: ScanFile| {
-                files.push(FileInfo {
-                    path: file.path.clone(),
-                    size: file.size,
-                    partition_values: file.partition_values.clone(),
-                    num_records: file.stats.map(|s| s.num_records),
-                });
-            })?;
-    }
-    Ok(files)
-}
-
 fn try_main() -> DeltaResult<()> {
     let cli = Cli::parse();
     let start = std::time::Instant::now();
@@ -191,10 +158,11 @@ fn try_main() -> DeltaResult<()> {
     let snapshot = Snapshot::builder_for(url.clone()).build(engine.as_ref())?;
     let schema = snapshot.schema();
 
-    let all_files = collect_files(snapshot.clone(), engine.as_ref(), None)?;
+    let scan::BaselineScan {
+        files: all_files,
+        stats: file_stats,
+    } = scan::scan_baseline(snapshot.clone(), engine.as_ref())?;
     let partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
-
-    let file_stats = stats::read_stats_from_scan(snapshot.clone(), engine.as_ref())?;
 
     let mut report = PruningReport {
         analysis: None,
@@ -216,7 +184,8 @@ fn try_main() -> DeltaResult<()> {
         let prev_count = if let Some(part_frag) = &analysis.partition_safe {
             let part_pred = predicate_parser::parse_predicate(part_frag, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
-            let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
+            let surviving =
+                scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
             let surviving_paths: HashSet<String> =
                 surviving.iter().map(|f| f.path.clone()).collect();
             let count = surviving.len();
@@ -238,7 +207,8 @@ fn try_main() -> DeltaResult<()> {
         if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
             let full_pred = predicate_parser::parse_predicate(pred_str, &schema)
                 .map_err(delta_kernel::Error::Generic)?;
-            let surviving = collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+            let surviving =
+                scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
             let surviving_paths: HashSet<String> =
                 surviving.iter().map(|f| f.path.clone()).collect();
 
