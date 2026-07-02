@@ -79,7 +79,7 @@ Goal: shift from "file counter" to "pruning advisor".
 
 ## Trust track
 
-- **Differential testing**: the same predicates over the same tables through a reference engine (Spark or DuckDB with Delta), asserting identical survivor sets. The strongest claim the tool can make is "agrees with the engine's file selection on the full matrix".
+- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. First harness shipped in `examples/differential` (MinIO + Spark 4.1): sound, and on that layout exact, across a ten-predicate matrix. Next: more layouts, more types, a scheduled CI job.
 
 ## Ongoing: the kernel track
 
