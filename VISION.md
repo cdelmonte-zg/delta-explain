@@ -62,7 +62,7 @@ Goal: honest and usable on tables that look like production, not like fixtures.
 
 - **Detect and declare protocol features**: deletion vectors (today record counts silently overcount), column mapping (logical vs physical names can silently void data skipping), liquid clustering (`clusteringProvider`). First detect and warn, then support. A tool that says "I cannot attribute this correctly" is credible; one that prints wrong numbers is not.
 - **Scale**: a large synthetic fixture (tens of thousands of files), time and memory benchmarks in the README, and output that survives large tables: `--limit`, a summary mode, top surviving files by size.
-- **Time travel**: `--version N` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode.
+- **Time travel**: `--at-version <N>` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode. Shipped ahead of schedule in the pre-webinar sprint.
 - **Exotic log shapes**: multi-part and V2/UUID-named checkpoints, log compaction. The kernel handles them; the test matrix should prove delta-explain does too.
 
 ## v0.6: Diagnostic layer (planned)
