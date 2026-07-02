@@ -9,6 +9,12 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-02
+
+One release for the whole cycle: the kernel-backed statistics pipeline
+(developed as 0.3.0, never tagged) plus the production-readiness sprint.
+The JSON `schema_version` is unchanged (`0.1.0`).
+
 ### Added
 
 - **`--at-version <N>` (time travel).** Analyze the table at a historical
@@ -46,13 +52,12 @@ follow SemVer relative to that field.
   them. Sound on the full ten-predicate matrix (equality, ranges, AND, the
   unsplittable OR, IN, BETWEEN, NOT, float bounds, empty result), and on
   the reference layout exact: every kept file contains a match.
-
-## [0.3.0] — 2026-07-02
-
-Per-file statistics now come from delta-kernel's log replay instead of a
-direct read of the JSON commits. The JSON `schema_version` is unchanged
-(`0.1.0`): the document shape is identical, but `stats` coverage now includes
-files whose `add` action survives only inside checkpoint Parquet.
+- **`test-table-checkpointed` and `test-table-checkpointed-struct` fixtures**:
+  three appends, a checkpoint at v2, every JSON commit removed — the shape
+  `delta.logRetentionDuration` cleanup produces. The struct variant carries
+  stats only as the `stats_parsed` column (hand-rewritten checkpoint, since
+  deltalake always writes JSON stats). Integration tests lock in stats
+  display, pruning, and `--assert-stats` behavior on both layouts.
 
 ### Changed
 
@@ -75,15 +80,6 @@ files whose `add` action survives only inside checkpoint Parquet.
 - **delta-kernel-rs 0.20 → 0.24** (and `object_store` 0.12 → 0.13). No
   behavioral change beyond the stats sourcing above; the full test suite
   passes unchanged on the new kernel.
-
-### Added
-
-- **`test-table-checkpointed` and `test-table-checkpointed-struct` fixtures**:
-  three appends, a checkpoint at v2, every JSON commit removed — the shape
-  `delta.logRetentionDuration` cleanup produces. The struct variant carries
-  stats only as the `stats_parsed` column (hand-rewritten checkpoint, since
-  deltalake always writes JSON stats). Integration tests lock in stats
-  display, pruning, and `--assert-stats` behavior on both layouts.
 
 ### Fixed
 
