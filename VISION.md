@@ -75,3 +75,7 @@ delta-explain builds on delta-kernel-rs, so some improvements arrive by adopting
 
 - Same predicate across two tables (flat vs partitioned, before vs after compaction)
 - Side-by-side output with delta highlighted
+
+## Future: Library surface
+
+The 0.3 refactor split the crate into a library and a thin CLI; the analysis (scan, attribution, gates) is already callable as Rust. The natural next step, if demand shows up, is a small stable facade and Python bindings: a pruning check as a function call in a notebook or a pytest fixture, instead of a subprocess. The CLI and the JSON schema stay the primary contracts until then.
