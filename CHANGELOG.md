@@ -40,6 +40,12 @@ follow SemVer relative to that field.
   assertion fails and exposing `pruning-pct`, `final-files`, and `result`
   as step outputs. An action-smoke workflow exercises pass and fail paths
   against the committed fixtures.
+- **Differential harness** (`examples/differential`): MinIO + Spark stack
+  where Spark computes, per predicate, the files that actually contain
+  matching rows, and the harness asserts delta-explain's survivor set covers
+  them. Sound on the full ten-predicate matrix (equality, ranges, AND, the
+  unsplittable OR, IN, BETWEEN, NOT, float bounds, empty result), and on
+  the reference layout exact: every kept file contains a match.
 
 ## [0.3.0] — 2026-07-02
 

@@ -4,3 +4,7 @@
 # never commit GCP service-account keys
 key.json
 *-key.json
+
+# differential harness artifacts (generated per run)
+examples/differential/work/ground_truth.json
+examples/differential/work/predicates.json
