@@ -47,21 +47,39 @@ Works reliably on production tables that have been checkpointed and vacuumed. Th
 
 ## v0.4: Type hardening and smarter predicate analysis (planned)
 
-Goal: reduce false negatives for common patterns, without becoming an optimizer.
+Goal: make predicates on real tables work, without becoming an optimizer. Date and timestamp coercion is the gate: most production tables are partitioned or clustered by date, and a predicate that cannot be typed cannot prune, so today `event_date = '2026-07-01'` shows 0% where an engine prunes almost everything.
 
-- **Type coercions**: correct handling of decimal, date, timestamp, boolean, and narrow-integer comparisons against column types
+- **Type coercions**: correct handling of date, timestamp, decimal, boolean, and narrow-integer comparisons against column types
 - **Light normalization**: flatten nested ANDs, push down simple negations, simplify constant expressions, treat IN as OR-on-same-column
 - **OR factoring on single column**: recognize `(col = 'A' OR col = 'B')` as partition-safe when `col` is a partition column
 - **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.)
 
 This is the complexity ceiling for the predicate analyzer. Anything beyond this crosses into optimizer territory.
 
-## v0.5: Diagnostic layer (planned)
+## v0.5: Production tables (planned)
+
+Goal: honest and usable on tables that look like production, not like fixtures.
+
+- **Detect and declare protocol features**: deletion vectors (today record counts silently overcount), column mapping (logical vs physical names can silently void data skipping), liquid clustering (`clusteringProvider`). First detect and warn, then support. A tool that says "I cannot attribute this correctly" is credible; one that prints wrong numbers is not.
+- **Scale**: a large synthetic fixture (tens of thousands of files), time and memory benchmarks in the README, and output that survives large tables: `--limit`, a summary mode, top surviving files by size.
+- **Time travel**: `--version N` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode.
+- **Exotic log shapes**: multi-part and V2/UUID-named checkpoints, log compaction. The kernel handles them; the test matrix should prove delta-explain does too.
+
+## v0.6: Diagnostic layer (planned)
 
 Goal: shift from "file counter" to "pruning advisor".
 
 - **Diagnostic notes**: messages like "partition pruning unavailable because predicate does not reference partition columns" or "data skipping weak because string min/max ranges are wide"
 - **`--explain-why` mode**: synthesized output: what enabled pruning, what blocked it, what would improve it
+
+## Adoption track
+
+- **Standard AWS credential chain** (profiles, SSO): today `--env-creds` reads raw environment variables only, which is the first wall an AWS user hits
+- **GitHub Action** wrapping the published container, so the CI gate is a one-line `uses:` instead of an install script
+
+## Trust track
+
+- **Differential testing**: the same predicates over the same tables through a reference engine (Spark or DuckDB with Delta), asserting identical survivor sets. The strongest claim the tool can make is "agrees with the engine's file selection on the full matrix".
 
 ## Ongoing: the kernel track
 
