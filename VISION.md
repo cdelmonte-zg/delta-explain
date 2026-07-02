@@ -63,6 +63,14 @@ Goal: shift from "file counter" to "pruning advisor".
 - **Diagnostic notes**: messages like "partition pruning unavailable because predicate does not reference partition columns" or "data skipping weak because string min/max ranges are wide"
 - **`--explain-why` mode**: synthesized output: what enabled pruning, what blocked it, what would improve it
 
+## Ongoing: the kernel track
+
+delta-explain builds on delta-kernel-rs, so some improvements arrive by adopting a newer kernel rather than writing code here:
+
+- **Void schema type**: tables containing a `void` column are unreadable today; support landed on kernel main after 0.24 and ships with the next release.
+- **thrift advisory (issue #9)**: drops out of the dependency tree once a kernel release moves to parquet 59+.
+- **Public partition-columns accessor**: if the kernel exposes one, it replaces the checkpoint-only fallback and also covers the empty-table edge.
+
 ## Future: Compare mode
 
 - Same predicate across two tables (flat vs partitioned, before vs after compaction)
