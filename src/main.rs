@@ -13,7 +13,7 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, gates, predicate_analyzer, predicate_parser, render, scan, stats,
+    attribution, credentials, gates, predicate_analyzer, predicate_parser, render, scan, stats,
 };
 
 #[derive(Parser)]
@@ -79,6 +79,11 @@ struct Cli {
     #[arg(long)]
     env_creds: bool,
 
+    /// Resolve static AWS credentials from this profile in
+    /// ~/.aws/credentials and ~/.aws/config (S3 only)
+    #[arg(long, value_name = "NAME")]
+    profile: Option<String>,
+
     /// Access a public bucket (S3: skip signature)
     #[arg(long)]
     public: bool,
@@ -124,6 +129,10 @@ struct EngineAndStore {
 fn build_engine(url: &Url, cli: &Cli) -> Result<EngineAndStore> {
     let mut opts: HashMap<String, String> = HashMap::new();
 
+    // Profile values go in first so the explicit flags below can override.
+    if let Some(ref profile) = cli.profile {
+        opts.extend(credentials::resolve_aws_profile(profile)?);
+    }
     if let Some(ref region) = cli.region {
         opts.insert("region".into(), region.clone());
     }

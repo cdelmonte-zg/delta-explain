@@ -11,6 +11,7 @@
 //! versioned JSON output schema are the stable contracts.
 
 pub mod attribution;
+pub mod credentials;
 pub mod error;
 pub mod gates;
 pub mod predicate_analyzer;

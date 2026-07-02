@@ -30,6 +30,11 @@ pub enum Error {
     /// (currently only the partition-columns reader takes this path).
     #[error("{0}")]
     Storage(String),
+
+    /// AWS profile resolution failed (missing profile, no static keys, or a
+    /// mechanism like SSO that delta-explain does not resolve).
+    #[error("{0}")]
+    Credentials(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
