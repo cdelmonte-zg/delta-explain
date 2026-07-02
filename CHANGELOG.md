@@ -9,11 +9,11 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
-## [0.4.0] — 2026-07-02
+## [0.3.0] — 2026-07-02
 
-One release for the whole cycle: the kernel-backed statistics pipeline
-(developed as 0.3.0, never tagged) plus the production-readiness sprint.
-The JSON `schema_version` is unchanged (`0.1.0`).
+One release for the whole cycle: the kernel-backed statistics pipeline plus
+the production-readiness sprint. The JSON `schema_version` is unchanged
+(`0.1.0`).
 
 ### Added
 
