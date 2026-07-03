@@ -64,6 +64,16 @@ impl PruningReport {
         (dropped as f64 / self.total_files as f64) * 100.0
     }
 
+    /// The first phase that dropped this file, or None if it survives the
+    /// whole chain. Phases are chained (each one's survivors feed the next),
+    /// so the first phase whose survivor set misses the path is the one
+    /// that eliminated it.
+    pub fn pruned_by(&self, path: &str) -> Option<&PhaseResult> {
+        self.phases
+            .iter()
+            .find(|phase| !phase.surviving_paths.contains(path))
+    }
+
     pub fn stats_coverage(&self) -> (usize, usize) {
         let with_stats = self
             .all_files

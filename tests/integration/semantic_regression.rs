@@ -6,7 +6,7 @@
 //! pipeline and break the contract for one of these cases, this file is the
 //! single place that should fail.
 //!
-//! All assertions are made against the stable JSON schema (v0.1.0) — text
+//! All assertions are made against the stable JSON schema — text
 //! output is the *human* surface, JSON is the *machine* surface, and that's
 //! what we lock down here.
 
