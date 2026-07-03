@@ -90,3 +90,51 @@ fn stats_mode_partial_on_a_synthesized_gap() {
     assert_eq!(json["stats"]["mode"], "partial");
     assert_eq!(json["stats"]["files_with_stats"], 1);
 }
+
+// ── Negative log shapes ─────────────────────────────────────────────
+
+#[test]
+fn malformed_stats_blob_counts_as_missing_statistics() {
+    let table = LogBuilder::new()
+        .column("age", "integer")
+        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+        .add_file(
+            "f1.parquet",
+            &[],
+            Some(serde_json::json!("not a stats object")),
+        )
+        .build();
+    let output = cmd()
+        .args([&table.path(), "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["stats"]["mode"], "partial");
+    assert_eq!(json["stats"]["files_with_stats"], 1);
+
+    cmd()
+        .args([&table.path(), "--assert-stats"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn directory_without_a_delta_log_fails_cleanly() {
+    let dir = tempfile::TempDir::new().unwrap();
+    cmd()
+        .arg(dir.path().to_string_lossy().as_ref())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Error"));
+}
+
+#[test]
+fn empty_delta_log_directory_fails_cleanly() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("_delta_log")).unwrap();
+    cmd()
+        .arg(dir.path().to_string_lossy().as_ref())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No files in log segment"));
+}

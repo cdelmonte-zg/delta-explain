@@ -47,6 +47,21 @@ follow SemVer relative to that field.
   conjuncts still prune. Malformed SQL still fails. JSON change is additive
   (a new note code), `schema_version` unchanged.
 
+### Fixed
+
+- **`--format` rejects unknown values.** A typo like `--format jsn` silently
+  fell back to text output; in a pipeline that means jq parsing a text
+  report. It is now a usage error listing the accepted values.
+- **`--min-pruning` without `--where` is a usage error.** It previously ran
+  and failed as "total pruning 0.0% is below threshold", hiding the actual
+  mistake; the help text always documented the requirement, now the parser
+  enforces it.
+- **Stats payloads that are valid JSON but not an object count as missing.**
+  A stats blob like `"some string"` or `[1,2]` produced a present-but-empty
+  entry: the file passed `--assert-stats` and `stats.mode` stayed `exact`
+  while contributing nothing to skipping. Such payloads now count as missing
+  statistics, like unparseable JSON already did.
+
 ### Changed
 
 - The predicate pipeline is rebuilt around an owned minimal AST: one parse,
