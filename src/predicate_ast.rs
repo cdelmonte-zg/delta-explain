@@ -995,4 +995,206 @@ mod tests {
         assert_eq!(reasons.len(), 2);
         assert!(reasons[0].contains("Unsupported expression"));
     }
+
+    // ── Edge cases: literals ────────────────────────────────────────
+
+    #[test]
+    fn string_literals_roundtrip_escaping_and_emptiness() {
+        assert_eq!(p("name = 'It''s'").to_string(), "name = 'It''s'");
+        assert_eq!(p("name = ''").to_string(), "name = ''");
+        assert_eq!(p("name = 'a''b''c'").to_string(), "name = 'a''b''c'");
+    }
+
+    #[test]
+    fn numeric_literals_stay_lexical() {
+        // The AST never reinterprets the text: scientific notation, leading
+        // zeros, and high precision survive until schema-driven coercion.
+        assert_eq!(p("age = 1e5").to_string(), "age = 1e5");
+        assert_eq!(p("age = 007").to_string(), "age = 007");
+        assert_eq!(
+            p("score = 3.14159265358979").to_string(),
+            "score = 3.14159265358979"
+        );
+    }
+
+    #[test]
+    fn boolean_literal_comparison_is_supported_bare_boolean_is_not() {
+        assert!(!p("active = TRUE").contains_unsupported());
+        assert_eq!(p("active = TRUE").to_string(), "active = true");
+        // A bare TRUE/FALSE references no column: nothing to prune on.
+        assert!(p("TRUE").contains_unsupported());
+    }
+
+    #[test]
+    fn exotic_literals_become_unsupported() {
+        assert!(p("x = 0x1F").contains_unsupported()); // hex
+        assert!(p("ts = INTERVAL '7' DAY").contains_unsupported());
+    }
+
+    #[test]
+    fn typed_temporal_literals_roundtrip() {
+        assert_eq!(
+            p("d = DATE '2026-07-01'").to_string(),
+            "d = DATE '2026-07-01'"
+        );
+        assert_eq!(
+            p("ts = TIMESTAMP '2026-07-01 10:00:00'").to_string(),
+            "ts = TIMESTAMP '2026-07-01 10:00:00'"
+        );
+    }
+
+    #[test]
+    fn literal_only_comparison_becomes_unsupported() {
+        let pred = p("5 = 5");
+        match pred {
+            Pred::Unsupported { reason, .. } => assert!(reason.contains("no column")),
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unary_minus_on_a_string_becomes_unsupported() {
+        let pred = p("name = -'x'");
+        match pred {
+            Pred::Unsupported { reason, .. } => {
+                assert!(reason.contains("numeric literals"));
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+    }
+
+    // ── Edge cases: identifiers ─────────────────────────────────────
+
+    #[test]
+    fn quoted_identifiers_parse_and_lose_their_quotes() {
+        assert_eq!(p("\"country\" = 'DE'").to_string(), "country = 'DE'");
+    }
+
+    #[test]
+    fn quoted_identifier_containing_a_dot_is_a_single_column_part() {
+        // "my.col" is one column whose name contains a dot, not a nested
+        // path; the dotted rendering is ambiguous with a real path, but the
+        // column list carries it as written and classification matches it
+        // against partition_columns verbatim.
+        let pred = p("\"my.col\" = 5");
+        assert_eq!(pred.columns(), vec!["my.col"]);
+        match &pred {
+            Pred::Cmp { col, .. } => assert_eq!(col.0, vec!["my.col".to_string()]),
+            other => panic!("expected Cmp, got {other:?}"),
+        }
+    }
+
+    // ── Edge cases: structure ───────────────────────────────────────
+
+    #[test]
+    fn empty_in_list_is_a_parse_error_not_a_conversion_gap() {
+        // sqlparser rejects `IN ()` before our converter ever sees it; the
+        // converter's own empty-list guard is defense in depth.
+        assert!(parse("age IN ()").is_err());
+    }
+
+    #[test]
+    fn direct_not_in_and_not_between_carry_the_negated_flag() {
+        assert_eq!(
+            p("country NOT IN ('US')").to_string(),
+            "country NOT IN ('US')"
+        );
+        assert_eq!(
+            p("age NOT BETWEEN 1 AND 2").to_string(),
+            "age NOT BETWEEN 1 AND 2"
+        );
+    }
+
+    #[test]
+    fn or_chains_flatten_like_and_chains() {
+        let pred = p("a = 1 OR (b = 2 OR c = 3)");
+        match &pred {
+            Pred::Or(v) => assert_eq!(v.len(), 3),
+            other => panic!("expected Or, got {other:?}"),
+        }
+        assert_eq!(pred.to_string(), "a = 1 OR b = 2 OR c = 3");
+    }
+
+    #[test]
+    fn raw_not_over_a_junction_displays_with_parens() {
+        // Before normalization the NOT is still on the junction; the display
+        // must parenthesize or the meaning changes.
+        assert_eq!(
+            p("NOT (a = 1 AND b = 2)").to_string(),
+            "NOT (a = 1 AND b = 2)"
+        );
+    }
+
+    #[test]
+    fn null_checks_work_on_nested_columns() {
+        assert_eq!(
+            p("profile.geo.zip IS NOT NULL").to_string(),
+            "profile.geo.zip IS NOT NULL"
+        );
+        assert_eq!(
+            norm("NOT profile.geo.zip IS NOT NULL"),
+            "profile.geo.zip IS NULL"
+        );
+    }
+
+    #[test]
+    fn pathological_nesting_is_a_clean_parse_error() {
+        // sqlparser's recursion limit turns deep nesting into an error
+        // instead of a stack overflow; this test pins that protection.
+        let deep = format!("{}age > 1{}", "(".repeat(200), ")".repeat(200));
+        let err = parse(&deep);
+        assert!(err.is_err());
+        let msg = match err {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("expected error"),
+        };
+        assert!(msg.contains("recursion"), "unexpected message: {msg}");
+    }
+
+    #[test]
+    fn moderate_nesting_is_fine() {
+        let deep = format!("{}age > 1{}", "(".repeat(30), ")".repeat(30));
+        assert_eq!(p(&deep).to_string(), "age > 1");
+    }
+
+    // ── Edge cases: rewrites ────────────────────────────────────────
+
+    #[test]
+    fn factoring_with_duplicate_conjuncts_stays_equivalent() {
+        // The duplicated factor is removed once per occurrence; the result
+        // keeps the redundant copy rather than risking a semantic change.
+        assert_eq!(
+            norm("(a = 1 AND a = 1 AND x > 2) OR (a = 1 AND y > 3)"),
+            "a = 1 AND a = 1 AND (x > 2 OR y > 3)"
+        );
+    }
+
+    #[test]
+    fn factoring_recurses_into_nested_junctions() {
+        // The inner OR factors first, which lets the outer AND flatten
+        // around it.
+        assert_eq!(
+            norm("c = 9 AND ((a = 1 AND x > 2) OR (a = 1 AND y > 3))"),
+            "c = 9 AND a = 1 AND (x > 2 OR y > 3)"
+        );
+    }
+
+    #[test]
+    fn double_negation_over_sugar_cancels_exactly() {
+        assert_eq!(norm("NOT NOT country IN ('DE')"), "country IN ('DE')");
+        assert_eq!(norm("NOT NOT age BETWEEN 1 AND 2"), "age BETWEEN 1 AND 2");
+    }
+
+    #[test]
+    fn mixed_precedence_without_parens_follows_sql_rules() {
+        // AND binds tighter than OR: a OR (b AND c).
+        let pred = p("a = 1 OR b = 2 AND c = 3");
+        match &pred {
+            Pred::Or(v) => {
+                assert_eq!(v.len(), 2);
+                assert!(matches!(v[1], Pred::And(_)));
+            }
+            other => panic!("expected Or, got {other:?}"),
+        }
+    }
 }
