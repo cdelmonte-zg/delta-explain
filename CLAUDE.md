@@ -44,11 +44,21 @@ the CLI surface and the versioned JSON output schema.
 The pipeline is a thin sequence of pure-ish library modules consumed by the
 CLI in `main.rs`:
 
-- **`predicate_parser.rs`**: SQL string → `delta_kernel::expressions::Predicate`.
-  Used to feed the kernel's scan builder when we want it to actually execute pruning.
-- **`predicate_analyzer.rs`**: SQL string → `PredicateAnalysis` (top-level AND split,
+- **`predicate_ast.rs`**: SQL string → owned `Pred` AST, via a converter from
+  sqlparser (the only module coupled to sqlparser types). The AST vocabulary is
+  the language of pruning: column-op-literal comparisons, junctions, null checks,
+  `IN`/`BETWEEN` sugar. Anything outside it becomes an `Unsupported` leaf carrying
+  the raw fragment and a reason; the converter is total, consumers decide severity.
+- **`predicate_analyzer.rs`**: `Pred` → `PredicateAnalysis` (top-level AND split,
   classification of each fragment as `partition_safe` / `stats_safe` / `unsplittable`,
-  `Confidence` derivation, encoded notes like `UNSPLITTABLE_OR`).
+  `Confidence` derivation, encoded notes like `UNSPLITTABLE_OR`). `classify` also
+  returns the partition-safe subtree so the CLI can lower it without re-parsing.
+- **`kernel_bridge.rs`**: the only module that names the kernel's expression
+  vocabulary. Lowers `Pred` to `delta_kernel::expressions::Predicate` with
+  schema-driven literal coercion (temporal, decimal, narrow ints, nested leaf
+  types), and maps every kernel operator to a `Capability` tier through
+  exhaustive matches with no catch-all arm, so a kernel bump that widens an
+  enum breaks compilation instead of silently gapping support.
 - **`scan.rs`**: kernel-backed metadata scans. `scan_baseline` collects the file
   listing and the per-file stats from one `scan_metadata` pass (the stats ride on
   the scan rows via `include_all_stats_columns`, checkpoint Parquet included);
@@ -67,10 +77,11 @@ CLI in `main.rs`:
 - **`main.rs`**: CLI layer: parse args, build the kernel engine, baseline scan,
   analyzer, per-phase scans, `build_phases`, gates, render, exit code.
 
-Why `predicate_parser` and `predicate_analyzer` are separate: the parser produces a
-type the kernel can consume; the analyzer produces metadata we report to the user.
-Same input string, two independent representations, coupling them would entangle
-"what the kernel sees" with "what the user reads".
+Why the AST sits between sqlparser and everything else: one parse, two
+interpreters. `kernel_bridge` produces the type the kernel consumes; the
+analyzer produces the metadata we report to the user. Both read the same owned
+`Pred`, so "what the kernel sees" and "what the user reads" can never drift,
+while neither module touches sqlparser types.
 
 ## Testing
 

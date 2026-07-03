@@ -13,7 +13,8 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, gates, predicate_analyzer, predicate_parser, render, scan, stats,
+    attribution, credentials, gates, kernel_bridge, predicate_analyzer, predicate_ast, render,
+    scan, stats,
 };
 
 #[derive(Parser)]
@@ -203,11 +204,13 @@ fn try_main() -> Result<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)?;
+        let pred_ast = predicate_ast::parse(pred_str)?;
+        let classified = predicate_analyzer::classify(&pred_ast, &partition_columns);
+        let analysis = classified.analysis;
 
-        let partition_survivors = match &analysis.partition_safe {
-            Some(part_frag) => {
-                let part_pred = predicate_parser::parse_predicate(part_frag, &schema)?;
+        let partition_survivors = match &classified.partition_pred {
+            Some(part_ast) => {
+                let part_pred = kernel_bridge::emit_predicate(part_ast, &schema)?;
                 let surviving =
                     scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
                 Some(
@@ -221,7 +224,7 @@ fn try_main() -> Result<()> {
         };
 
         let full_survivors = if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
-            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)?;
+            let full_pred = kernel_bridge::emit_predicate(&pred_ast, &schema)?;
             let surviving =
                 scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
             Some(

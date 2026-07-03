@@ -1,8 +1,5 @@
-use sqlparser::ast::{BinaryOperator, Expr as SqlExpr};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-
 use crate::error::Error;
+use crate::predicate_ast::{self, Pred};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
@@ -26,36 +23,52 @@ pub struct PredicateAnalysis {
     pub notes: Vec<AnalysisNote>,
 }
 
-pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, Error> {
-    // 1. Parse sql
-    let dialect = GenericDialect {};
-    let mut parser = Parser::new(&dialect)
-        .try_with_sql(input)
-        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
-    let sql_expr = parser
-        .parse_expr()
-        .map_err(|e| Error::Predicate(format!("Parse error: {e}")))?;
+/// The analysis plus the partition-safe subtree, kept as an AST so the
+/// caller can lower it for the partition-only scan without re-parsing
+/// the rendered fragment string.
+#[derive(Debug, Clone)]
+pub struct Classified {
+    pub analysis: PredicateAnalysis,
+    pub partition_pred: Option<Pred>,
+}
 
-    let mut partition_frags: Vec<String> = Vec::new();
-    let mut stats_frags: Vec<String> = Vec::new();
-    let mut unsplittable_frags: Vec<String> = Vec::new();
+pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, Error> {
+    let pred = predicate_ast::parse(input)?;
+    Ok(classify(&pred, partition_columns).analysis)
+}
+
+/// Split the predicate's top-level conjuncts into the three buckets:
+/// partition_safe (prunes at directory level), stats_safe (prunes on
+/// min/max file statistics), unsplittable (cannot be attributed to a
+/// single phase, routed conservatively).
+pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
+    let mut partition_frags: Vec<&Pred> = Vec::new();
+    let mut stats_frags: Vec<&Pred> = Vec::new();
+    let mut unsplittable_frags: Vec<&Pred> = Vec::new();
     let mut notes: Vec<AnalysisNote> = Vec::new();
 
-    for clause in flatten_and(&sql_expr) {
-        let refs = collect_column_refs(clause);
-        let frag = clause.to_string();
+    for clause in pred.conjuncts() {
+        if clause.contains_unsupported() {
+            unsplittable_frags.push(clause);
+            notes.push(AnalysisNote {
+                code: "UNSUPPORTED_EXPRESSION".into(),
+                message: format!(
+                    "Expression outside the pruning language, routed as unsplittable: {clause}"
+                ),
+            });
+            continue;
+        }
 
+        let refs = clause.columns();
         let any_partition = refs.iter().any(|r| partition_columns.contains(r));
-
         let all_partitions = !refs.is_empty() && refs.iter().all(|r| partition_columns.contains(r));
 
         if all_partitions {
-            partition_frags.push(frag);
+            partition_frags.push(clause);
         } else if !any_partition {
-            stats_frags.push(frag);
+            stats_frags.push(clause);
         } else {
-            unsplittable_frags.push(frag);
-
+            unsplittable_frags.push(clause);
             notes.push(AnalysisNote {
                 code: "UNSPLITTABLE_OR".into(),
                 message: "Mixed expression across partition and non-partition \
@@ -65,9 +78,17 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
         }
     }
 
-    let partition_safe = join_opt(partition_frags);
-    let stats_safe = join_opt(stats_frags);
-    let unsplittable = join_opt(unsplittable_frags);
+    let partition_pred = match partition_frags.len() {
+        0 => None,
+        1 => Some(partition_frags[0].clone()),
+        _ => Some(Pred::And(
+            partition_frags.iter().map(|p| (*p).clone()).collect(),
+        )),
+    };
+
+    let partition_safe = join_opt(&partition_frags);
+    let stats_safe = join_opt(&stats_frags);
+    let unsplittable = join_opt(&unsplittable_frags);
 
     let confidence = if unsplittable.is_some() {
         Confidence::Incomplete
@@ -77,13 +98,16 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
         Confidence::Exact
     };
 
-    Ok(PredicateAnalysis {
-        partition_safe,
-        stats_safe,
-        unsplittable,
-        confidence,
-        notes,
-    })
+    Classified {
+        analysis: PredicateAnalysis {
+            partition_safe,
+            stats_safe,
+            unsplittable,
+            confidence,
+            notes,
+        },
+        partition_pred,
+    }
 }
 
 impl std::fmt::Display for Confidence {
@@ -97,72 +121,17 @@ impl std::fmt::Display for Confidence {
     }
 }
 
-fn join_opt(frags: Vec<String>) -> Option<String> {
+fn join_opt(frags: &[&Pred]) -> Option<String> {
     if frags.is_empty() {
         None
     } else {
-        Some(frags.join(" AND "))
-    }
-}
-
-/// Flatten top-level ANDs into a list of clauses.
-fn flatten_and(expr: &SqlExpr) -> Vec<&SqlExpr> {
-    match expr {
-        SqlExpr::BinaryOp {
-            left,
-            op: BinaryOperator::And,
-            right,
-        } => {
-            let mut v = flatten_and(left);
-            v.extend(flatten_and(right));
-            v
-        }
-        SqlExpr::Nested(inner) => flatten_and(inner),
-        _ => vec![expr],
-    }
-}
-
-/// Collect all column name references from an expression.
-fn collect_column_refs(expr: &SqlExpr) -> Vec<String> {
-    let mut refs = Vec::new();
-    collect_refs_inner(expr, &mut refs);
-    refs
-}
-
-fn collect_refs_inner(expr: &SqlExpr, refs: &mut Vec<String>) {
-    match expr {
-        SqlExpr::Identifier(ident) => refs.push(ident.value.clone()),
-        SqlExpr::CompoundIdentifier(parts) => {
-            refs.push(
-                parts
-                    .iter()
-                    .map(|p| &p.value)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join("."),
-            );
-        }
-        SqlExpr::BinaryOp { left, right, .. } => {
-            collect_refs_inner(left, refs);
-            collect_refs_inner(right, refs);
-        }
-        SqlExpr::UnaryOp { expr, .. } => collect_refs_inner(expr, refs),
-        SqlExpr::Nested(inner) => collect_refs_inner(inner, refs),
-        SqlExpr::IsNull(e) | SqlExpr::IsNotNull(e) => collect_refs_inner(e, refs),
-        SqlExpr::InList { expr, list, .. } => {
-            collect_refs_inner(expr, refs);
-            for item in list {
-                collect_refs_inner(item, refs);
-            }
-        }
-        SqlExpr::Between {
-            expr, low, high, ..
-        } => {
-            collect_refs_inner(expr, refs);
-            collect_refs_inner(low, refs);
-            collect_refs_inner(high, refs);
-        }
-        _ => {}
+        Some(
+            frags
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(" AND "),
+        )
     }
 }
 
@@ -233,6 +202,34 @@ mod tests {
         assert_eq!(r.confidence, Confidence::Incomplete);
         assert_eq!(r.notes.len(), 1);
         assert_eq!(r.notes[0].code, "UNSPLITTABLE_OR");
+    }
+
+    #[test]
+    fn unsupported_fragment_routes_unsplittable_with_note() {
+        let r = analyze("country = 'IT' AND UPPER(name) = 'X'", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_safe.as_deref(), Some("country = 'IT'"));
+        assert_eq!(r.stats_safe, None);
+        assert_eq!(r.unsplittable.as_deref(), Some("UPPER(name) = 'X'"));
+        assert_eq!(r.confidence, Confidence::Incomplete);
+        assert_eq!(r.notes.len(), 1);
+        assert_eq!(r.notes[0].code, "UNSUPPORTED_EXPRESSION");
+    }
+
+    #[test]
+    fn multiple_partition_fragments_keep_an_emittable_subtree() {
+        let pred = predicate_ast::parse("country = 'IT' AND region = 'EU' AND price > 5").unwrap();
+        let c = classify(&pred, &parts(&["country", "region"]));
+
+        assert_eq!(
+            c.analysis.partition_safe.as_deref(),
+            Some("country = 'IT' AND region = 'EU'")
+        );
+        let partition_pred = c.partition_pred.expect("partition subtree");
+        assert_eq!(
+            partition_pred.to_string(),
+            "country = 'IT' AND region = 'EU'"
+        );
     }
 
     #[test]
