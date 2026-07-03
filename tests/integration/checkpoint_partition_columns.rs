@@ -7,16 +7,11 @@
 //! entirely stats-safe and the two-phase attribution collapsed into a single
 //! data-skipping phase (total counts stayed correct).
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table-checkpointed-part")
+    fixture("test-table-checkpointed-part")
 }
 
 #[test]

@@ -7,17 +7,12 @@
 //! across three date partitions (2026-07-01/02/03), each day a morning file
 //! (01:00-03:00) and an evening file (20:00-22:00).
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn temporal_table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table-temporal")
+    fixture("test-table-temporal")
 }
 
 // ── DATE: partition pruning ─────────────────────────────────────────

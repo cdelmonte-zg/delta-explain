@@ -8,17 +8,12 @@
 //! allow it. This is the practical ceiling of nested data skipping: a deep or
 //! wide struct can starve later columns of statistics.
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn budget_table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table-stats-budget")
+    fixture("test-table-stats-budget")
 }
 
 #[test]

@@ -85,20 +85,26 @@ while neither module touches sqlparser types.
 
 ## Testing
 
-- `tests/cli.rs`: end-to-end scenarios via `assert_cmd`. Hits the actual binary,
-  asserts on stdout/stderr/exit code.
-- `tests/partition_columns.rs`: focused regression tests for the `partitionColumns`
-  metadata read path.
-- `tests/partial_stats.rs`: exercises the `stats.mode = "partial"` path against
-  `fixtures/test-table-partial-stats`.
-- `tests/semantic_regression.rs`: one canonical end-to-end JSON check per
-  "minimum case" from the roadmap (Step 1.5).
-- `tests/nested_stats.rs` / `tests/stats_budget.rs`: data skipping on nested
-  (dotted) columns and the `dataSkippingNumIndexedCols` budget ceiling.
-- `tests/checkpoint_stats.rs`: stats display and `--assert-stats` on
-  checkpoint-only logs, both layouts (`add.stats` JSON and `stats_parsed`).
-- `tests/checkpoint_partition_columns.rs`: partition-safe classification and
-  two-phase attribution on a checkpoint-only partitioned log.
+Integration tests are one binary: `tests/integration/main.rs`, one module per
+feature area. Shared helpers live in `tests/integration/common/mod.rs`:
+`cmd()` (the binary under test), `fixture(name)` (checked-in fixture paths),
+and `LogBuilder` (synthesizes a Delta log in a temp dir: arbitrary file
+counts, partition layouts, stats gaps, protocol reader/writer features).
+
+- **Placement rule**: `cli` holds CLI-surface tests only (arguments, exit
+  codes, output shape). The semantics of a feature go in that feature's
+  module (`nested_stats`, `checkpoint_stats`, `temporal_coercions`, ...);
+  new feature areas get a new module, declared in `main.rs`.
+- **Fixture rule**: prefer `LogBuilder` over a new checked-in fixture; check
+  a fixture in only when the log shape cannot be synthesized (checkpoint
+  Parquet, real-writer output). `fixtures/README.md` is the registry: every
+  table's layout, stats coverage, and consuming tests.
+- `semantic_regression`: one canonical end-to-end JSON check per "minimum
+  case" from the roadmap; grows one case per shipped feature.
+- `synthetic_log`: LogBuilder-backed scenarios, including the 1000-file
+  scale smoke.
+- The differential harness (`examples/differential`, Spark ground truth) is
+  the survivor-set oracle; it runs outside `cargo test` (see its README).
 - **Use `rstest`** when several cases share the same flow and differ only in inputs
   or expected outputs. Prefer one parameterized test with `#[case]` over four near-duplicate
   `#[test]` functions. When parameters are independent (cartesian product), `#[values]`.

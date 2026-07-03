@@ -5,17 +5,12 @@
 //! that version: fewer files in the snapshot, pruning computed against the
 //! historical layout.
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn test_table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table")
+    fixture("test-table")
 }
 
 #[rstest]

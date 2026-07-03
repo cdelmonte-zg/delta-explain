@@ -17,17 +17,12 @@
 //!   (`include_all_stats_columns`), which makes the kernel populate the scan
 //!   row's `stats` field via COALESCE(add.stats, ToJson(add.stats_parsed)).
 
-use assert_cmd::Command;
+use crate::common::cmd;
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn table(fixture: &str) -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/{fixture}")
+    crate::common::fixture(fixture)
 }
 
 // ── Fixture sanity ──────────────────────────────────────────────────

@@ -10,17 +10,8 @@
 //! output is the *human* surface, JSON is the *machine* surface, and that's
 //! what we lock down here.
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use serde_json::Value;
-
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
-fn fixture(name: &str) -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/{name}")
-}
 
 /// Run delta-explain with the given args and parse stdout as JSON.
 fn run_json(table: &str, predicate: Option<&str>) -> Value {
