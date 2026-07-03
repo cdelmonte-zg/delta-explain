@@ -21,6 +21,14 @@ follow SemVer relative to that field.
   explains each field, the verbose-only fields, and the stable note codes.
   The README gains a documentation pointer and a measured "Performance
   notes" section (200k files: ~1.6 s, ~320 MB, linear).
+- **Exotic log shapes proven.** The test matrix now covers log compaction
+  (synthesized `<start>.<end>.compacted.json` files: no double counting,
+  identical pruning, time travel through the compacted range), classic
+  multi-part checkpoints, and V2 UUID-named checkpoints with parquet
+  sidecars (two new Spark-written fixtures,
+  `fixtures/create_exotic_checkpoints.py` regenerates them). The kernel
+  handled all of them already; the matrix makes that a tested guarantee
+  instead of an assumption.
 
 - **Detect-and-declare for protocol features.** The report now declares the
   table features that distort or reframe its numbers, without changing how
