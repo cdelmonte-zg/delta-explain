@@ -47,7 +47,10 @@
       "description": "The Delta snapshot version analyzed (affected by --at-version)."
     },
     "predicate": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "The WHERE predicate as given, or null when no --where was passed."
     },
     "total_files": {
@@ -69,7 +72,9 @@
     "analysis": {
       "description": "Predicate classification; null when no --where was passed.",
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "required": [
@@ -82,21 +87,34 @@
           "additionalProperties": false,
           "properties": {
             "partition_safe": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "Conjuncts that prune at directory level (rendered from the normalized AST)."
             },
             "stats_safe": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "Conjuncts that prune on min/max file statistics."
             },
             "unsplittable": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "Conjuncts that cannot be attributed to a single phase; applied conservatively."
             },
-            "confidence": { "$ref": "#/definitions/confidence" },
+            "confidence": {
+              "$ref": "#/definitions/confidence"
+            },
             "notes": {
               "type": "array",
-              "items": { "$ref": "#/definitions/note" },
+              "items": {
+                "$ref": "#/definitions/note"
+              },
               "description": "Analyzer diagnostics. Stable codes: UNSPLITTABLE_OR, UNSUPPORTED_EXPRESSION."
             }
           }
@@ -110,13 +128,18 @@
         "deletion_vectors",
         "column_mapping_mode",
         "clustering_columns",
+        "in_commit_timestamps",
+        "unrecognized_writer_features",
         "notes"
       ],
       "additionalProperties": false,
       "properties": {
         "deletion_vectors": {
           "type": "object",
-          "required": ["enabled", "files_with_deletion_vectors"],
+          "required": [
+            "enabled",
+            "files_with_deletion_vectors"
+          ],
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -131,35 +154,79 @@
           }
         },
         "column_mapping_mode": {
-          "type": ["string", "null"],
-          "enum": ["name", "id", null],
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "name",
+            "id",
+            null
+          ],
           "description": "Column mapping mode, or null when mapping is absent."
         },
         "clustering_columns": {
-          "type": ["array", "null"],
-          "items": { "type": "string" },
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "Liquid clustering columns (dotted paths); empty array when the table is clustered but the domain payload is unreadable; null when not clustered. Undetectable on fully checkpointed logs."
         },
         "notes": {
           "type": "array",
-          "items": { "$ref": "#/definitions/note" },
+          "items": {
+            "$ref": "#/definitions/note"
+          },
           "description": "Table-level warnings. Stable codes: DELETION_VECTORS, COLUMN_MAPPING, LIQUID_CLUSTERING."
+        },
+        "in_commit_timestamps": {
+          "type": "boolean",
+          "description": "delta.enableInCommitTimestamps or the inCommitTimestamp writer feature. Declared for completeness; nothing this tool reports depends on it."
+        },
+        "unrecognized_writer_features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Writer features outside the set known to be irrelevant to the reported numbers; each earns an UNRECOGNIZED_TABLE_FEATURE warning."
         }
       }
     },
     "stats": {
       "type": "object",
-      "required": ["mode", "files_with_stats", "total_files", "pct"],
+      "required": [
+        "mode",
+        "files_with_stats",
+        "total_files",
+        "pct"
+      ],
       "additionalProperties": false,
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["exact", "partial", "absent"],
+          "enum": [
+            "exact",
+            "partial",
+            "absent"
+          ],
           "description": "Per-table statistics coverage. Reflects the indexed columns, not per-predicate reachability."
         },
-        "files_with_stats": { "type": "integer", "minimum": 0 },
-        "total_files": { "type": "integer", "minimum": 0 },
-        "pct": { "type": "number", "minimum": 0, "maximum": 100 }
+        "files_with_stats": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
       }
     },
     "phases": {
@@ -180,18 +247,36 @@
         "properties": {
           "name": {
             "type": "string",
-            "enum": ["Partition pruning", "Data skipping (min/max statistics)"],
+            "enum": [
+              "Partition pruning",
+              "Data skipping (min/max statistics)"
+            ],
             "description": "Phase identifier; also the value files[].pruned_by refers to."
           },
-          "confidence": { "$ref": "#/definitions/confidence" },
+          "confidence": {
+            "$ref": "#/definitions/confidence"
+          },
           "predicate": {
             "type": "string",
             "description": "The normalized fragment this phase evaluated."
           },
-          "input_files": { "type": "integer", "minimum": 0 },
-          "output_files": { "type": "integer", "minimum": 0 },
-          "pruned_files": { "type": "integer", "minimum": 0 },
-          "pruning_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+          "input_files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pruned_files": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pruning_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
     },
@@ -202,31 +287,62 @@
         "oneOf": [
           {
             "type": "object",
-            "required": ["name", "threshold", "actual", "result"],
+            "required": [
+              "name",
+              "threshold",
+              "actual",
+              "result"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": { "const": "min_pruning" },
-              "threshold": { "type": "number" },
-              "actual": { "type": "number" },
-              "result": { "$ref": "#/definitions/assertion_result" }
+              "name": {
+                "const": "min_pruning"
+              },
+              "threshold": {
+                "type": "number"
+              },
+              "actual": {
+                "type": "number"
+              },
+              "result": {
+                "$ref": "#/definitions/assertion_result"
+              }
             }
           },
           {
             "type": "object",
-            "required": ["name", "missing_count", "result"],
+            "required": [
+              "name",
+              "missing_count",
+              "result"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": { "const": "stats_complete" },
-              "missing_count": { "type": "integer", "minimum": 0 },
-              "result": { "$ref": "#/definitions/assertion_result" }
+              "name": {
+                "const": "stats_complete"
+              },
+              "missing_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "result": {
+                "$ref": "#/definitions/assertion_result"
+              }
             }
           }
         ]
       }
     },
     "result": {
-      "type": ["string", "null"],
-      "enum": ["pass", "fail", null],
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "pass",
+        "fail",
+        null
+      ],
       "description": "Overall assertion outcome: null when no gates ran; fail also makes the process exit 1."
     },
     "files": {
@@ -249,23 +365,36 @@
             "type": "string",
             "description": "File path relative to the table root, as recorded in the log."
           },
-          "size_bytes": { "type": "integer", "minimum": 0 },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
           "partition_values": {
             "type": "object",
-            "additionalProperties": { "type": "string" }
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "num_records": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 0,
             "description": "From the file's statistics; includes soft-deleted rows on files with deletion vectors. Null when the file carries no stats."
           },
-          "has_stats": { "type": "boolean" },
+          "has_stats": {
+            "type": "boolean"
+          },
           "kept": {
             "type": "boolean",
             "description": "True when the file survives every phase. The set of kept files is the survivor set, guaranteed to be a superset of the files any engine needs."
           },
           "pruned_by": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Name of the first phase that eliminated the file, or null when kept."
           }
         }
@@ -279,24 +408,36 @@
   "definitions": {
     "confidence": {
       "type": "string",
-      "enum": ["exact", "conservative", "incomplete"],
+      "enum": [
+        "exact",
+        "conservative",
+        "incomplete"
+      ],
       "description": "exact: the phase's file elimination is precise. conservative: sound but may keep extra files (min/max ranges overlap without containing matches). incomplete: part of the predicate could not be attributed; numbers are still sound but under-explained."
     },
     "note": {
       "type": "object",
-      "required": ["code", "message"],
+      "required": [
+        "code",
+        "message"
+      ],
       "additionalProperties": false,
       "properties": {
         "code": {
           "type": "string",
           "description": "Stable machine-readable identifier. New codes are additive (minor bump)."
         },
-        "message": { "type": "string" }
+        "message": {
+          "type": "string"
+        }
       }
     },
     "assertion_result": {
       "type": "string",
-      "enum": ["pass", "fail"]
+      "enum": [
+        "pass",
+        "fail"
+      ]
     }
   }
 }

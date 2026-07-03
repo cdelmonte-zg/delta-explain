@@ -270,6 +270,8 @@ pub fn print_json(
         },
         "column_mapping_mode": tf.column_mapping_mode,
         "clustering_columns": tf.clustering_columns,
+        "in_commit_timestamps": tf.in_commit_timestamps,
+        "unrecognized_writer_features": tf.unrecognized_writer_features,
         "notes": tf.notes(report.total_files).iter().map(|n| json!({
             "code": n.code,
             "message": n.message,

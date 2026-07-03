@@ -72,6 +72,11 @@ pub struct LogMetadata {
     /// on a fully checkpointed log clustering goes undetected (same blind
     /// spot as the partition columns above).
     pub clustering_domain: Option<String>,
+    /// Reader/writer table features from the last `protocol` action in the
+    /// JSON commits (empty on pre-feature protocols and on fully
+    /// checkpointed logs).
+    pub reader_features: Vec<String>,
+    pub writer_features: Vec<String>,
 }
 
 /// Read partition columns and the clustering domain from the Delta log in a
@@ -118,6 +123,8 @@ async fn read_log_metadata_async(
     // metaData; a clustering domain can be rewritten or tombstoned).
     let mut partition_columns = Vec::new();
     let mut clustering_domain: Option<String> = None;
+    let mut reader_features: Vec<String> = Vec::new();
+    let mut writer_features: Vec<String> = Vec::new();
 
     for path in json_paths {
         let data = store
@@ -144,6 +151,22 @@ async fn read_log_metadata_async(
                     .collect();
             }
 
+            if let Some(protocol) = action.get("protocol") {
+                let feature_list = |key: &str| -> Vec<String> {
+                    protocol
+                        .get(key)
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|f| f.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                reader_features = feature_list("readerFeatures");
+                writer_features = feature_list("writerFeatures");
+            }
+
             if let Some(dm) = action.get("domainMetadata")
                 && dm.get("domain").and_then(|v| v.as_str()) == Some("delta.clustering")
             {
@@ -163,6 +186,8 @@ async fn read_log_metadata_async(
     Ok(LogMetadata {
         partition_columns,
         clustering_domain,
+        reader_features,
+        writer_features,
     })
 }
 

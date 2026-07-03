@@ -42,7 +42,11 @@ concurrency and no adaptive behavior:
 ## Soundness
 
 The one hard guarantee: **the survivor set is a superset of the files that
-contain matching rows**. Pruning may be less aggressive than an engine's
+contain matching rows**. This is a contract verified on the current
+support surface (the constructs and table shapes in the test matrix and
+the differential harness), not a theorem about arbitrary future features:
+when the tool meets something outside that surface, it degrades or refuses
+loudly rather than extend the claim silently. Pruning may be less aggressive than an engine's
 (and usually is not), but a pruned file never contains a match.
 
 This is validated continuously by the differential harness

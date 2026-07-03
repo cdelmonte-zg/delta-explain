@@ -30,7 +30,7 @@ changes bump the major. Consumers should:
 | `final_files` | integer | Files surviving the last phase |
 | `total_pruning_pct` | number | Overall reduction in percent |
 | `analysis` | object \| null | Predicate classification, null without `--where` |
-| `table_features` | object | Detect-and-declare block (see below) |
+| `table_features` | object | Detect-and-declare block: deletion vectors, `column_mapping_mode`, `clustering_columns`, `in_commit_timestamps`, `unrecognized_writer_features`, and warning `notes` |
 | `stats` | object | Statistics coverage: `mode` is `exact` / `partial` / `absent` |
 | `phases` | array | Chained pruning phases, empty without `--where` |
 | `assertions` | array | One entry per gate that ran, empty without gate flags |
@@ -80,6 +80,7 @@ additive:
 | `DELETION_VECTORS` | `table_features.notes` | Files carry deletion vectors; record counts include soft-deleted rows |
 | `COLUMN_MAPPING` | `table_features.notes` | The log stores physical column names; verbose stats may display them |
 | `LIQUID_CLUSTERING` | `table_features.notes` | The table is liquid-clustered; layout is not directory partitions, data skipping still applies |
+| `UNRECOGNIZED_TABLE_FEATURE` | `table_features.notes` | The table carries writer features this tool does not know; the numbers do not account for whatever they imply |
 
 ## `assertions[]`
 

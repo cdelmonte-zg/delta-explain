@@ -190,6 +190,20 @@ fn try_main() -> Result<()> {
 
     let url = parse_table_uri(&cli.path)?;
     let EngineAndStore { engine, store } = build_engine(&url, &cli)?;
+
+    // Read the log's own metadata before asking the kernel for a snapshot:
+    // a catalog-managed table deserves this tool's explanation, not the
+    // kernel's API-flavored refusal.
+    let log_metadata = stats::read_log_metadata(&url, &store)?;
+    if let Some(feature) = features::catalog_managed_feature(&log_metadata.reader_features) {
+        return Err(Error::UnsupportedTable(format!(
+            "table is catalog-managed (reader feature '{feature}'): its latest \
+             commits live in the catalog, not the filesystem log, so a \
+             filesystem-only analysis cannot be trusted. delta-explain does \
+             not support catalog-managed tables yet"
+        )));
+    }
+
     let mut snapshot_builder = Snapshot::builder_for(url.clone());
     if let Some(version) = cli.at_version {
         snapshot_builder = snapshot_builder.at_version(version);
@@ -201,7 +215,6 @@ fn try_main() -> Result<()> {
         files: all_files,
         stats: file_stats,
     } = scan::scan_baseline(snapshot.clone(), engine.as_ref())?;
-    let log_metadata = stats::read_log_metadata(&url, &store)?;
     let mut partition_columns = log_metadata.partition_columns;
     if partition_columns.is_empty() {
         // On a fully checkpointed log no metaData action survives in the JSON
@@ -213,6 +226,7 @@ fn try_main() -> Result<()> {
         &snapshot,
         &all_files,
         log_metadata.clustering_domain.as_deref(),
+        &log_metadata.writer_features,
     );
 
     let mut report = PruningReport {
