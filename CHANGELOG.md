@@ -20,6 +20,11 @@ follow SemVer relative to that field.
   `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes
   `country = 'DE'` as partition-safe. Rewrites preserve SQL semantics, so
   survivor sets do not change; what improves is attribution and confidence.
+- **`IS [NOT] DISTINCT FROM` (null-safe comparison).** Maps to the kernel's
+  native `Distinct` predicate, which is evaluated exactly over partition
+  values; file statistics cannot prune on it, so on data columns it keeps
+  files conservatively. This closes the last gap between the SQL surface
+  and the predicate language of delta-kernel 0.24.
 - **Diagnostic degradation for unsupported expressions.** Constructs outside
   the pruning language (function calls, arithmetic, LIKE, subqueries,
   column-to-column comparisons) no longer abort the command. The fragment is

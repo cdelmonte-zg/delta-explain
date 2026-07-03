@@ -139,6 +139,19 @@ fn emit(pred: &Pred, schema: &SchemaRef) -> Result<Predicate, String> {
                 c.is_null()
             })
         }
+        Pred::Distinct { col, lit, negated } => {
+            let hint = resolve_column_type(col, schema);
+            let c = column_expr(col);
+            let l = literal_expr(lit, hint.as_ref())?;
+            let distinct = Predicate::distinct(c, l);
+            // DISTINCT is two-valued, so NOT(distinct) is exact, not merely
+            // conservative.
+            Ok(if *negated {
+                Predicate::not(distinct)
+            } else {
+                distinct
+            })
+        }
         Pred::BoolCol(col) => Ok(Predicate::from_expr(column_expr(col))),
         Pred::Unsupported { reason, .. } => Err(reason.clone()),
     }

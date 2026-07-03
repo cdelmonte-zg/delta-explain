@@ -52,6 +52,8 @@ PREDICATES = [
     # not change the survivor set
     "NOT (country = 'DE' OR age > 60)",
     "(country = 'DE' AND age > 55) OR (country = 'DE' AND score > 95.5)",
+    # null-safe comparison, evaluated over partition values
+    "country IS DISTINCT FROM 'DE'",
 ]
 
 

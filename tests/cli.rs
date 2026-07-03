@@ -630,6 +630,31 @@ fn unsupported_inside_or_poisons_the_whole_or_conservatively() {
     assert_eq!(json["final_files"], 6);
 }
 
+// ── Null-safe comparison (IS DISTINCT FROM) ─────────────────────────
+
+#[test]
+fn is_distinct_from_prunes_partitions_exactly() {
+    // Null-safe inequality on the partition column: DE files drop, US + IT stay.
+    cmd()
+        .args([&test_table(), "-w", "country IS DISTINCT FROM 'DE'"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("partition-safe: country IS DISTINCT FROM 'DE'")
+                .and(predicate::str::contains("files remaining: 4"))
+                .and(predicate::str::contains("confidence:     exact")),
+        );
+}
+
+#[test]
+fn is_not_distinct_from_behaves_like_null_safe_equality() {
+    cmd()
+        .args([&test_table(), "-w", "country IS NOT DISTINCT FROM 'DE'"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("files remaining: 2"));
+}
+
 // ── Normalization rewrites (classification, not survivor sets) ──────
 
 #[test]

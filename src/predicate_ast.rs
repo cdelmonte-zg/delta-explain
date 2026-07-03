@@ -100,6 +100,14 @@ pub enum Pred {
         col: ColRef,
         negated: bool,
     },
+    /// Null-safe comparison: `col IS [NOT] DISTINCT FROM lit`. Two-valued,
+    /// never NULL, so its negation is exact. The kernel evaluates it over
+    /// partition values; file statistics cannot prune on it.
+    Distinct {
+        col: ColRef,
+        lit: Literal,
+        negated: bool,
+    },
     /// A bare boolean column used as a predicate: `WHERE is_active`.
     BoolCol(ColRef),
     /// Anything sqlparser accepted but the pruning language cannot express.
@@ -144,6 +152,7 @@ impl Pred {
             | Pred::In { .. }
             | Pred::Between { .. }
             | Pred::IsNull { .. }
+            | Pred::Distinct { .. }
             | Pred::BoolCol(_) => false,
         }
     }
@@ -167,6 +176,7 @@ impl Pred {
             | Pred::In { col, .. }
             | Pred::Between { col, .. }
             | Pred::IsNull { col, .. }
+            | Pred::Distinct { col, .. }
             | Pred::BoolCol(col) => cols.push(col.dotted()),
             Pred::Unsupported { .. } => {}
         }
@@ -200,6 +210,7 @@ impl Pred {
             | Pred::In { .. }
             | Pred::Between { .. }
             | Pred::IsNull { .. }
+            | Pred::Distinct { .. }
             | Pred::BoolCol(_) => {}
         }
     }
@@ -243,6 +254,7 @@ impl Pred {
             | Pred::In { .. }
             | Pred::Between { .. }
             | Pred::IsNull { .. }
+            | Pred::Distinct { .. }
             | Pred::BoolCol(_) => Some(self.clone()),
         }
     }
@@ -324,6 +336,11 @@ fn push_down_not(pred: Pred, neg: bool) -> Pred {
         },
         Pred::IsNull { col, negated } => Pred::IsNull {
             col,
+            negated: negated != neg,
+        },
+        Pred::Distinct { col, lit, negated } => Pred::Distinct {
+            col,
+            lit,
             negated: negated != neg,
         },
         leaf @ (Pred::BoolCol(_) | Pred::Unsupported { .. }) => {
@@ -450,6 +467,9 @@ fn convert(expr: &SqlExpr) -> Pred {
         SqlExpr::IsNull(inner) => convert_null_check(expr, inner, false),
         SqlExpr::IsNotNull(inner) => convert_null_check(expr, inner, true),
 
+        SqlExpr::IsDistinctFrom(a, b) => convert_distinct(expr, a, b, false),
+        SqlExpr::IsNotDistinctFrom(a, b) => convert_distinct(expr, a, b, true),
+
         SqlExpr::InList {
             expr: lhs,
             list,
@@ -532,6 +552,23 @@ fn convert_comparison(whole: &SqlExpr, left: &SqlExpr, op: CmpOp, right: &SqlExp
             op: op.flipped(),
             lit,
         },
+        (Ok(Operand::Col(_)), Ok(Operand::Col(_))) => unsupported(
+            whole,
+            "Column-to-column comparisons cannot use file statistics".into(),
+        ),
+        (Ok(Operand::Lit(_)), Ok(Operand::Lit(_))) => unsupported(
+            whole,
+            "Comparison between two literals references no column".into(),
+        ),
+        (Err(reason), _) | (_, Err(reason)) => unsupported(whole, reason),
+    }
+}
+
+fn convert_distinct(whole: &SqlExpr, a: &SqlExpr, b: &SqlExpr, negated: bool) -> Pred {
+    // DISTINCT is symmetric, so the literal-first form needs no operator flip.
+    match (operand(a), operand(b)) {
+        (Ok(Operand::Col(col)), Ok(Operand::Lit(lit)))
+        | (Ok(Operand::Lit(lit)), Ok(Operand::Col(col))) => Pred::Distinct { col, lit, negated },
         (Ok(Operand::Col(_)), Ok(Operand::Col(_))) => unsupported(
             whole,
             "Column-to-column comparisons cannot use file statistics".into(),
@@ -676,6 +713,10 @@ impl fmt::Display for Pred {
                 }
             }
             Pred::Cmp { col, op, lit } => write!(f, "{col} {op} {lit}"),
+            Pred::Distinct { col, lit, negated } => {
+                let not = if *negated { "NOT " } else { "" };
+                write!(f, "{col} IS {not}DISTINCT FROM {lit}")
+            }
             Pred::In { col, list, negated } => {
                 let not = if *negated { "NOT " } else { "" };
                 write!(f, "{col} {not}IN (")?;
@@ -924,6 +965,26 @@ mod tests {
             p("UPPER(name) = 'X' OR country = 'DE'")
                 .without_unsupported()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn distinct_parses_and_negation_toggles_exactly() {
+        assert_eq!(
+            p("country IS DISTINCT FROM 'DE'").to_string(),
+            "country IS DISTINCT FROM 'DE'"
+        );
+        assert_eq!(
+            p("'DE' IS DISTINCT FROM country").to_string(),
+            "country IS DISTINCT FROM 'DE'"
+        );
+        assert_eq!(
+            norm("NOT country IS DISTINCT FROM 'DE'"),
+            "country IS NOT DISTINCT FROM 'DE'"
+        );
+        assert_eq!(
+            norm("NOT country IS NOT DISTINCT FROM 'DE'"),
+            "country IS DISTINCT FROM 'DE'"
         );
     }
 
