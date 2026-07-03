@@ -269,6 +269,7 @@ The JSON output is versioned independently from the CLI binary (`schema_version:
 - `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
 - `phases[]`: one entry per pruning phase, each with its own `confidence` tag
 - `stats`: coverage block with categorical `mode` (`exact` / `partial` / `absent`)
+- `table_features`: detect-and-declare block for protocol features that reframe the numbers: deletion vectors (`enabled`, `files_with_deletion_vectors`), `column_mapping_mode`, `clustering_columns`, and the corresponding warning `notes` (`DELETION_VECTORS`, `COLUMN_MAPPING`, `LIQUID_CLUSTERING`)
 - `assertions[]` and `result`: outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
 - with `--verbose`: `files[]` (per file: `path`, `size_bytes`, `partition_values`, `num_records`, `has_stats`, `kept`, `pruned_by`) and `files_truncated` when `--limit` cut the list
 - `schema_version`, `tool_version`, `elapsed_ms`: release and run metadata
@@ -350,7 +351,13 @@ Literals are resolved against the Delta schema: numeric types (including `SHORT`
 
 - **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
 
-- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts. OR expressions mixing partition and non-partition columns are flagged as `unsplittable` per the rule above; they are not silently downgraded.
+- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts, after normalization: negations push down to the leaves (De Morgan) and conjuncts common to every OR branch factor out of the OR, so `NOT (country = 'DE' OR age > 30)` splits into two attributable phases and `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes `country = 'DE'` as partition-safe. What remains is the irreducibly mixed OR (`country = 'DE' OR age > 30`): it is flagged as `unsplittable` per the rule above, never silently downgraded.
+
+- **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons cannot use min/max statistics (no engine can, at the file level); such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune.
+
+- **`IN` pruning strength varies by engine.** delta-explain expands `IN` lists into OR-of-equalities, the strongest sound form, with no size cap. Real engines differ: DataFusion-based engines (delta-rs) do the same expansion but stop skipping past 20 list items, and delta-spark evaluates an imprecise range test over the whole list (`min(values) <= col <= max(values)`), which keeps more files on sparse lists. On `IN`-heavy predicates a specific engine may therefore prune less than this report shows; the report reflects what the metadata makes possible, and it is always sound.
+
+- **Protocol features are declared, not compensated.** Deletion vectors, column mapping, and liquid clustering are detected and reported in `table_features` with explicit warnings, but the numbers are not adjusted: record counts still include soft-deleted rows on files with deletion vectors, verbose statistics may show physical column names under column mapping, and clustering columns are informational. On a fully checkpointed log (no JSON commits) liquid clustering goes undetected, because delta-kernel exposes no public accessor for system metadata domains.
 
 See [VISION.md](VISION.md) for planned improvements.
 

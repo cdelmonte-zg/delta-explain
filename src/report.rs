@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::features::TableFeatures;
 use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::stats::FileStats;
 
@@ -26,6 +27,7 @@ pub struct FileInfo {
     pub size: i64,
     pub partition_values: HashMap<String, String>,
     pub num_records: Option<u64>,
+    pub has_deletion_vector: bool,
 }
 
 pub struct PhaseResult {
@@ -39,6 +41,7 @@ pub struct PhaseResult {
 
 pub struct PruningReport {
     pub analysis: Option<PredicateAnalysis>,
+    pub table_features: TableFeatures,
     pub table_path: String,
     pub version: u64,
     pub total_files: usize,

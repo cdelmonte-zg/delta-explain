@@ -13,6 +13,7 @@
 pub mod attribution;
 pub mod credentials;
 pub mod error;
+pub mod features;
 pub mod gates;
 pub mod kernel_bridge;
 pub mod predicate_analyzer;

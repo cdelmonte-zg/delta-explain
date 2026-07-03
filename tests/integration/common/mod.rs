@@ -26,10 +26,12 @@ pub fn fixture(name: &str) -> String {
 /// Reader/writer features force protocol (3, 7); otherwise (1, 2) is used.
 pub struct LogBuilder {
     columns: Vec<(String, serde_json::Value)>,
+    column_metadata: Vec<serde_json::Value>,
     partition_columns: Vec<String>,
     configuration: BTreeMap<String, String>,
     reader_features: Vec<String>,
     writer_features: Vec<String>,
+    domain_metadata: Vec<serde_json::Value>,
     adds: Vec<serde_json::Value>,
 }
 
@@ -37,10 +39,12 @@ impl LogBuilder {
     pub fn new() -> Self {
         LogBuilder {
             columns: Vec::new(),
+            column_metadata: Vec::new(),
             partition_columns: Vec::new(),
             configuration: BTreeMap::new(),
             reader_features: Vec::new(),
             writer_features: Vec::new(),
+            domain_metadata: Vec::new(),
             adds: Vec::new(),
         }
     }
@@ -49,6 +53,20 @@ impl LogBuilder {
     /// "integer", "double", "date", ...).
     pub fn column(mut self, name: &str, kind: &str) -> Self {
         self.columns.push((name.into(), serde_json::json!(kind)));
+        self.column_metadata.push(serde_json::json!({}));
+        self
+    }
+
+    /// A column-mapped primitive column: carries the per-field
+    /// `delta.columnMapping.id` / `physicalName` metadata the mapping modes
+    /// require.
+    #[allow(dead_code)]
+    pub fn mapped_column(mut self, name: &str, kind: &str, id: i64, physical: &str) -> Self {
+        self.columns.push((name.into(), serde_json::json!(kind)));
+        self.column_metadata.push(serde_json::json!({
+            "delta.columnMapping.id": id,
+            "delta.columnMapping.physicalName": physical,
+        }));
         self
     }
 
@@ -75,6 +93,20 @@ impl LogBuilder {
         self
     }
 
+    /// A domainMetadata action, e.g. domain "delta.clustering" with a
+    /// clusteringColumns JSON payload.
+    #[allow(dead_code)]
+    pub fn domain_metadata(mut self, domain: &str, configuration: &str) -> Self {
+        self.domain_metadata.push(serde_json::json!({
+            "domainMetadata": {
+                "domain": domain,
+                "configuration": configuration,
+                "removed": false,
+            }
+        }));
+        self
+    }
+
     /// One add action. `partition_values` must name every partition column;
     /// `stats` is the stats JSON blob, or None for a stats-less file.
     pub fn add_file(
@@ -95,6 +127,34 @@ impl LogBuilder {
             add["stats"] = serde_json::json!(s.to_string());
         }
         self.adds.push(serde_json::json!({ "add": add }));
+        self
+    }
+
+    /// Like `add_file`, but the add action carries an inline deletion vector
+    /// descriptor. A metadata scan never dereferences the vector, so the
+    /// payload only needs to be structurally valid.
+    #[allow(dead_code)]
+    pub fn add_file_with_dv(
+        mut self,
+        path: &str,
+        partition_values: &[(&str, &str)],
+        stats: Option<serde_json::Value>,
+    ) -> Self {
+        self = self.add_file(path, partition_values, stats);
+        if let Some(serde_json::Value::Object(add)) =
+            self.adds.last_mut().and_then(|a| a.get_mut("add"))
+        {
+            add.insert(
+                "deletionVector".into(),
+                serde_json::json!({
+                    "storageType": "u",
+                    "pathOrInlineDv": "vBn[lx{q8@P<9wq",
+                    "offset": 1,
+                    "sizeInBytes": 36,
+                    "cardinality": 2,
+                }),
+            );
+        }
         self
     }
 
@@ -134,9 +194,10 @@ impl LogBuilder {
         let fields: Vec<serde_json::Value> = self
             .columns
             .iter()
-            .map(|(name, kind)| {
+            .zip(&self.column_metadata)
+            .map(|((name, kind), metadata)| {
                 serde_json::json!({
-                    "name": name, "type": kind, "nullable": true, "metadata": {}
+                    "name": name, "type": kind, "nullable": true, "metadata": metadata
                 })
             })
             .collect();
@@ -153,6 +214,9 @@ impl LogBuilder {
         let mut commit = String::new();
         writeln!(commit, "{protocol}").unwrap();
         writeln!(commit, "{metadata}").unwrap();
+        for dm in &self.domain_metadata {
+            writeln!(commit, "{dm}").unwrap();
+        }
         for add in &self.adds {
             writeln!(commit, "{add}").unwrap();
         }

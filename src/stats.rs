@@ -58,27 +58,37 @@ pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
     })
 }
 
-/// Read partition columns from the `metadata` action in the Delta log.
-///
-/// Scans the JSON log files for the last `metaData` action and extracts the
-/// `partitionColumns` array: the authoritative source per the Delta protocol,
-/// and the only one that covers empty tables. On a fully checkpointed log no
-/// JSON `metaData` survives and this returns empty; the caller then falls
-/// back to `scan::partition_columns_from_files`, which derives the columns
-/// from the kernel-replayed `partitionValues` keys.
-pub fn read_partition_columns_from_log(
-    table_url: &Url,
-    store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, Error> {
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| Error::Storage(format!("Cannot create tokio runtime: {e}")))?;
-    rt.block_on(read_partition_columns_async(table_url, store))
+/// Table-level facts read straight from the JSON commits of the Delta log,
+/// collected in one pass.
+pub struct LogMetadata {
+    /// From the last `metaData` action: authoritative per the protocol, and
+    /// the only source that covers empty tables. Empty on a fully
+    /// checkpointed log; the caller falls back to
+    /// `scan::partition_columns_from_files`.
+    pub partition_columns: Vec<String>,
+    /// Raw `configuration` payload of the last surviving `delta.clustering`
+    /// domainMetadata action. delta-kernel 0.24 exposes no public accessor
+    /// for system domains, so this comes from the JSON commits directly;
+    /// on a fully checkpointed log clustering goes undetected (same blind
+    /// spot as the partition columns above).
+    pub clustering_domain: Option<String>,
 }
 
-async fn read_partition_columns_async(
+/// Read partition columns and the clustering domain from the Delta log in a
+/// single pass over the JSON commits.
+pub fn read_log_metadata(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
-) -> Result<Vec<String>, Error> {
+) -> Result<LogMetadata, Error> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| Error::Storage(format!("Cannot create tokio runtime: {e}")))?;
+    rt.block_on(read_log_metadata_async(table_url, store))
+}
+
+async fn read_log_metadata_async(
+    table_url: &Url,
+    store: &Arc<DynObjectStore>,
+) -> Result<LogMetadata, Error> {
     let (_, table_prefix) = object_store::parse_url(table_url)
         .map_err(|e| Error::Storage(format!("Cannot parse table URL: {e}")))?;
 
@@ -104,8 +114,10 @@ async fn read_partition_columns_async(
         .collect();
     json_paths.sort();
 
-    // The last metaData action wins (schema evolution can replace it).
+    // The last action of each kind wins (schema evolution can replace the
+    // metaData; a clustering domain can be rewritten or tombstoned).
     let mut partition_columns = Vec::new();
+    let mut clustering_domain: Option<String> = None;
 
     for path in json_paths {
         let data = store
@@ -131,10 +143,27 @@ async fn read_partition_columns_async(
                     .filter_map(|v| v.as_str().map(String::from))
                     .collect();
             }
+
+            if let Some(dm) = action.get("domainMetadata")
+                && dm.get("domain").and_then(|v| v.as_str()) == Some("delta.clustering")
+            {
+                let removed = dm.get("removed").and_then(|v| v.as_bool()).unwrap_or(false);
+                clustering_domain = if removed {
+                    None
+                } else {
+                    dm.get("configuration")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .or(Some(String::new()))
+                };
+            }
         }
     }
 
-    Ok(partition_columns)
+    Ok(LogMetadata {
+        partition_columns,
+        clustering_domain,
+    })
 }
 
 fn col_entry(columns: &mut HashMap<String, ColumnStats>, key: String) -> &mut ColumnStats {

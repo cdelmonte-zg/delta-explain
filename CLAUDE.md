@@ -59,6 +59,13 @@ CLI in `main.rs`:
   types), and maps every kernel operator to a `Capability` tier through
   exhaustive matches with no catch-all arm, so a kernel bump that widens an
   enum breaks compilation instead of silently gapping support.
+- **`features.rs`**: detect-and-declare for protocol features that distort or
+  reframe the report's numbers (deletion vectors, column mapping, liquid
+  clustering). Detection reads `snapshot.table_properties()` plus the
+  `delta.clustering` domain from the JSON log (`stats::read_log_metadata`;
+  the kernel exposes no public accessor for system domains). Produces the
+  JSON `table_features` block and table-level warnings; never changes how
+  pruning is computed.
 - **`scan.rs`**: kernel-backed metadata scans. `scan_baseline` collects the file
   listing and the per-file stats from one `scan_metadata` pass (the stats ride on
   the scan rows via `include_all_stats_columns`, checkpoint Parquet included);

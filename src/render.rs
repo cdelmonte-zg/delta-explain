@@ -54,10 +54,6 @@ pub fn print_text(
     println!();
     println!("Files in snapshot: {}", fmt(report.total_files));
 
-    if report.phases.is_empty() {
-        return;
-    }
-
     for (i, phase) in report.phases.iter().enumerate() {
         let dropped = phase.input_count.saturating_sub(phase.output_count);
         let pct = pruning_pct(phase.input_count, phase.output_count);
@@ -89,12 +85,14 @@ pub fn print_text(
         );
     }
 
-    if let Some(analysis) = &report.analysis
-        && !analysis.notes.is_empty()
-    {
+    let mut warnings = report.table_features.notes(report.total_files);
+    if let Some(analysis) = &report.analysis {
+        warnings.extend(analysis.notes.iter().cloned());
+    }
+    if !warnings.is_empty() {
         println!();
         println!("Warnings!");
-        for note in &analysis.notes {
+        for note in &warnings {
             println!("[{}]: {}", note.code, note.message);
         }
     }
@@ -262,6 +260,20 @@ pub fn print_json(
         None => serde_json::Value::Null,
     };
 
+    let tf = &report.table_features;
+    let table_features = json!({
+        "deletion_vectors": {
+            "enabled": tf.deletion_vectors_enabled,
+            "files_with_deletion_vectors": tf.files_with_deletion_vectors,
+        },
+        "column_mapping_mode": tf.column_mapping_mode,
+        "clustering_columns": tf.clustering_columns,
+        "notes": tf.notes(report.total_files).iter().map(|n| json!({
+            "code": n.code,
+            "message": n.message,
+        })).collect::<Vec<_>>(),
+    });
+
     let mut output = json!({
         "schema_version": SCHEMA_VERSION,
         "tool_version": env!("CARGO_PKG_VERSION"),
@@ -273,6 +285,7 @@ pub fn print_json(
         "final_files": report.phases.last().map(|p| p.output_count).unwrap_or(report.total_files),
         "total_pruning_pct": report.total_pruning_pct(),
         "analysis": analysis_block,
+        "table_features": table_features,
         "stats": {
             "mode": stats_mode,
             "files_with_stats": stats_present,

@@ -13,8 +13,8 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, gates, kernel_bridge, predicate_analyzer, predicate_ast, render,
-    scan, stats,
+    attribution, credentials, features, gates, kernel_bridge, predicate_analyzer, predicate_ast,
+    render, scan, stats,
 };
 
 #[derive(Parser)]
@@ -189,15 +189,23 @@ fn try_main() -> Result<()> {
         files: all_files,
         stats: file_stats,
     } = scan::scan_baseline(snapshot.clone(), engine.as_ref())?;
-    let mut partition_columns = stats::read_partition_columns_from_log(&url, &store)?;
+    let log_metadata = stats::read_log_metadata(&url, &store)?;
+    let mut partition_columns = log_metadata.partition_columns;
     if partition_columns.is_empty() {
         // On a fully checkpointed log no metaData action survives in the JSON
         // commits; fall back to the partitionValues keys the kernel replayed.
         partition_columns = scan::partition_columns_from_files(&all_files);
     }
 
+    let table_features = features::detect(
+        &snapshot,
+        &all_files,
+        log_metadata.clustering_domain.as_deref(),
+    );
+
     let mut report = PruningReport {
         analysis: None,
+        table_features,
         table_path: cli.path.clone(),
         version: snapshot.version(),
         total_files: all_files.len(),

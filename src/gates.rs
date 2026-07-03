@@ -110,6 +110,7 @@ mod tests {
                 size: 1,
                 partition_values: HashMap::new(),
                 num_records: None,
+                has_deletion_vector: false,
             })
             .collect();
         let mut file_stats = HashMap::new();
@@ -124,6 +125,7 @@ mod tests {
         }
         PruningReport {
             analysis: None,
+            table_features: Default::default(),
             table_path: "t".into(),
             version: 0,
             total_files: files.len(),
