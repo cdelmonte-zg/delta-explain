@@ -48,13 +48,7 @@ Phase 2: Data skipping (min/max statistics) [conservative]
 Total reduction: 6 -> 1 files (83% pruned)
 ```
 
-The **Predicate Analysis** block tells you how the predicate was split:
-
-- `partition-safe` fragments are evaluated by partition pruning alone (`exact` confidence: every dropped file is provably non-matching)
-- `stats-safe` fragments rely on per-file min/max statistics (`conservative` confidence: overlapping ranges and missing stats keep files rather than dropping them unsafely)
-- `unsplittable` fragments cannot be separated safely (currently: any `OR` mixing partition and non-partition columns, emitted as `UNSPLITTABLE_OR`) and degrade the overall confidence to `incomplete`
-
-The global `confidence` reports the least informative label across phases: any `stats-safe` fragment forces `conservative`; any `unsplittable` fragment forces `incomplete`.
+The **Predicate Analysis** block shows how the predicate was split across the two pruning phases, and `confidence` labels how precisely the elimination can be explained (`exact` / `conservative` / `incomplete`). The precise definitions, the degradation rules, and what each label guarantees are in [docs/semantics.md](docs/semantics.md).
 
 With `--verbose`, you see exactly *which* files are kept or dropped and *why*:
 
@@ -70,15 +64,9 @@ Phase 1: Partition pruning [exact]
   [KEPT   ] part-00000-a35083c1.parquet  (1.1 KB  4 records)  partition(country=DE)  stats(age: 40..60)
   [KEPT   ] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 
-Phase 2: Data skipping (min/max statistics) [conservative]
-  predicate:       age > 40
-  files remaining: 1  (-1, 50% pruned)
-
-  [KEPT   ] part-00000-a35083c1.parquet  (1.1 KB  4 records)  partition(country=DE)  stats(age: 40..60)
-  [DROPPED] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
 ```
 
-Files whose `add` action carries no `stats` payload appear as `[no stats]`. Statistics are resolved through the kernel's log replay, which merges JSON commits with checkpoint Parquet, so `[no stats]` means the writer really recorded none, not that the file's commit has been consolidated into a checkpoint.
+(Use `--limit` to cap the listing on large tables; in JSON mode `--verbose` emits the machine-readable `files[]` array instead.) Files without a `stats` payload appear as `[no stats]`; statistics come from the kernel's log replay, checkpoint Parquet included, so `[no stats]` means the writer really recorded none.
 
 ## Install
 
@@ -268,16 +256,7 @@ delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_
 
 The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
 
-The contract is formal: [`schemas/report-v0.2.schema.json`](schemas/report-v0.2.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`. In short, the document includes:
-
-- top-level summary fields (`table`, `version`, `predicate`, `total_files`, `final_files`, `total_pruning_pct`)
-- `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
-- `phases[]`: one entry per pruning phase, each with its own `confidence` tag
-- `stats`: coverage block with categorical `mode` (`exact` / `partial` / `absent`)
-- `table_features`: detect-and-declare block for protocol features that reframe the numbers: deletion vectors (`enabled`, `files_with_deletion_vectors`), `column_mapping_mode`, `clustering_columns`, and the corresponding warning `notes` (`DELETION_VECTORS`, `COLUMN_MAPPING`, `LIQUID_CLUSTERING`)
-- `assertions[]` and `result`: outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
-- with `--verbose`: `files[]` (per file: `path`, `size_bytes`, `partition_values`, `num_records`, `has_stats`, `kept`, `pruned_by`) and `files_truncated` when `--limit` cut the list
-- `schema_version`, `tool_version`, `elapsed_ms`: release and run metadata
+The contract is formal: [`schemas/report-v0.2.schema.json`](schemas/report-v0.2.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
 
 Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
 
@@ -299,19 +278,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
 ## How it works
 
-`delta-explain` uses [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) to replay Delta metadata and run multiple metadata scans with different predicates, isolating the effect of each pruning phase:
-
-1. **Scan with no predicate** to count total files
-2. **Scan with the analyzer's `partition-safe` fragment** to measure partition pruning
-3. **Scan with the original predicate** to measure the final survivor set and the data-skipping contribution on top of partition pruning
-
-When the predicate contains unsplittable fragments, the final scan is still sound, but the drop from the partition-only scan can no longer be attributed cleanly to data skipping alone. This is what the `incomplete` confidence label signals.
-
-The per-file statistics (min/max values) shown in the verbose view come from the `stats` payload the kernel carries on each scan row, produced by the same log replay that drives the counts, checkpoint Parquet included, and are joined with the survivor sets at display time to show *why* each file was kept or dropped.
-
-No query engine is involved. No data files are read. Only metadata.
-
-`delta-explain` explains Delta-level file elimination only: partition pruning and file-level data skipping. Parquet row-group predicate pushdown (filtering *inside* surviving files based on row-group footer statistics) is intentionally out of scope for the current version. It operates at a different layer (file format, not table protocol) and may be added later as a separate `--parquet-pushdown` mode.
+`delta-explain` replays Delta metadata through [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) and runs separate metadata scans (no predicate, partition-safe fragment, full predicate) to isolate each pruning phase's contribution. No query engine is involved, no data files are read: only metadata. The full pipeline, the soundness guarantee, and the attribution rules are in [docs/semantics.md](docs/semantics.md).
 
 ## Predicate syntax
 
@@ -346,7 +313,7 @@ age IS NULL
 payload.age > 30
 ```
 
-Literals are resolved against the Delta schema: numeric types (including `SHORT`, `BYTE`, and `DECIMAL`), strings, booleans, and temporal types. A quoted `'2026-07-01'` compared to a `DATE` or `TIMESTAMP` column coerces to the column type, and the explicit `DATE '...'` / `TIMESTAMP '...'` forms work too. Subqueries, functions, and LIKE are not supported. See Current limitations for the type matrix.
+Also supported: `IS [NOT] DISTINCT FROM`, `DATE '...'` / `TIMESTAMP '...'` literal forms, and schema-driven coercion (a quoted `'2026-07-01'` against a `DATE` column just works, including `DECIMAL` and narrow integers). Subqueries, functions, and `LIKE` are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
 
 ## Performance notes
 

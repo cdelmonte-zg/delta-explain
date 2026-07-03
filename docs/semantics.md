@@ -132,6 +132,14 @@ Two properties are load-bearing for CI:
   defect must surface as exit 1 with a clean message, not exit 101 with a
   backtrace.
 
+## Scope: table protocol, not file format
+
+delta-explain explains Delta-level file elimination only: partition pruning
+and file-level data skipping. Parquet row-group predicate pushdown
+(filtering *inside* surviving files on row-group footer statistics) is a
+file-format concern, deliberately out of scope; it may appear later as a
+separate mode.
+
 ## Known blind spots
 
 - Statistics exist only for the first `delta.dataSkippingNumIndexedCols`
