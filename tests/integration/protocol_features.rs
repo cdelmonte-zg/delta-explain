@@ -160,3 +160,55 @@ fn table_warnings_and_analysis_warnings_share_the_text_section() {
                 .and(predicate::str::contains("UNSUPPORTED_EXPRESSION")),
         );
 }
+
+#[test]
+fn catalog_managed_table_fails_with_a_clear_explanation() {
+    // The kernel refuses these tables with API jargon; the tool must say
+    // it in user words before the kernel gets the chance.
+    let table = LogBuilder::new()
+        .column("age", "integer")
+        .reader_feature("catalogOwned-preview")
+        .writer_feature("catalogOwned-preview")
+        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+        .build();
+    cmd().arg(table.path()).assert().failure().stderr(
+        predicate::str::contains("catalog-managed")
+            .and(predicate::str::contains("does not support")),
+    );
+}
+
+#[test]
+fn in_commit_timestamps_declare_in_json_without_warning() {
+    let table = LogBuilder::new()
+        .column("age", "integer")
+        .property("delta.enableInCommitTimestamps", "true")
+        .writer_feature("inCommitTimestamp")
+        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+        .build();
+    let json = run_json(&[&table.path(), "--format", "json"]);
+    assert_eq!(json["table_features"]["in_commit_timestamps"], true);
+    assert_eq!(json["table_features"]["notes"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn unknown_writer_feature_warns_and_declares() {
+    let table = LogBuilder::new()
+        .column("age", "integer")
+        .writer_feature("someFutureFeature")
+        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+        .build();
+    let json = run_json(&[&table.path(), "--format", "json"]);
+    assert_eq!(
+        json["table_features"]["unrecognized_writer_features"][0],
+        "someFutureFeature"
+    );
+    assert_eq!(
+        json["table_features"]["notes"][0]["code"],
+        "UNRECOGNIZED_TABLE_FEATURE"
+    );
+    cmd()
+        .arg(table.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("someFutureFeature"));
+}

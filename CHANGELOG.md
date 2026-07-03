@@ -11,6 +11,17 @@ follow SemVer relative to that field.
 
 ### Added
 
+- **The managed-table boundary, declared.** Catalog-managed tables
+  (`catalogManaged` / `catalogOwned-preview` reader features) now fail
+  before the kernel scan with a plain explanation: their latest commits
+  live in the catalog, not the filesystem log, so a filesystem-only
+  analysis cannot be trusted. In-commit timestamps are declared in
+  `table_features.in_commit_timestamps` (no warning: nothing the tool
+  reports depends on them), and writer features outside the known-benign
+  set earn an `UNRECOGNIZED_TABLE_FEATURE` warning listing them, so a
+  table from a newer writer is flagged instead of silently half-read.
+  Additive schema change within 0.2.0 (two new `table_features` fields).
+
 - **The public contract, written down and enforced.** `docs/semantics.md`
   states what delta-explain guarantees (conservative survivor sets,
   degradation with diagnostics, confidence meaning, exit-code table) and

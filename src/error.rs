@@ -39,6 +39,10 @@ pub enum Error {
     /// Rendering the report failed (JSON serialization).
     #[error("Cannot render output: {0}")]
     Render(#[from] serde_json::Error),
+
+    /// The table uses a protocol feature this tool cannot analyze honestly.
+    #[error("{0}")]
+    UnsupportedTable(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
