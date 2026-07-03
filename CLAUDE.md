@@ -16,6 +16,9 @@ designed to be both human-readable (text) and CI-friendly (JSON, exit codes,
 Design references live alongside the code:
 
 - `VISION.md`: public-facing roadmap (v0.1 → v0.5)
+- `docs/semantics.md`: the public contract (guarantees, degradation rules,
+  exit codes); `schemas/report-v0.2.schema.json` is the formal JSON contract,
+  enforced by `tests/integration/json_contract.rs`
 - `DELTA-EXPLAIN-ROADMAP.md` (in the parent directory): internal P0/P1 step list
 
 ## Build & Test Commands
