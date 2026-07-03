@@ -269,6 +269,7 @@ The JSON output is versioned independently from the CLI binary (`schema_version:
 - `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
 - `phases[]`: one entry per pruning phase, each with its own `confidence` tag
 - `stats`: coverage block with categorical `mode` (`exact` / `partial` / `absent`)
+- `table_features`: detect-and-declare block for protocol features that reframe the numbers: deletion vectors (`enabled`, `files_with_deletion_vectors`), `column_mapping_mode`, `clustering_columns`, and the corresponding warning `notes` (`DELETION_VECTORS`, `COLUMN_MAPPING`, `LIQUID_CLUSTERING`)
 - `assertions[]` and `result`: outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
 - with `--verbose`: `files[]` (per file: `path`, `size_bytes`, `partition_values`, `num_records`, `has_stats`, `kept`, `pruned_by`) and `files_truncated` when `--limit` cut the list
 - `schema_version`, `tool_version`, `elapsed_ms`: release and run metadata

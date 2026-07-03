@@ -11,6 +11,20 @@ follow SemVer relative to that field.
 
 ### Added
 
+- **Detect-and-declare for protocol features.** The report now declares the
+  table features that distort or reframe its numbers, without changing how
+  pruning is computed: deletion vectors (enabled flag and count of files
+  actually carrying vectors; when present, a `DELETION_VECTORS` warning says
+  record counts include soft-deleted rows), column mapping
+  (`COLUMN_MAPPING`: the log stores physical column names, verbose
+  statistics may display them), and liquid clustering (`LIQUID_CLUSTERING`
+  with the clustering columns, read from the `delta.clustering` domain;
+  delta-kernel 0.24 exposes no public accessor for system domains, so on a
+  fully checkpointed log clustering goes undetected, the same blind spot as
+  partition columns). JSON gains an additive `table_features` block; table
+  warnings share the text "Warnings!" section with analyzer notes and now
+  print even when no predicate is given.
+
 - **Per-file detail in JSON (`--verbose`) and `--limit`.** With `--verbose`,
   the JSON document gains a `files` array (per file: `path`, `size_bytes`,
   `partition_values`, `num_records`, `has_stats`, `kept`, and `pruned_by`,
@@ -23,7 +37,6 @@ follow SemVer relative to that field.
   large tables (a 200k-file verbose listing is 25 MB of text) and gives
   machine consumers the survivor set without parsing text: the differential
   harness now reads `files[].kept` instead of scraping `[KEPT]` lines.
-  Additive JSON change: `schema_version` bumps to `0.2.0`.
 
 - **Predicate normalization.** Predicates are normalized before
   classification: negations push down to the leaves (De Morgan,

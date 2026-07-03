@@ -103,6 +103,7 @@ fn push_file_info(files: &mut Vec<FileInfo>, file: ScanFile) {
         size: file.size,
         partition_values: file.partition_values.clone(),
         num_records: file.stats.map(|s| s.num_records),
+        has_deletion_vector: file.dv_info.has_vector(),
     });
 }
 
@@ -154,6 +155,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
             num_records: None,
+            has_deletion_vector: false,
         }
     }
 

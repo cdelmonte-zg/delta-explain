@@ -12,6 +12,7 @@ mod cli;
 mod nested_stats;
 mod partial_stats;
 mod partition_columns;
+mod protocol_features;
 mod semantic_regression;
 mod stats_budget;
 mod synthetic_log;
