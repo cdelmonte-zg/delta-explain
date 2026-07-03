@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use num_format::{Locale, ToFormattedString};
 use serde_json::json;
 
+use crate::error::Error;
 use crate::report::{PhaseResult, PruningReport};
 use crate::stats::FileStats;
 
@@ -74,13 +75,14 @@ pub fn print_text(
     }
 
     // Summary
-    if report.phases.len() > 1 {
-        let final_count = report.phases.last().unwrap().output_count;
+    if report.phases.len() > 1
+        && let Some(last_phase) = report.phases.last()
+    {
         println!();
         println!(
             "Total reduction: {} -> {} files ({:.0}% pruned)",
             fmt(report.total_files),
-            fmt(final_count),
+            fmt(last_phase.output_count),
             report.total_pruning_pct(),
         );
     }
@@ -211,7 +213,7 @@ pub fn print_json(
     verbose: bool,
     limit: Option<usize>,
     predicate: Option<&str>,
-) {
+) -> Result<(), Error> {
     let (stats_present, stats_total) = report.stats_coverage();
     let stats_pct = if stats_total > 0 {
         (stats_present as f64 / stats_total as f64) * 100.0
@@ -328,7 +330,8 @@ pub fn print_json(
         output["files"] = json!(files);
     }
 
-    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
 }
 
 // ── Shared formatting helpers ───────────────────────────────────────

@@ -10,6 +10,20 @@
 //! change between releases without semver guarantees. The CLI surface and the
 //! versioned JSON output schema are the stable contracts.
 
+// The project rule "no unwrap/expect/panic/unreachable in production code"
+// enforced by the compiler instead of review discipline. Unit tests compile
+// with cfg(test), so the lints stay off there; integration tests are a
+// separate crate and are unaffected.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 pub mod attribution;
 pub mod credentials;
 pub mod error;
