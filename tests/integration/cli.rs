@@ -1264,3 +1264,69 @@ fn text_limit_truncates_the_listing_with_a_tail_note() {
         .success()
         .stdout(predicate::str::contains("... and 4 more files"));
 }
+
+// ── Negative paths: fail loudly, cleanly, and with empty stdout ─────
+
+#[test]
+fn unknown_column_fails_with_a_named_error() {
+    cmd()
+        .args([&test_table(), "-w", "nosuchcol = 5"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown column: nosuchcol"));
+}
+
+#[rstest]
+#[case("age = 'abc'")] // string literal against an int column
+#[case("age = 99999999999999999999999")] // parses only as f64, int column
+fn type_mismatched_literal_fails_loudly(#[case] predicate_str: &str) {
+    // Loud failure over silent keep-all: a predicate the kernel cannot
+    // type-check must not report fake pruning numbers.
+    cmd()
+        .args([&test_table(), "-w", predicate_str])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Error"));
+}
+
+#[test]
+fn invalid_format_value_is_a_usage_error() {
+    cmd()
+        .args([&test_table(), "--format", "jsn"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("possible values"));
+}
+
+#[test]
+fn min_pruning_without_where_is_a_usage_error() {
+    // Previously this ran and failed as "total pruning 0.0% is below
+    // threshold", hiding the real mistake (no predicate was given).
+    cmd()
+        .args([&test_table(), "--min-pruning", "50"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--where"));
+}
+
+#[test]
+fn nonexistent_table_path_fails_cleanly() {
+    cmd()
+        .arg("/nonexistent/delta-table")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid path"));
+}
+
+#[test]
+fn errors_leave_stdout_empty_in_json_mode() {
+    // CI consumers pipe stdout to jq; a failure must never emit a partial
+    // document there.
+    let output = cmd()
+        .args([&test_table(), "-w", "((", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!output.stderr.is_empty());
+}
