@@ -18,7 +18,7 @@ jobs:
   gate-passes:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Healthy layout passes the gate
         id: gate
         uses: ./
@@ -35,7 +35,7 @@ jobs:
   gate-fails:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Flat layout fails the gate
         id: gate
         continue-on-error: true
