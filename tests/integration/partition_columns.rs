@@ -1,15 +1,6 @@
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
-
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
-fn fixture(name: &str) -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/{name}")
-}
 
 // ── Partition column detection from metadata ───────────────────────
 

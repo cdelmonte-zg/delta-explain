@@ -5,14 +5,10 @@
 //! clean errors, and successful resolution is observable because the run
 //! proceeds to the (unreachable) endpoint instead of failing on credentials.
 
+use crate::common::cmd;
 use std::io::Write;
 
-use assert_cmd::Command;
 use predicates::prelude::*;
-
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
 
 fn write_temp(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf {
     let path = dir.join(name);

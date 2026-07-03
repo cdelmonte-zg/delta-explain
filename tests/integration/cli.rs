@@ -1,19 +1,13 @@
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn test_table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table")
+    fixture("test-table")
 }
 
 fn test_table_flat() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table-flat")
+    fixture("test-table-flat")
 }
 
 // ── Basic snapshot ──────────────────────────────────────────────────

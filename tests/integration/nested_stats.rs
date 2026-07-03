@@ -5,17 +5,12 @@
 //! double leaf (score). Delta records min/max for nested leaves, so the kernel
 //! can skip files on `profile.age` / `profile.score`.
 
-use assert_cmd::Command;
+use crate::common::{cmd, fixture};
 use predicates::prelude::*;
 use rstest::rstest;
 
-fn cmd() -> Command {
-    Command::cargo_bin("delta-explain").unwrap()
-}
-
 fn nested_table() -> String {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    format!("{manifest_dir}/fixtures/test-table-nested")
+    fixture("test-table-nested")
 }
 
 #[test]
