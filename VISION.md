@@ -108,7 +108,7 @@ Moving declared boundaries across the line, one release note at a time:
 
 ## Trust track
 
-- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text (the "validated against" documentation shipped in `docs/validation.md`). Next: a scheduled CI job, Azure and GCS legs via their emulators (Azurite, fake-gcs-server) to close the manual-only gap, and fixtures written by third-party engines (Trino, Flink).
+- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text (the "validated against" documentation shipped in `docs/validation.md`). A scheduled weekly Validation workflow now runs the harness and an Azurite leg for the az:// path (a GCS emulator leg is not possible today: object_store has no emulator support for gs://, so GCS coverage stays a manual verification against a real bucket). Next: fixtures written by third-party engines (Trino, Flink).
 
 ## Ongoing: the kernel track
 
