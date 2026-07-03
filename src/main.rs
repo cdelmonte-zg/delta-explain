@@ -145,10 +145,47 @@ struct EngineAndStore {
     store: Arc<DynObjectStore>,
 }
 
+/// The environment variables `--env-creds` reads, mapped to object_store
+/// option keys. `object_store::parse_url_opts` ignores keys a backend does
+/// not know, so the mapping can be cloud-agnostic; the later entry wins
+/// when two variables target the same key (AWS_REGION over
+/// AWS_DEFAULT_REGION).
+const ENV_CREDENTIAL_MAP: &[(&str, &str)] = &[
+    ("AWS_DEFAULT_REGION", "region"),
+    ("AWS_REGION", "region"),
+    ("AWS_ACCESS_KEY_ID", "access_key_id"),
+    ("AWS_SECRET_ACCESS_KEY", "secret_access_key"),
+    ("AWS_SESSION_TOKEN", "session_token"),
+    ("AWS_ENDPOINT_URL", "endpoint"),
+    ("AZURE_STORAGE_ACCOUNT_NAME", "account_name"),
+    ("AZURE_STORAGE_ACCOUNT_KEY", "account_key"),
+    ("GOOGLE_SERVICE_ACCOUNT", "google_service_account"),
+    (
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "google_application_credentials",
+    ),
+];
+
+fn env_credential_options(get: impl Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    ENV_CREDENTIAL_MAP
+        .iter()
+        .filter_map(|(var, key)| get(var).map(|v| (key.to_string(), v)))
+        .collect()
+}
+
 fn build_engine(url: &Url, cli: &Cli) -> Result<EngineAndStore> {
     let mut opts: HashMap<String, String> = HashMap::new();
 
-    // Profile values go in first so the explicit flags below can override.
+    // Layering, least to most explicit: environment, then profile, then
+    // flags, then --option. Whatever is inserted later wins.
+    if cli.env_creds {
+        // "allow_env" used to be passed to the store here, but no layer
+        // ever read it: object_store's parse path silently drops unknown
+        // keys and never consults the environment, so --env-creds was a
+        // no-op that fell through to the instance-metadata chain. The
+        // variables are now read here and injected as explicit options.
+        opts.extend(env_credential_options(|var| std::env::var(var).ok()));
+    }
     if let Some(ref profile) = cli.profile {
         opts.extend(credentials::resolve_aws_profile(profile)?);
     }
@@ -157,9 +194,6 @@ fn build_engine(url: &Url, cli: &Cli) -> Result<EngineAndStore> {
     }
     if cli.public {
         opts.insert("skip_signature".into(), "true".into());
-    }
-    if cli.env_creds {
-        opts.insert("allow_env".into(), "true".into());
     }
     for option in &cli.options {
         let (key, value) = option.split_once('=').ok_or_else(|| {
@@ -325,7 +359,48 @@ fn try_main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_table_uri;
+    use super::{env_credential_options, parse_table_uri};
+
+    #[test]
+    fn env_creds_map_known_variables_to_store_options() {
+        let fake = |var: &str| match var {
+            "AWS_ACCESS_KEY_ID" => Some("AKIA123".to_string()),
+            "AWS_SECRET_ACCESS_KEY" => Some("secret".to_string()),
+            "AWS_REGION" => Some("eu-central-1".to_string()),
+            "GOOGLE_APPLICATION_CREDENTIALS" => Some("/path/key.json".to_string()),
+            _ => None,
+        };
+        let opts = env_credential_options(fake);
+        assert!(opts.contains(&("access_key_id".into(), "AKIA123".into())));
+        assert!(opts.contains(&("secret_access_key".into(), "secret".into())));
+        assert!(opts.contains(&("region".into(), "eu-central-1".into())));
+        assert!(opts.contains(&(
+            "google_application_credentials".into(),
+            "/path/key.json".into()
+        )));
+    }
+
+    #[test]
+    fn aws_region_wins_over_default_region() {
+        let fake = |var: &str| match var {
+            "AWS_DEFAULT_REGION" => Some("us-east-1".to_string()),
+            "AWS_REGION" => Some("eu-central-1".to_string()),
+            _ => None,
+        };
+        // Both map to "region"; insertion order makes AWS_REGION win when
+        // the caller extends a map with these pairs in order.
+        let opts = env_credential_options(fake);
+        let regions: Vec<&(String, String)> = opts.iter().filter(|(k, _)| k == "region").collect();
+        assert_eq!(
+            regions.last().map(|(_, v)| v.as_str()),
+            Some("eu-central-1")
+        );
+    }
+
+    #[test]
+    fn empty_environment_yields_no_options() {
+        assert!(env_credential_options(|_| None).is_empty());
+    }
 
     #[test]
     fn s3_uri_gets_trailing_slash_so_log_join_appends() {
