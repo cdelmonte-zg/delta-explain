@@ -51,31 +51,42 @@ Shipped in the same v0.3.0 release: type hardening and the production sprint. Da
 - **Time travel**: `--at-version <N>`
 - Alongside: `--profile` (AWS shared config), the composite GitHub Action, and the first differential harness
 
-## v0.4: Smarter predicate analysis (planned)
+## v0.4: Predicate analysis, production tables, the public contract (on main, next release)
 
-Goal: reduce false negatives for common patterns, without becoming an optimizer. The substrate comes first: an owned minimal predicate AST, produced by a small converter from sqlparser (one parse, two interpreters: kernel lowering and classification). Owning SQL lexing forever is the wrong trade, so sqlparser stays as the front end; the converter is the only module coupled to it, and everything outside the pruning language collapses into an explainable `Unsupported` leaf at that boundary. The rewrites below operate on the owned AST.
+Everything below is merged and tested on main; v0.4.0 ships it as one release. Goal: reduce false negatives for common patterns without becoming an optimizer, be honest on tables that look like production, and make the contract externally verifiable. The substrate comes first: an owned minimal predicate AST, produced by a small converter from sqlparser (one parse, two interpreters: kernel lowering and classification). Owning SQL lexing forever is the wrong trade, so sqlparser stays as the front end; the converter is the only module coupled to it, and everything outside the pruning language collapses into an explainable `Unsupported` leaf at that boundary. The rewrites below operate on the owned AST.
 
 - **Light normalization**: flatten nested ANDs, push negations down to the leaves (De Morgan, three-valued-logic safe)
 - **OR factoring**: factor conjuncts common to every OR branch out of the OR, so `(col = 'A' AND x) OR (col = 'A' AND y)` exposes `col = 'A'` as a partition-safe top-level conjunct (a single-column OR like `col = 'A' OR col = 'B'` already classifies as partition-safe)
 - **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.), and degrade unsupported expressions to a conservative keep-all with a diagnostic warning instead of a fatal error
 
-This is the complexity ceiling for the predicate analyzer. Anything beyond this crosses into optimizer territory.
+That is the complexity ceiling for the predicate analyzer: anything beyond crosses into optimizer territory. Also in v0.4: `IS [NOT] DISTINCT FROM` (the kernel's native null-safe comparison), and NULL literals typed from the column.
 
-## v0.5: Production tables (planned)
+Production-table honesty (formerly the v0.5 plan, delivered in the same cycle):
 
-Goal: honest and usable on tables that look like production, not like fixtures.
+- **Detect and declare protocol features**: deletion vectors (record counts overcount and the report says so), column mapping (physical vs logical names), liquid clustering. Declared in a `table_features` JSON block with warnings; the numbers are never silently compensated.
+- **Per-file machine-readable output**: `--verbose --format json` emits a `files[]` array (`kept`, `pruned_by`, sizes, partition values), capped by `--limit`; the differential harness consumes it instead of scraping text.
+- **Scale, measured**: 200k files in ~1.6 s / ~320 MB, linear; numbers and the ~1M-file memory ceiling documented in the README.
+- **Exotic log shapes, proven**: log compaction, classic multi-part checkpoints, and V2 UUID-named checkpoints with sidecars are covered by the test matrix (the kernel handled them; now that is a guarantee, not an assumption).
 
-- **Detect and declare protocol features**: deletion vectors (today record counts silently overcount), column mapping (logical vs physical names can silently void data skipping), liquid clustering (`clusteringProvider`). First detect and warn, then support. A tool that says "I cannot attribute this correctly" is credible; one that prints wrong numbers is not.
-- **Scale**: a large synthetic fixture (tens of thousands of files), time and memory benchmarks in the README, and output that survives large tables: `--limit`, a summary mode, top surviving files by size.
-- **Time travel**: `--at-version <N>` via the kernel snapshot builder; enables before/after OPTIMIZE comparisons and feeds Compare mode. Shipped ahead of schedule in the pre-webinar sprint.
-- **Exotic log shapes**: multi-part and V2/UUID-named checkpoints, log compaction. The kernel handles them; the test matrix should prove delta-explain does too.
+And the public contract, stabilized:
 
-## v0.6: Diagnostic layer (planned)
+- **`docs/semantics.md`**: what the tool guarantees, what it deliberately does not do, degradation rules, exit codes.
+- **A formal JSON Schema** (`schemas/report-v0.2.schema.json`) validated by the integration suite against every emitted document shape, plus the field-by-field reference in `docs/json-schema.md`.
+- **`RELEASE.md`** and a repeatable three-minute quickstart (`examples/quickstart/`).
+
+### Road to 0.4.0
+
+The release ships when the remaining professionalization items land, in this order: a "validated against" story (what real tables and writers the tool is exercised on, and the honest gap: Databricks/Unity-Catalog managed features such as coordinated commits and in-commit timestamps are not yet detected), CI test jobs on macOS and Windows (binaries for those targets are shipped today but tested only on Linux), reproducible benchmark tooling, and supply-chain checks (dependabot, cargo-audit).
+
+**After 0.4.0 the plan is deliberate: a stabilization period of bug fixing and validation only, no new surface.** The roadmap below resumes after that.
+
+## v0.5: Diagnostic layer (planned)
 
 Goal: shift from "file counter" to "pruning advisor".
 
 - **Diagnostic notes**: messages like "partition pruning unavailable because predicate does not reference partition columns" or "data skipping weak because string min/max ranges are wide"
 - **`--explain-why` mode**: synthesized output: what enabled pruning, what blocked it, what would improve it
+- **`--engine-profile`**: emulate a specific engine's pruning strength (`max` | `datafusion` | `spark` | `kernel`) so a CI gate asserts what *your* engine will do, not the metadata's theoretical best. The known divergences (IN-list strategies) are documented in the README today; this makes them selectable.
 
 ## Adoption track
 
@@ -85,7 +96,7 @@ Goal: shift from "file counter" to "pruning advisor".
 
 ## Trust track
 
-- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. First harness shipped in `examples/differential` (MinIO + Spark 4.1): sound, and on that layout exact, across a ten-predicate matrix. Next: more layouts, more types, a scheduled CI job.
+- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text. Next: a scheduled CI job, more layouts, and the "validated against" documentation.
 
 ## Ongoing: the kernel track
 
@@ -94,6 +105,8 @@ delta-explain builds on delta-kernel-rs, so some improvements arrive by adopting
 - **Void schema type**: tables containing a `void` column are unreadable today; support landed on kernel main after 0.24 and ships with the next release.
 - **thrift advisory (issue #9)**: drops out of the dependency tree once a kernel release moves to parquet 59+.
 - **Public partition-columns accessor**: if the kernel exposes one, it replaces the checkpoint-only fallback and also covers the empty-table edge.
+- **Public accessor for system metadata domains**: `delta.clustering` is read from the JSON commits today because the kernel rejects system domains on its public API; an accessor would also close the checkpoint-only clustering blind spot.
+- **Data skipping on the kernel's binary `In`**: today it evaluates conservatively; if a kernel release adds skipping, our IN-as-OR expansion becomes an optimization choice instead of a necessity.
 
 ## Future: Compare mode
 
