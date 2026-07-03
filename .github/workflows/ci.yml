@@ -61,6 +61,35 @@ jobs:
       - name: Wrapper tests against the real binary
         run: python3 python/tests/test_wrapper.py
 
+  # The wheel is the release surface Python users get: prove the whole
+  # contract in PR CI, not just the module from source - maturin build,
+  # clean-venv install, bundled-binary discovery, command and API both
+  # working. One Linux wheel suffices; the platform matrix runs at release.
+  wheel-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build wheel
+        run: pipx run maturin build --release --out dist
+      - name: Install in a clean venv and exercise the contract
+        run: |
+          python3 -m venv /tmp/dx-wheel
+          /tmp/dx-wheel/bin/pip install --quiet dist/*.whl
+          /tmp/dx-wheel/bin/delta-explain --version
+          /tmp/dx-wheel/bin/python - <<'PY'
+          import delta_explain
+          print("bundled binary:", delta_explain.binary_path())
+          r = delta_explain.explain("fixtures/test-table",
+                                    where="country = 'DE' AND age > 40")
+          assert r.total_files == 6 and r.final_files == 1 and r.passed
+          r = delta_explain.explain("fixtures/test-table",
+                                    where="country = 'DE'", min_pruning=99)
+          assert not r.passed
+          print("wheel contract: OK")
+          PY
+
   audit:
     runs-on: ubuntu-latest
     steps:
