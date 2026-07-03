@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import sysconfig
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence, Union
 
 __all__ = ["explain", "Report", "DeltaExplainError", "binary_path"]
 
@@ -127,7 +127,7 @@ def explain(
     region: Optional[str] = None,
     public: bool = False,
     options: Optional[Mapping[str, str]] = None,
-    binary: Optional[str] = None,
+    binary: Optional[Union[str, Sequence[str]]] = None,
 ) -> Report:
     """Run delta-explain against `table` and return the JSON report.
 
@@ -136,7 +136,14 @@ def explain(
     `passed == False`; runtime errors raise DeltaExplainError with the
     CLI's stderr message.
     """
-    argv: list[str] = [binary or binary_path(), table, "--format", "json"]
+    launcher: Sequence[str]
+    if binary is None:
+        launcher = [binary_path()]
+    elif isinstance(binary, str):
+        launcher = [binary]
+    else:
+        launcher = list(binary)
+    argv: list[str] = [*launcher, table, "--format", "json"]
     if where is not None:
         argv += ["--where", where]
     if min_pruning is not None:

@@ -31,6 +31,13 @@ jobs:
       - name: Run tests
         run: cargo test
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python wrapper tests (against the release binary)
+        run: python python/tests/test_wrapper.py
+
       - name: Clippy
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy -- -D warnings
@@ -49,17 +56,6 @@ jobs:
     steps:
       - name: Gate
         run: test "${{ needs.test-matrix.result }}" = "success"
-
-  python-wrapper:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release
-      - name: Wrapper tests against the real binary
-        run: python3 python/tests/test_wrapper.py
 
   # The wheel is the release surface Python users get: prove the whole
   # contract in PR CI, not just the module from source - maturin build,

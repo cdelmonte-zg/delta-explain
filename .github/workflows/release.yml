@@ -166,6 +166,19 @@ jobs:
           # aarch64-linux cross-compiles inside the manylinux container
           manylinux: auto
 
+      # Run the wheel we just built, on the platform it targets. The
+      # cross-compiled aarch64-linux wheel cannot execute on this runner
+      # and is exercised by its users' pip installs instead.
+      - name: Install and exercise the wheel
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        shell: bash
+        run: |
+          python3 -m venv wheel-venv
+          if [ -e wheel-venv/bin/pip ]; then VENV=wheel-venv/bin; else VENV=wheel-venv/Scripts; fi
+          "$VENV/pip" install --quiet dist/*.whl
+          "$VENV/delta-explain" --version
+          "$VENV/python" -c "import delta_explain; print(delta_explain.binary_path())"
+
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}

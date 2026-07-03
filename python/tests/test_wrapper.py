@@ -15,8 +15,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from delta_explain import DeltaExplainError, explain  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-BINARY = os.environ.get("DX_BIN", str(REPO / "target" / "release" / "delta-explain"))
+EXE = ".exe" if sys.platform == "win32" else ""
+BINARY = os.environ.get(
+    "DX_BIN", str(REPO / "target" / "release" / f"delta-explain{EXE}")
+)
 TABLE = str(REPO / "fixtures" / "test-table")
+
+# A stub binary that echoes its argv inside a minimal valid report, so the
+# flag plumbing of every kwarg is assertable without cloud credentials.
+STUB = Path(__file__).parent / "_argv_stub.py"
 
 
 def test_basic_report():
@@ -49,6 +56,65 @@ def test_runtime_error_raises():
         assert "Invalid path" in str(e)
     else:
         raise AssertionError("expected DeltaExplainError")
+
+
+def test_every_kwarg_reaches_the_cli():
+    from delta_explain import explain
+
+    r = explain(
+        "s3://bucket/table",
+        where="a = 1",
+        min_pruning=80,
+        assert_stats=True,
+        at_version=3,
+        verbose=True,
+        limit=5,
+        env_creds=True,
+        profile="p1",
+        region="eu-central-1",
+        public=True,
+        options={"endpoint": "http://x", "allow_http": "true"},
+        binary=[sys.executable, str(STUB)],
+    )
+    argv = r["argv"]
+    assert argv[0] == "s3://bucket/table"
+    for expected in (
+        ["--format", "json"],
+        ["--where", "a = 1"],
+        ["--min-pruning", "80"],
+        ["--assert-stats"],
+        ["--at-version", "3"],
+        ["--verbose"],
+        ["--limit", "5"],
+        ["--env-creds"],
+        ["--profile", "p1"],
+        ["--region", "eu-central-1"],
+        ["--public"],
+        ["--option", "endpoint=http://x"],
+        ["--option", "allow_http=true"],
+    ):
+        joined = " ".join(argv)
+        assert " ".join(expected) in joined, f"missing {expected} in {argv}"
+
+
+def test_report_is_a_mapping_with_typed_accessors():
+    from delta_explain import Report
+
+    r = Report(
+        {
+            "schema_version": "0.2.0",
+            "total_files": 6,
+            "final_files": 2,
+            "total_pruning_pct": 66.6,
+            "result": "fail",
+        }
+    )
+    assert r["total_files"] == 6
+    assert len(r) == 5 and "result" in set(iter(r))
+    assert dict(r)["final_files"] == 2
+    assert r.schema_version == "0.2.0"
+    assert not r.passed and r.result == "fail"
+    assert r.files is None  # verbose-only field absent
 
 
 def test_options_mapping():
