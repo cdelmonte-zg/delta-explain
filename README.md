@@ -350,14 +350,15 @@ Literals are resolved against the Delta schema: numeric types (including `SHORT`
 
 ## Performance notes
 
-delta-explain reads only the Delta log, never the parquet data files, so its cost scales with the number of `add` actions, not with data volume. Measured on a synthetic log (Linux, local disk):
+delta-explain reads only the Delta log, never the parquet data files, so its cost scales with the number of `add` actions, not with data volume. Measured at 200k files on Linux, local disk, in the three log shapes that matter (generate them yourself with `cargo run --release --example gen_scale_log`):
 
-| Snapshot size | Analysis time | Peak memory |
-|---|---|---|
-| 50k files | ~0.4 s | ~90 MB |
-| 200k files | ~1.6 s | ~320 MB |
+| Log shape (200k files) | Baseline | With predicate | Peak memory |
+|---|---|---|---|
+| single JSON commit | ~1.0 s | ~1.3 s | ~280 MB |
+| 2000 JSON commits | ~1.4 s | ~2.2 s | ~320 MB |
+| 2000 commits + parquet checkpoint | ~0.8 s | ~1.0 s | ~240 MB |
 
-Scaling is linear at roughly 1.6 KB of resident memory per file, which extrapolates to ~1.6 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is immaterial at this level: an `IN` list with 500 items over 200k files adds ~0.4 s.
+The most production-like shape (checkpointed) is also the fastest: the kernel reads one parquet checkpoint instead of replaying thousands of JSON commits. Scaling is linear at roughly 1.5 KB of resident memory per file, which extrapolates to ~1.5 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is immaterial at this level: an `IN` list with 500 items over 200k files adds ~0.4 s.
 
 Output is the dimension to manage on large tables: the compact JSON stays summary-only at any size, and per-file detail (`--verbose`, in both formats) should be capped with `--limit`.
 
