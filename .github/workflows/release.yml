@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Recovery path: rebuild and publish the wheels without re-tagging
+  # (PyPI accepts additional files for an existing version). Only the
+  # build-wheels and publish-pypi jobs run on dispatch.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +22,7 @@ jobs:
       - run: cargo clippy -- -D warnings
 
   publish-crate:
+    if: github.event_name == 'push'
     needs: test
     runs-on: ubuntu-latest
     # Only publish stable releases (no prerelease tags like v0.1.0-alpha)
@@ -44,6 +49,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   github-release:
+    if: github.event_name == 'push'
     needs: [test, publish-crate]
     if: always() && needs.test.result == 'success'
     runs-on: ubuntu-latest
@@ -60,7 +66,7 @@ jobs:
 
   upload-binaries:
     needs: [test, github-release]
-    if: always() && needs.test.result == 'success' && needs.github-release.result == 'success'
+    if: github.event_name == 'push' && needs.test.result == 'success' && needs.github-release.result == 'success'
     permissions:
       contents: write
     strategy:
@@ -73,8 +79,10 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+          # macos-latest is arm64 since macOS 14: the x86_64 wheel builds
+          # there but cannot execute; macos-13 is the Intel runner
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -92,6 +100,7 @@ jobs:
           checksum: sha256
 
   build-deb:
+    if: github.event_name == 'push'
     needs: [test, github-release]
     if: always() && needs.test.result == 'success' && needs.github-release.result == 'success'
     permissions:
@@ -146,10 +155,14 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+          # native arm64 runner: cross-compiling ring/aws-lc-sys fails,
+          # and native means this wheel gets executed like the others
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
+          # macos-latest is arm64 since macOS 14: the x86_64 wheel builds
+          # there but cannot execute; macos-13 is the Intel runner
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -163,14 +176,10 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist
-          # aarch64-linux cross-compiles inside the manylinux container
           manylinux: auto
 
-      # Run the wheel we just built, on the platform it targets. The
-      # cross-compiled aarch64-linux wheel cannot execute on this runner
-      # and is exercised by its users' pip installs instead.
+      # Run the wheel we just built, on the platform it targets.
       - name: Install and exercise the wheel
-        if: matrix.target != 'aarch64-unknown-linux-gnu'
         shell: bash
         run: |
           python3 -m venv wheel-venv
@@ -201,6 +210,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   update-homebrew-tap:
+    if: github.event_name == 'push'
     needs: [test, upload-binaries]
     runs-on: ubuntu-latest
     if: always() && needs.test.result == 'success' && needs.upload-binaries.result == 'success' && !contains(github.ref_name, '-')
@@ -274,6 +284,7 @@ jobs:
           fi
 
   update-scoop-bucket:
+    if: github.event_name == 'push'
     needs: [test, upload-binaries]
     runs-on: ubuntu-latest
     if: always() && needs.test.result == 'success' && needs.upload-binaries.result == 'success' && !contains(github.ref_name, '-')
