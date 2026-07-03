@@ -1,0 +1,66 @@
+# Scheduled deep validation: the checks too slow for per-PR CI. Failing
+# here means a soundness or storage-path regression reached main.
+#
+# - differential: Spark ground truth vs delta-explain's survivor set over
+#   MinIO (the harness in examples/differential), fresh mode.
+# - azurite-smoke: the az:// path end to end against the Azure emulator
+#   (the automated version of the manual check that caught the az://
+#   log-reader regression).
+#
+# No GCS leg: object_store has no GCS-emulator support, so gs:// coverage
+# stays a manual verification against a real bucket (see docs/validation.md).
+name: Validation
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # weekly, Monday morning
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Start MinIO + Spark
+        run: docker compose up -d
+        working-directory: examples/differential
+
+      - name: Run the differential harness (fresh mode)
+        run: DX_BIN=$PWD/target/release/delta-explain DX_DIFF_FRESH=1 python3 examples/differential/run_differential.py
+
+  azurite-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Start Azurite
+        run: >
+          docker run -d --name azurite -p 10000:10000
+          mcr.microsoft.com/azure-storage/azurite
+          azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
+
+      - name: Install writer deps
+        run: pip install --quiet deltalake pyarrow azure-storage-blob
+
+      - name: Azurite smoke
+        run: DX_BIN=$PWD/target/release/delta-explain python3 .github/scripts/azurite_smoke.py
