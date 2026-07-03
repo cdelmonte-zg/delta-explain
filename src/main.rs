@@ -13,7 +13,8 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, gates, predicate_analyzer, predicate_parser, render, scan, stats,
+    attribution, credentials, gates, kernel_bridge, predicate_analyzer, predicate_ast, render,
+    scan, stats,
 };
 
 #[derive(Parser)]
@@ -203,11 +204,13 @@ fn try_main() -> Result<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let analysis = predicate_analyzer::analyze(pred_str, &partition_columns)?;
+        let pred_ast = predicate_ast::parse(pred_str)?.normalized();
+        let classified = predicate_analyzer::classify(&pred_ast, &partition_columns);
+        let analysis = classified.analysis;
 
-        let partition_survivors = match &analysis.partition_safe {
-            Some(part_frag) => {
-                let part_pred = predicate_parser::parse_predicate(part_frag, &schema)?;
+        let partition_survivors = match &classified.partition_pred {
+            Some(part_ast) => {
+                let part_pred = kernel_bridge::emit_predicate(part_ast, &schema)?;
                 let surviving =
                     scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
                 Some(
@@ -221,9 +224,17 @@ fn try_main() -> Result<()> {
         };
 
         let full_survivors = if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
-            let full_pred = predicate_parser::parse_predicate(pred_str, &schema)?;
-            let surviving =
-                scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+            // Unsupported fragments degrade instead of failing: scan with
+            // the predicate stripped of them (conservative, keeps more
+            // files), or with no predicate at all when nothing survives
+            // the strip. The analysis notes explain the gap to the user.
+            let surviving = match pred_ast.without_unsupported() {
+                Some(scan_pred) => {
+                    let full_pred = kernel_bridge::emit_predicate(&scan_pred, &schema)?;
+                    scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?
+                }
+                None => scan::collect_files(snapshot.clone(), engine.as_ref(), None)?,
+            };
             Some(
                 surviving
                     .into_iter()
