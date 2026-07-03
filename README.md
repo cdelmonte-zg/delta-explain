@@ -355,6 +355,10 @@ Literals are resolved against the Delta schema: numeric types (including `SHORT`
 
 - **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons cannot use min/max statistics (no engine can, at the file level); such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune.
 
+- **`IN` pruning strength varies by engine.** delta-explain expands `IN` lists into OR-of-equalities, the strongest sound form, with no size cap. Real engines differ: DataFusion-based engines (delta-rs) do the same expansion but stop skipping past 20 list items, and delta-spark evaluates an imprecise range test over the whole list (`min(values) <= col <= max(values)`), which keeps more files on sparse lists. On `IN`-heavy predicates a specific engine may therefore prune less than this report shows; the report reflects what the metadata makes possible, and it is always sound.
+
+- **Protocol features are declared, not compensated.** Deletion vectors, column mapping, and liquid clustering are detected and reported in `table_features` with explicit warnings, but the numbers are not adjusted: record counts still include soft-deleted rows on files with deletion vectors, verbose statistics may show physical column names under column mapping, and clustering columns are informational. On a fully checkpointed log (no JSON commits) liquid clustering goes undetected, because delta-kernel exposes no public accessor for system metadata domains.
+
 See [VISION.md](VISION.md) for planned improvements.
 
 ## Development
