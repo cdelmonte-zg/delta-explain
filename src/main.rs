@@ -56,13 +56,13 @@ struct Cli {
     limit: Option<usize>,
 
     // ── CI / assertion flags ────────────────────────────────────────
-    /// Output format: "text" (default) or "json"
-    #[arg(long, default_value = "text")]
+    /// Output format
+    #[arg(long, default_value = "text", value_parser = ["text", "json"])]
     format: String,
 
     /// Fail (exit 1) if total pruning percentage is below this threshold.
     /// Requires --where.
-    #[arg(long, value_name = "PERCENT")]
+    #[arg(long, value_name = "PERCENT", requires = "predicate")]
     min_pruning: Option<f64>,
 
     /// Fail (exit 1) if any file in the snapshot is missing statistics.
