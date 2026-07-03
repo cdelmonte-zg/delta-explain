@@ -194,7 +194,12 @@ fn literal_expr(lit: &Literal, type_hint: Option<&DataType>) -> Result<Expressio
             Ok(Expression::literal(s.clone()))
         }
         Literal::Bool(b) => Ok(Expression::literal(*b)),
-        Literal::Null => Ok(Expression::null_literal(DataType::STRING)),
+        // A NULL literal takes the column's type so the kernel compares
+        // like with like (int vs null-of-int, not int vs null-of-string);
+        // STRING is only the fallback when no column is in sight.
+        Literal::Null => Ok(Expression::null_literal(
+            type_hint.cloned().unwrap_or(DataType::STRING),
+        )),
         // The column's type hint wins when present (it is the type the kernel
         // will compare against); the declared SQL type only picks the parser
         // otherwise.
@@ -490,6 +495,19 @@ mod tests {
         assert_eq!(as_bits("100"), 10_000);
         assert!(parse_decimal("1.234", &dt).is_err()); // scale overflow
         assert!(parse_decimal("abc", &dt).is_err());
+    }
+
+    #[test]
+    fn null_literal_takes_the_column_type() {
+        let int_hint = DataType::Primitive(PrimitiveType::Integer);
+        match literal_expr(&Literal::Null, Some(&int_hint)) {
+            Ok(Expression::Literal(Scalar::Null(dt))) => assert_eq!(dt, int_hint),
+            other => panic!("unexpected: {other:?}"),
+        }
+        match literal_expr(&Literal::Null, None) {
+            Ok(Expression::Literal(Scalar::Null(dt))) => assert_eq!(dt, DataType::STRING),
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 
     #[test]

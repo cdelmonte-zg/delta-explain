@@ -655,6 +655,21 @@ fn is_not_distinct_from_behaves_like_null_safe_equality() {
         .stdout(predicate::str::contains("files remaining: 2"));
 }
 
+#[rstest]
+#[case("country IS DISTINCT FROM NULL", 6)] // string partition col, = IS NOT NULL
+#[case("age IS DISTINCT FROM NULL", 6)] // int stats col, all non-null
+#[case("age IS NOT DISTINCT FROM NULL", 0)] // = IS NULL: proves real evaluation,
+// a conservative keep-all would leave 6
+fn distinct_from_null_evaluates_with_typed_null(#[case] predicate: &str, #[case] remaining: u32) {
+    cmd()
+        .args([&test_table(), "-w", predicate])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "files remaining: {remaining}"
+        )));
+}
+
 // ── Normalization rewrites (classification, not survivor sets) ──────
 
 #[test]

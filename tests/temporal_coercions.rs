@@ -193,3 +193,18 @@ fn invalid_date_literal_fails_cleanly() {
         .failure()
         .stderr(predicate::str::contains("Invalid date"));
 }
+
+// ── NULL literal against a DATE column (typed null) ─────────────────
+
+#[rstest]
+#[case("event_date IS DISTINCT FROM NULL", 6)] // = IS NOT NULL: every file dated
+#[case("event_date IS NOT DISTINCT FROM NULL", 0)] // = IS NULL: prunes everything
+fn distinct_from_null_on_date_partition(#[case] predicate: &str, #[case] remaining: u32) {
+    cmd()
+        .args([&temporal_table(), "-w", predicate])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "files remaining: {remaining}"
+        )));
+}
