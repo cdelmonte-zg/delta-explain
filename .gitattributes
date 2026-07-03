@@ -1,0 +1,5 @@
+# Delta log fixtures are byte-exact test data: no EOL conversion, ever.
+# A CRLF-translated commit JSON is a different (broken) Delta log.
+fixtures/** -text
+schemas/** text eol=lf
+*.sh text eol=lf

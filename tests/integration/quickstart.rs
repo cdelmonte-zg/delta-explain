@@ -2,6 +2,10 @@
 //! claim tested. It runs the real script against the binary under test
 //! and asserts the five beats all reached their expected outcome.
 
+// The quickstart is a POSIX shell script; on Windows runners bash exists
+// only via Git Bash and path translation makes the smoke flaky, so the
+// script's guarantee is tested where it is meant to run.
+#[cfg(unix)]
 #[test]
 fn quickstart_script_runs_end_to_end() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");

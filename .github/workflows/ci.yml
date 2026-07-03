@@ -10,8 +10,14 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  test-matrix:
+    # We ship binaries for macOS and Windows; the tests must run where the
+    # binaries do. Lints are platform-independent and run once, on Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,14 +32,44 @@ jobs:
         run: cargo test
 
       - name: Clippy
+        if: matrix.os == 'ubuntu-latest'
         run: cargo clippy -- -D warnings
 
       - name: Format check
+        if: matrix.os == 'ubuntu-latest'
         run: cargo fmt -- --check
+
+  # Branch protection requires a check literally named "test"; a matrix job
+  # reports per-leg names, so this gate aggregates them under the required
+  # name. It fails if any leg fails or is cancelled.
+  test:
+    runs-on: ubuntu-latest
+    needs: test-matrix
+    if: always()
+    steps:
+      - name: Gate
+        run: test "${{ needs.test-matrix.result }}" = "success"
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # RUSTSEC-2026-0194 / -0195: quick-xml DoS, patched in 0.41 which
+      # object_store 0.13 does not accept yet (it pins 0.39). quick-xml
+      # only parses XML responses from the user's own object store, so
+      # exploitation requires a hostile storage endpoint. Tracked in a
+      # repo issue; remove the ignores when object_store moves.
+      - name: Audit
+        run: >
+          cargo audit
+          --ignore RUSTSEC-2026-0194
+          --ignore RUSTSEC-2026-0195
 
   docker-smoke:
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
 
