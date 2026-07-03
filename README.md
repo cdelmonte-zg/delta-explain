@@ -150,7 +150,9 @@ Arguments:
 
 Options:
   -w, --where <PREDICATE>   Predicate (e.g. "age > 30 AND country = 'DE'")
-  -v, --verbose             Show per-file details (kept/dropped with reason)
+  -v, --verbose             Show per-file details (kept/dropped with reason);
+                            in JSON, adds the "files" array
+      --limit <N>           Cap per-file listings at N entries
       --format <FORMAT>     Output format: text (default) or json
       --min-pruning <PCT>   Fail if total pruning is below this percentage
       --assert-stats        Fail if any file is missing statistics
@@ -206,7 +208,7 @@ delta-explain \
 
 `delta-explain` doubles as an assertion tool in pipelines. After your ETL writes a Delta table, verify that the pruning layout is healthy.
 
-`--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are independent. Note that `--verbose` only affects text output; the JSON document is summary-only by design.
+`--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are independent. Without `--verbose` the JSON document is summary-only; with it, a per-file `files` array is included (cap it with `--limit` on large tables).
 
 ### GitHub Action
 
@@ -261,13 +263,14 @@ The pruning percentage `delta-explain` reports reflects the predicate you pass t
 delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
 ```
 
-The JSON output is versioned independently from the CLI binary (`schema_version: "0.1.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`. The document includes:
+The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`. The document includes:
 
 - top-level summary fields (`table`, `version`, `predicate`, `total_files`, `final_files`, `total_pruning_pct`)
 - `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
 - `phases[]`: one entry per pruning phase, each with its own `confidence` tag
 - `stats`: coverage block with categorical `mode` (`exact` / `partial` / `absent`)
 - `assertions[]` and `result`: outcomes of `--min-pruning` and `--assert-stats` (CI-friendly)
+- with `--verbose`: `files[]` (per file: `path`, `size_bytes`, `partition_values`, `num_records`, `has_stats`, `kept`, `pruned_by`) and `files_truncated` when `--limit` cut the list
 - `schema_version`, `tool_version`, `elapsed_ms`: release and run metadata
 
 Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.

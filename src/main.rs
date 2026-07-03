@@ -45,9 +45,15 @@ struct Cli {
     #[arg(short = 'w', long = "where")]
     predicate: Option<String>,
 
-    /// Show per-file details (kept/dropped with reason)
+    /// Show per-file details (kept/dropped with reason); in JSON, adds
+    /// the "files" array
     #[arg(short, long)]
     verbose: bool,
+
+    /// Cap per-file listings at N entries (text phases and JSON "files").
+    /// Only meaningful together with --verbose.
+    #[arg(long, value_name = "N")]
+    limit: Option<usize>,
 
     // ── CI / assertion flags ────────────────────────────────────────
     /// Output format: "text" (default) or "json"
@@ -268,8 +274,12 @@ fn try_main() -> Result<()> {
     // ── Output ──────────────────────────────────────────────────────
 
     match output_format {
-        OutputFormat::Text => render::print_text(&report, cli.verbose, cli.predicate.as_deref()),
-        OutputFormat::Json => render::print_json(&report, cli.predicate.as_deref()),
+        OutputFormat::Text => {
+            render::print_text(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
+        }
+        OutputFormat::Json => {
+            render::print_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
+        }
     }
 
     if matches!(report.overall_result, Some(OverallResult::Fail)) {

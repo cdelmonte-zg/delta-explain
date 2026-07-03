@@ -12,7 +12,7 @@ use serde_json::json;
 use crate::report::{PhaseResult, PruningReport};
 use crate::stats::FileStats;
 
-pub const SCHEMA_VERSION: &str = "0.1.0";
+pub const SCHEMA_VERSION: &str = "0.2.0";
 
 pub enum OutputFormat {
     Text,
@@ -21,7 +21,12 @@ pub enum OutputFormat {
 
 // ── Text output ─────────────────────────────────────────────────────
 
-pub fn print_text(report: &PruningReport, verbose: bool, predicate: Option<&str>) {
+pub fn print_text(
+    report: &PruningReport,
+    verbose: bool,
+    limit: Option<usize>,
+    predicate: Option<&str>,
+) {
     println!("Delta table: {}", report.table_path);
     println!("Version:     {}", report.version);
     if let Some(pred) = predicate {
@@ -68,7 +73,7 @@ pub fn print_text(report: &PruningReport, verbose: bool, predicate: Option<&str>
         );
 
         if verbose {
-            print_phase_details(report, phase, i);
+            print_phase_details(report, phase, i, limit);
         }
     }
 
@@ -95,7 +100,12 @@ pub fn print_text(report: &PruningReport, verbose: bool, predicate: Option<&str>
     }
 }
 
-fn print_phase_details(report: &PruningReport, phase: &PhaseResult, phase_idx: usize) {
+fn print_phase_details(
+    report: &PruningReport,
+    phase: &PhaseResult,
+    phase_idx: usize,
+    limit: Option<usize>,
+) {
     let candidates: HashSet<&str> = if phase_idx == 0 {
         report.all_files.iter().map(|f| f.path.as_str()).collect()
     } else {
@@ -107,10 +117,22 @@ fn print_phase_details(report: &PruningReport, phase: &PhaseResult, phase_idx: u
     };
 
     println!();
+    let mut shown = 0usize;
     for file in &report.all_files {
         if !candidates.contains(file.path.as_str()) {
             continue;
         }
+        if let Some(cap) = limit
+            && shown >= cap
+        {
+            let remaining = candidates.len().saturating_sub(shown);
+            println!(
+                "  ... and {} more files (raise --limit to see them)",
+                fmt(remaining)
+            );
+            break;
+        }
+        shown += 1;
 
         let kept = phase.surviving_paths.contains(&file.path);
         let short_path = shorten_path(&file.path);
@@ -186,7 +208,12 @@ fn format_stats_compact(stats: &FileStats) -> String {
 
 // ── JSON output ─────────────────────────────────────────────────────
 
-pub fn print_json(report: &PruningReport, predicate: Option<&str>) {
+pub fn print_json(
+    report: &PruningReport,
+    verbose: bool,
+    limit: Option<usize>,
+    predicate: Option<&str>,
+) {
     let (stats_present, stats_total) = report.stats_coverage();
     let stats_pct = if stats_total > 0 {
         (stats_present as f64 / stats_total as f64) * 100.0
@@ -235,7 +262,7 @@ pub fn print_json(report: &PruningReport, predicate: Option<&str>) {
         None => serde_json::Value::Null,
     };
 
-    let output = json!({
+    let mut output = json!({
         "schema_version": SCHEMA_VERSION,
         "tool_version": env!("CARGO_PKG_VERSION"),
         "elapsed_ms": report.elapsed_ms,
@@ -256,6 +283,37 @@ pub fn print_json(report: &PruningReport, predicate: Option<&str>) {
         "assertions": report.assertions,
         "result": result_value,
     });
+
+    // Per-file detail rides behind --verbose, like the text listing: the
+    // compact document stays byte-stable for existing consumers, and a
+    // 200k-file table does not produce a 200k-element array unasked.
+    if verbose {
+        let cap = limit.unwrap_or(usize::MAX);
+        let files: Vec<serde_json::Value> = report
+            .all_files
+            .iter()
+            .take(cap)
+            .map(|file| {
+                let num_records = file.num_records.or_else(|| {
+                    report
+                        .file_stats
+                        .get(&file.path)
+                        .and_then(|s| s.num_records)
+                });
+                json!({
+                    "path": file.path,
+                    "size_bytes": file.size,
+                    "partition_values": file.partition_values,
+                    "num_records": num_records,
+                    "has_stats": report.file_stats.contains_key(&file.path),
+                    "kept": report.pruned_by(&file.path).is_none(),
+                    "pruned_by": report.pruned_by(&file.path).map(|p| p.name.clone()),
+                })
+            })
+            .collect();
+        output["files_truncated"] = json!(report.all_files.len() > files.len());
+        output["files"] = json!(files);
+    }
 
     println!("{}", serde_json::to_string_pretty(&output).unwrap());
 }

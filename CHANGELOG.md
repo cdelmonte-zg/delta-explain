@@ -11,6 +11,20 @@ follow SemVer relative to that field.
 
 ### Added
 
+- **Per-file detail in JSON (`--verbose`) and `--limit`.** With `--verbose`,
+  the JSON document gains a `files` array (per file: `path`, `size_bytes`,
+  `partition_values`, `num_records`, `has_stats`, `kept`, and `pruned_by`,
+  the phase that eliminated it) plus a `files_truncated` flag; `--limit N`
+  caps per-file listings in both the JSON array and the text phase
+  listings, with a `... and N more files` tail note. Without `--verbose`
+  no `files` array is emitted and the existing summary fields are
+  unchanged, while `schema_version` moves to `0.2.0` because the verbose
+  schema gained additive fields. This is what makes the output usable on
+  large tables (a 200k-file verbose listing is 25 MB of text) and gives
+  machine consumers the survivor set without parsing text: the differential
+  harness now reads `files[].kept` instead of scraping `[KEPT]` lines.
+  Additive JSON change: `schema_version` bumps to `0.2.0`.
+
 - **Predicate normalization.** Predicates are normalized before
   classification: negations push down to the leaves (De Morgan,
   three-valued-logic safe), and conjuncts common to every OR branch factor

@@ -1088,7 +1088,7 @@ fn json_phase_confidence(
     assert_eq!(json["phases"][phase_idx]["confidence"], expected);
 }
 
-// ── JSON schema v0.1.0 (Step 1.3) ───────────────────────────────────
+// ── JSON schema (Step 1.3; schema_version bumps additively) ────────
 
 fn run_json(args: &[&str]) -> serde_json::Value {
     let output = cmd().args(args).output().unwrap();
@@ -1098,7 +1098,7 @@ fn run_json(args: &[&str]) -> serde_json::Value {
 #[test]
 fn json_carries_schema_and_tool_version() {
     let json = run_json(&[&test_table(), "--format", "json"]);
-    assert_eq!(json["schema_version"], "0.1.0");
+    assert_eq!(json["schema_version"], "0.2.0");
     assert_eq!(json["tool_version"], env!("CARGO_PKG_VERSION"));
 }
 
@@ -1117,7 +1117,7 @@ fn json_phases_have_no_files_field() {
     let phase = &json["phases"][0];
     assert!(
         phase.get("files").is_none(),
-        "phases[].files should be absent in v0.1.0 schema"
+        "per-file detail lives top-level behind --verbose, never per phase"
     );
 }
 
@@ -1190,4 +1190,77 @@ fn json_stats_mode_absent_for_empty_table() {
     assert_eq!(json["stats"]["mode"], "absent");
     assert_eq!(json["stats"]["files_with_stats"], 0);
     assert_eq!(json["stats"]["total_files"], 0);
+}
+
+// ── Per-file JSON detail (--verbose) and --limit ────────────────────
+
+#[test]
+fn json_without_verbose_has_no_files_array() {
+    let json = run_json(&[&test_table(), "-w", "country = 'DE'", "--format", "json"]);
+    assert!(json.get("files").is_none());
+    assert!(json.get("files_truncated").is_none());
+}
+
+#[test]
+fn json_verbose_lists_every_file_with_outcome() {
+    let json = run_json(&[
+        &test_table(),
+        "-w",
+        "country = 'DE' AND age > 40",
+        "--format",
+        "json",
+        "--verbose",
+    ]);
+    let files = json["files"].as_array().unwrap();
+    assert_eq!(files.len(), 6);
+    assert_eq!(json["files_truncated"], false);
+
+    let kept: Vec<&serde_json::Value> = files.iter().filter(|f| f["kept"] == true).collect();
+    assert_eq!(kept.len(), 1);
+    assert!(kept[0]["pruned_by"].is_null());
+    assert_eq!(kept[0]["partition_values"]["country"], "DE");
+    assert_eq!(kept[0]["has_stats"], true);
+
+    let partition_dropped = files
+        .iter()
+        .filter(|f| f["pruned_by"] == "Partition pruning")
+        .count();
+    let skipping_dropped = files
+        .iter()
+        .filter(|f| f["pruned_by"] == "Data skipping (min/max statistics)")
+        .count();
+    assert_eq!(partition_dropped, 4);
+    assert_eq!(skipping_dropped, 1);
+}
+
+#[test]
+fn json_limit_caps_the_files_array() {
+    let json = run_json(&[
+        &test_table(),
+        "-w",
+        "country = 'DE'",
+        "--format",
+        "json",
+        "--verbose",
+        "--limit",
+        "2",
+    ]);
+    assert_eq!(json["files"].as_array().unwrap().len(), 2);
+    assert_eq!(json["files_truncated"], true);
+}
+
+#[test]
+fn text_limit_truncates_the_listing_with_a_tail_note() {
+    cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE'",
+            "--verbose",
+            "--limit",
+            "2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("... and 4 more files"));
 }
