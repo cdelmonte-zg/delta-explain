@@ -48,11 +48,12 @@ semantics; results to date: sound on all, exact on that layout.
 
 ## Scale
 
-Measured manually on synthetic logs at 50k and 200k files (numbers in the
-README's *Performance notes*); the automated regression ceiling is a
-1000-file smoke. The measured shape is a single-commit JSON log; the
-many-commit and checkpointed variants of the same scale are pending
-benchmark tooling (tracked for the 0.4.0 release).
+Measured on synthetic logs at 200k files in three shapes: a single JSON
+commit, 2000 JSON commits, and 2000 commits consolidated by a real
+kernel-written parquet checkpoint. Numbers in the README's *Performance
+notes*; anyone can reproduce them with
+`cargo run --release --example gen_scale_log` (see its docstring for the
+three invocations). The automated regression ceiling is a 1000-file smoke.
 
 ## Not covered yet, on purpose
 
