@@ -53,9 +53,9 @@ Shipped in the same v0.3.0 release: type hardening and the production sprint. Da
 - **Time travel**: `--at-version <N>`
 - Alongside: `--profile` (AWS shared config), the composite GitHub Action, and the first differential harness
 
-## v0.4: Predicate analysis, production tables, the public contract (on main, next release)
+## v0.4: Predicate analysis, production tables, the public contract (shipped July 2026)
 
-Everything below is merged and tested on main; v0.4.0 ships it as one release. Goal: reduce false negatives for common patterns without becoming an optimizer, be honest on tables that look like production, and make the contract externally verifiable. The substrate comes first: an owned minimal predicate AST, produced by a small converter from sqlparser (one parse, two interpreters: kernel lowering and classification). Owning SQL lexing forever is the wrong trade, so sqlparser stays as the front end; the converter is the only module coupled to it, and everything outside the pruning language collapses into an explainable `Unsupported` leaf at that boundary. The rewrites below operate on the owned AST.
+One release for the whole cycle. Goal: reduce false negatives for common patterns without becoming an optimizer, be honest on tables that look like production, and make the contract externally verifiable. The substrate comes first: an owned minimal predicate AST, produced by a small converter from sqlparser (one parse, two interpreters: kernel lowering and classification). Owning SQL lexing forever is the wrong trade, so sqlparser stays as the front end; the converter is the only module coupled to it, and everything outside the pruning language collapses into an explainable `Unsupported` leaf at that boundary. The rewrites below operate on the owned AST.
 
 - **Light normalization**: flatten nested ANDs, push negations down to the leaves (De Morgan, three-valued-logic safe)
 - **OR factoring**: factor conjuncts common to every OR branch out of the OR, so `(col = 'A' AND x) OR (col = 'A' AND y)` exposes `col = 'A'` as a partition-safe top-level conjunct (a single-column OR like `col = 'A' OR col = 'B'` already classifies as partition-safe)
@@ -76,9 +76,9 @@ And the public contract, stabilized:
 - **A formal JSON Schema** (`schemas/report-v0.2.schema.json`) validated by the integration suite against every emitted document shape, plus the field-by-field reference in `docs/json-schema.md`.
 - **`RELEASE.md`** and a repeatable three-minute quickstart (`examples/quickstart/`).
 
-### Road to 0.4.0 - complete
+### The road that led here
 
-Every remaining professionalization item has landed: the "validated against" story (`docs/validation.md`, including the declared managed-table boundary), CI test jobs on macOS and Windows behind the required gate, reproducible benchmark tooling (`examples/gen_scale_log.rs`, three log shapes), supply-chain checks (dependabot plus cargo-audit, which found and fixed three real advisories on its first run), and the example notebooks re-verified end to end against MinIO and real GCS. 0.4.0 ships this state.
+Every remaining professionalization item has landed: the "validated against" story (`docs/validation.md`, including the declared managed-table boundary), CI test jobs on macOS and Windows behind the required gate, reproducible benchmark tooling (`examples/gen_scale_log.rs`, three log shapes), supply-chain checks (dependabot plus cargo-audit, which found and fixed three real advisories on its first run), and the example notebooks re-verified end to end against MinIO and real GCS.
 
 **After 0.4.0 the plan is deliberate: a stabilization period of bug fixing and validation only, no new surface.** The roadmap below resumes after that.
 
