@@ -37,6 +37,12 @@ jobs:
         run: docker compose up -d
         working-directory: examples/differential
 
+      # The checkout is owned by the runner user (uid 1001); the Spark
+      # container writes ground_truth.json into the mounted work dir as
+      # jovyan (uid 1000). Open it up or the harness dies on the write.
+      - name: Make the shared work dir container-writable
+        run: chmod 777 examples/differential/work
+
       - name: Run the differential harness (fresh mode)
         run: DX_BIN=$PWD/target/release/delta-explain DX_DIFF_FRESH=1 python3 examples/differential/run_differential.py
 
