@@ -9,6 +9,17 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Azure tables work again.** The direct log reader derived its path by
+  re-parsing the table URL into a second object store, which on `az://`
+  requires the account credentials it does not have: every Azure run
+  failed with "Account must be specified". The prefix now derives from
+  the URL path alone (the real store, already scoped and authenticated,
+  was in hand the whole time). Verified end to end against Azurite,
+  including gates, normalization, and per-file JSON; S3 (differential
+  harness) and real GCS re-verified unaffected.
+
 ### Added
 
 - **The managed-table boundary, declared.** Catalog-managed tables

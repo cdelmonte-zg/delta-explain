@@ -90,21 +90,27 @@ pub fn read_log_metadata(
     rt.block_on(read_log_metadata_async(table_url, store))
 }
 
+/// The `_delta_log` prefix inside the store, derived from the table URL's
+/// path alone. The store handed to the reader is already scoped exactly
+/// like the one the engine uses (both come from `store_from_url_opts`), so
+/// re-parsing the URL into a second store is unnecessary — and on `az://`
+/// it is impossible without credentials in hand, which is how Azure tables
+/// used to fail here ("Account must be specified") before this derivation.
+fn log_prefix_for(table_url: &Url) -> Result<ObjectPath, Error> {
+    let table_prefix = ObjectPath::from_url_path(table_url.path().trim_matches('/'))
+        .map_err(|e| Error::Storage(format!("Cannot derive log path from table URL: {e}")))?;
+    Ok(if table_prefix.as_ref().is_empty() {
+        ObjectPath::from("_delta_log")
+    } else {
+        ObjectPath::from(format!("{}/_delta_log", table_prefix.as_ref()))
+    })
+}
+
 async fn read_log_metadata_async(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
 ) -> Result<LogMetadata, Error> {
-    let (_, table_prefix) = object_store::parse_url(table_url)
-        .map_err(|e| Error::Storage(format!("Cannot parse table URL: {e}")))?;
-
-    let log_prefix = if table_prefix.as_ref().is_empty() {
-        ObjectPath::from("_delta_log")
-    } else {
-        ObjectPath::from(format!(
-            "{}/_delta_log",
-            table_prefix.as_ref().trim_end_matches('/')
-        ))
-    };
+    let log_prefix = log_prefix_for(table_url)?;
 
     let objects: Vec<_> = store
         .list(Some(&log_prefix))
@@ -268,6 +274,27 @@ mod tests {
         // top-level scalar columns stay flat; the raw struct key is gone
         assert!(stats.columns.contains_key("name"));
         assert!(!stats.columns.contains_key("profile"));
+    }
+
+    #[test]
+    fn log_prefix_derives_from_the_url_path_for_every_scheme() {
+        let cases = [
+            ("s3://bucket/prefix/table", "prefix/table/_delta_log"),
+            ("s3://bucket/table", "table/_delta_log"),
+            ("s3://bucket", "_delta_log"),
+            ("s3://bucket/", "_delta_log"),
+            // az:// carries the container in the host and the account only
+            // in the options: deriving from the path must not require a
+            // second store (the old parse_url-based code failed here).
+            ("az://container/table", "table/_delta_log"),
+            ("gs://bucket/lake/users", "lake/users/_delta_log"),
+            ("file:///home/user/table", "home/user/table/_delta_log"),
+            ("s3://bucket/pre%20fix/table", "pre fix/table/_delta_log"),
+        ];
+        for (url, expect) in cases {
+            let u = Url::parse(url).unwrap();
+            assert_eq!(log_prefix_for(&u).unwrap().as_ref(), expect, "url: {url}");
+        }
     }
 
     #[test]
