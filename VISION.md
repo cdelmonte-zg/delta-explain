@@ -2,7 +2,9 @@
 
 `delta-explain` is a metadata-level diagnostic tool for Delta Lake. It makes file elimination visible without executing queries.
 
-This document outlines the planned evolution from the current prototype to a production-ready tool.
+The positioning, stated once and meant literally: **delta-explain is production-usable as a conservative Delta metadata diagnostic and CI guardrail, not yet a fully production-grade general-purpose Delta observability product.** The "not yet" items below are the long-term roadmap; a capability moves across that line through a release note and updated docs, never silently.
+
+This document outlines the planned evolution.
 
 ## Principles
 
@@ -74,9 +76,9 @@ And the public contract, stabilized:
 - **A formal JSON Schema** (`schemas/report-v0.2.schema.json`) validated by the integration suite against every emitted document shape, plus the field-by-field reference in `docs/json-schema.md`.
 - **`RELEASE.md`** and a repeatable three-minute quickstart (`examples/quickstart/`).
 
-### Road to 0.4.0
+### Road to 0.4.0 - complete
 
-The release ships when the remaining professionalization items land, in this order: a "validated against" story (what real tables and writers the tool is exercised on, and the honest gap: Databricks/Unity-Catalog managed features such as coordinated commits and in-commit timestamps are not yet detected), CI test jobs on macOS and Windows (binaries for those targets are shipped today but tested only on Linux), reproducible benchmark tooling, and supply-chain checks (dependabot, cargo-audit).
+Every remaining professionalization item has landed: the "validated against" story (`docs/validation.md`, including the declared managed-table boundary), CI test jobs on macOS and Windows behind the required gate, reproducible benchmark tooling (`examples/gen_scale_log.rs`, three log shapes), supply-chain checks (dependabot plus cargo-audit, which found and fixed three real advisories on its first run), and the example notebooks re-verified end to end against MinIO and real GCS. 0.4.0 ships this state.
 
 **After 0.4.0 the plan is deliberate: a stabilization period of bug fixing and validation only, no new surface.** The roadmap below resumes after that.
 
@@ -88,6 +90,16 @@ Goal: shift from "file counter" to "pruning advisor".
 - **`--explain-why` mode**: synthesized output: what enabled pruning, what blocked it, what would improve it
 - **`--engine-profile`**: emulate a specific engine's pruning strength (`max` | `datafusion` | `spark` | `kernel`) so a CI gate asserts what *your* engine will do, not the metadata's theoretical best. The known divergences (IN-list strategies) are documented in the README today; this makes them selectable.
 
+## v0.6: Fidelity and coverage (planned)
+
+Moving declared boundaries across the line, one release note at a time:
+
+- **Deletion vectors: compensate, not just declare.** The DV descriptor carries `cardinality`; `numRecords - cardinality` is the live record count. Cheap, but it changes a reported number's meaning, so it ships with a schema note.
+- **Batch mode** (`--predicates <file>`): one log replay, N reports; also the natural place for task-level parallelism, which stays out of the single-invocation core by design.
+- **One log replay per invocation**: today a predicate costs up to three metadata scans; on remote tables that is the real latency. Redundancy elimination before any parallelism.
+- **Prefix `LIKE 'abc%'`** as a rewrite to a range (engines like delta-spark already skip on it; the rewrite infrastructure is ready).
+- **JSON schema 1.0**: declared only after 0.2 has soaked unchanged under real consumers for a few months.
+
 ## Adoption track
 
 - **AWS shared-config profiles**: shipped in v0.3.0 (`--profile`; SSO and `credential_process` produce an actionable error pointing at `aws configure export-credentials`)
@@ -96,7 +108,7 @@ Goal: shift from "file counter" to "pruning advisor".
 
 ## Trust track
 
-- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text. Next: a scheduled CI job, more layouts, and the "validated against" documentation.
+- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text (the "validated against" documentation shipped in `docs/validation.md`). Next: a scheduled CI job, Azure and GCS legs via their emulators (Azurite, fake-gcs-server) to close the manual-only gap, and fixtures written by third-party engines (Trino, Flink).
 
 ## Ongoing: the kernel track
 
