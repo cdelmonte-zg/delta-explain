@@ -42,6 +42,25 @@ No workspace, no feature flags, no nextest. One package, two targets: the
 (CLI layer). The Rust API is internal and unstable; the stable contracts are
 the CLI surface and the versioned JSON output schema.
 
+There is also a Python package (`pip install delta-explain`): maturin `bin`
+bindings ship the compiled binary inside platform wheels, and
+`python/delta_explain/` is a pure-Python wrapper that shells out to it and
+returns the JSON as a `Report`. It is a client of the CLI+schema contract,
+never a second API. Its tests (`python/tests/test_wrapper.py`) run against
+the real binary in every CI matrix leg, and a `wheel-smoke` CI job proves
+the full pip contract (maturin build, clean-venv install, bundled-binary
+discovery). Version is single-sourced from `Cargo.toml`.
+
+CI beyond the per-PR pipeline: `validation.yml` runs weekly and on
+dispatch - the Spark differential harness over MinIO plus an Azurite
+end-to-end smoke of the az:// path. Releases publish wheels to PyPI via
+trusted publishing (environment `pypi`).
+
+Process rules learned the hard way: background watchers must never merge
+PRs or touch the worktree (a `gh pr merge --delete-branch` on the
+checked-out branch silently switches it to main); always check
+`git branch --show-current` before pushing.
+
 ## Architecture
 
 The pipeline is a thin sequence of pure-ish library modules consumed by the

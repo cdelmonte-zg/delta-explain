@@ -172,7 +172,7 @@ Options:
       --profile <NAME>      Static AWS credentials from ~/.aws/credentials (S3)
       --region <REGION>     AWS region (S3 / S3-compatible)
       --option <KEY=VALUE>  Object store config (repeatable)
-      --env-creds           Use the cloud provider's default credential chain
+      --env-creds           Read cloud credentials from environment variables
       --public              Access a public bucket (skip auth)
 ```
 
@@ -187,7 +187,7 @@ delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
 
 **Credentials.** Three ways in, by environment:
 
-- **On cloud infrastructure** (EC2/ECS, EKS, AKS, GKE): `--env-creds` picks up the provider chain (instance profile, IRSA, Managed Identity, Workload Identity).
+- **On cloud infrastructure** (EC2/ECS, EKS, AKS, GKE): with no explicit credentials the storage layer falls back to the provider's ambient chain (instance profile, Managed Identity, Workload Identity) on its own; add `--env-creds` when the credentials live in environment variables instead (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`/`AWS_REGION`, `AZURE_STORAGE_ACCOUNT_NAME`/`AZURE_STORAGE_ACCOUNT_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`).
 - **On a developer laptop** (AWS): `--profile <name>` resolves static keys, session token, and region from `~/.aws/credentials` and `~/.aws/config`, the same files the AWS CLI reads (including the `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` overrides). Profiles that rely on SSO, `credential_process`, or role assumption are not resolved; export them first and use `--env-creds`:
   ```bash
   eval $(aws configure export-credentials --profile corp --format env)
@@ -196,7 +196,7 @@ delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
 - **Static keys** (MinIO, local development): pass them via `--option`, expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
 
 ```bash
-# S3 with default credential chain
+# S3 with credentials from the environment
 delta-explain --env-creds s3://bucket/path/to/table -w "date = '2024-01-01'"
 
 # S3 public bucket

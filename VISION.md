@@ -125,6 +125,6 @@ delta-explain builds on delta-kernel-rs, so some improvements arrive by adopting
 - Same predicate across two tables (flat vs partitioned, before vs after compaction)
 - Side-by-side output with delta highlighted
 
-## Future: Library surface
+## Library surface: the Python half is shipped
 
-The 0.3 refactor split the crate into a library and a thin CLI; the analysis (scan, attribution, gates) is already callable as Rust. The natural next step, if demand shows up, is a small stable facade and Python bindings: a pruning check as a function call in a notebook or a pytest fixture, instead of a subprocess. The CLI and the JSON schema stay the primary contracts until then.
+`pip install delta-explain` ships platform wheels containing the compiled CLI plus a thin Python module (`explain()` -> `Report`): a pruning check as a function call in a notebook or a pytest fixture, with gate failures as outcomes and runtime errors as exceptions - the CLI's exit-code contract in Python types. Deliberately a *client* of the CLI-and-JSON contract, not a second API: in-process PyO3 bindings (the polars model) and a stable Rust facade remain future work, taken up only if demand shows, and the `explain()` signature is designed to survive that swap unchanged.
