@@ -54,9 +54,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      # RUSTSEC-2026-0194 / -0195: quick-xml DoS, patched in 0.41 which
+      # object_store 0.13 does not accept yet (it pins 0.39). quick-xml
+      # only parses XML responses from the user's own object store, so
+      # exploitation requires a hostile storage endpoint. Tracked in a
+      # repo issue; remove the ignores when object_store moves.
+      - name: Audit
+        run: >
+          cargo audit
+          --ignore RUSTSEC-2026-0194
+          --ignore RUSTSEC-2026-0195
 
   docker-smoke:
     runs-on: ubuntu-latest
