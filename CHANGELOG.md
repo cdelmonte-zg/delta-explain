@@ -9,6 +9,26 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-03
+
+This cycle added no single big feature; it gave the tool a public contract,
+and then verified it. The predicate pipeline was rebuilt on an owned AST
+with normalization and diagnostic degradation; protocol features are
+detected and declared instead of silently distorting numbers; the JSON
+output is now a formal, CI-enforced schema (`schema_version` 0.1.0 ->
+0.2.0, additive); the semantics, the validation story, and the release
+process are written down; scale is measured and reproducible; the test
+suite runs on Linux, macOS, and Windows with dependency audits; a weekly
+Validation workflow runs the Spark differential oracle and an Azure
+emulator smoke; and `pip install delta-explain` ships the CLI inside
+platform wheels with a thin Python API. Real-cloud verification on AWS,
+GCS, and Azure found and fixed two release-blocking bugs before any user
+could (`az://` paths and `--env-creds` were both broken); the negative-path
+and edge-case sweeps found three more. Positioning, meant literally:
+production-usable as a conservative Delta metadata diagnostic and CI
+guardrail, not yet a fully production-grade general-purpose Delta
+observability product.
+
 ### Added
 
 - **`pip install delta-explain`.** Platform wheels ship the compiled CLI
