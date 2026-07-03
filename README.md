@@ -350,7 +350,9 @@ Literals are resolved against the Delta schema: numeric types (including `SHORT`
 
 - **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
 
-- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts. OR expressions mixing partition and non-partition columns are flagged as `unsplittable` per the rule above; they are not silently downgraded.
+- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts, after normalization: negations push down to the leaves (De Morgan) and conjuncts common to every OR branch factor out of the OR, so `NOT (country = 'DE' OR age > 30)` splits into two attributable phases and `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes `country = 'DE'` as partition-safe. What remains is the irreducibly mixed OR (`country = 'DE' OR age > 30`): it is flagged as `unsplittable` per the rule above, never silently downgraded.
+
+- **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons cannot use min/max statistics (no engine can, at the file level); such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune.
 
 See [VISION.md](VISION.md) for planned improvements.
 
