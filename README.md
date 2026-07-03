@@ -5,7 +5,7 @@
 A CLI that shows how partition pruning and data skipping reduce the set of candidate files in a Delta table.
 
 
-**Documentation**: [what delta-explain guarantees (and what it does not)](docs/semantics.md) - [the JSON report, field by field](docs/json-schema.md) - [current limitations](#current-limitations)
+**Documentation**: [three-minute quickstart](examples/quickstart/) - [what delta-explain guarantees (and what it does not)](docs/semantics.md) - [the JSON report, field by field](docs/json-schema.md) - [current limitations](#current-limitations)
 
 ## The problem
 
