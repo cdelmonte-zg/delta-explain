@@ -23,11 +23,15 @@ pub struct ColumnStats {
 }
 
 /// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
-/// payload is not valid JSON, so a malformed stats string counts as missing
-/// statistics (`[no stats]` in the verbose view, flagged by `--assert-stats`)
-/// rather than silently passing as an empty entry.
+/// payload is not valid JSON or not a JSON object, so a malformed stats
+/// string counts as missing statistics (`[no stats]` in the verbose view,
+/// flagged by `--assert-stats`) rather than silently passing as an empty
+/// entry.
 pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
     let stats = serde_json::from_str::<Value>(stats_str).ok()?;
+    if !stats.is_object() {
+        return None;
+    }
 
     let num_records = stats.get("numRecords").and_then(|v| v.as_u64());
 
@@ -216,5 +220,12 @@ mod tests {
     fn malformed_stats_json_counts_as_missing() {
         assert!(parse_stats_json("not json").is_none());
         assert!(parse_stats_json("").is_none());
+        // valid JSON of the wrong shape is just as missing as broken JSON
+        assert!(parse_stats_json("\"a string\"").is_none());
+        assert!(parse_stats_json("42").is_none());
+        assert!(parse_stats_json("[1, 2]").is_none());
+        assert!(parse_stats_json("null").is_none());
+        // an empty object is a present-but-empty payload, kept as such
+        assert!(parse_stats_json("{}").is_some());
     }
 }
