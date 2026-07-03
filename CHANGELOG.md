@@ -19,6 +19,18 @@ follow SemVer relative to that field.
   was in hand the whole time). Verified end to end against Azurite,
   including gates, normalization, and per-file JSON; S3 (differential
   harness) and real GCS re-verified unaffected.
+- **`--env-creds` reads the environment now.** The flag passed an
+  `allow_env` option that no layer ever consumed: object_store's parse
+  path silently drops unknown keys and never consults the environment,
+  so the flag was a no-op that fell through to the instance-metadata
+  chain - accidentally working on EC2, hanging toward IMDS anywhere
+  else. The well-known variables (AWS key/secret/session token/region/
+  endpoint, Azure account name/key, Google service-account paths) are
+  now read by the CLI itself and injected as explicit store options,
+  layered under `--profile`, flags, and `--option`. This also makes the
+  GitHub Action's `env-creds` input work outside AWS runners with
+  instance roles. Verified against real S3 (both auth chains, gates and
+  diagnostics).
 
 ### Added
 

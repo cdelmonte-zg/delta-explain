@@ -60,11 +60,13 @@ three invocations). The automated regression ceiling is a 1000-file smoke.
 - **Databricks/Unity-Catalog managed tables**: detected and refused with an
   explanation (their commits live in the catalog, so a filesystem-only
   analysis cannot be trusted). No support, by declaration.
-- **Azure and GCS in automated CI**: both are manually verified (GCS
-  against a real bucket; Azure against Azurite, which is how the az://
-  log-reader regression was caught), but the automated validation still
-  runs on local filesystem and MinIO/S3 only. Emulator CI legs are on the
-  trust-track roadmap.
+- **Cloud auth chains in automated CI**: real AWS S3 (both `--profile`
+  and `--env-creds`, which is how the env-creds no-op regression was
+  caught), real GCS (service account), and real Azure (`az://` and
+  `abfss://`/ADLS Gen2, account key and environment credentials; Azurite
+  is how the `az://` log-reader regression was caught) are all manually
+  verified, but the automated validation still runs on local filesystem
+  and MinIO/S3 only. Emulator CI legs are on the trust-track roadmap.
 - **Tables written by engines other than delta-rs and delta-spark** (e.g.
   Trino, Flink): the protocol is the contract and the kernel does the
   reading, but no fixture in the suite comes from them.
