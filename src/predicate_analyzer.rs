@@ -33,7 +33,7 @@ pub struct Classified {
 }
 
 pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, Error> {
-    let pred = predicate_ast::parse(input)?;
+    let pred = predicate_ast::parse(input)?.normalized();
     Ok(classify(&pred, partition_columns).analysis)
 }
 
@@ -50,10 +50,12 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
     for clause in pred.conjuncts() {
         if clause.contains_unsupported() {
             unsplittable_frags.push(clause);
+            let reasons = clause.unsupported_reasons().join("; ");
             notes.push(AnalysisNote {
                 code: "UNSUPPORTED_EXPRESSION".into(),
                 message: format!(
-                    "Expression outside the pruning language, routed as unsplittable: {clause}"
+                    "{reasons}; the fragment '{clause}' cannot contribute to \
+                     pruning and is applied conservatively (keeps all files)"
                 ),
             });
             continue;

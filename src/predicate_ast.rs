@@ -39,6 +39,19 @@ impl CmpOp {
             CmpOp::Ge => CmpOp::Le,
         }
     }
+
+    /// The logical complement under SQL three-valued logic: `NOT (x < 5)`
+    /// and `x >= 5` are both NULL when x is NULL, so the rewrite is safe.
+    fn negated(self) -> Self {
+        match self {
+            CmpOp::Eq => CmpOp::Ne,
+            CmpOp::Ne => CmpOp::Eq,
+            CmpOp::Lt => CmpOp::Ge,
+            CmpOp::Le => CmpOp::Gt,
+            CmpOp::Gt => CmpOp::Le,
+            CmpOp::Ge => CmpOp::Lt,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +178,217 @@ impl Pred {
             Pred::And(v) => v.iter().collect(),
             other => vec![other],
         }
+    }
+
+    /// The reasons attached to every `Unsupported` leaf, in tree order.
+    pub fn unsupported_reasons(&self) -> Vec<&str> {
+        let mut reasons = Vec::new();
+        self.collect_reasons(&mut reasons);
+        reasons
+    }
+
+    fn collect_reasons<'a>(&'a self, reasons: &mut Vec<&'a str>) {
+        match self {
+            Pred::And(v) | Pred::Or(v) => {
+                for p in v {
+                    p.collect_reasons(reasons);
+                }
+            }
+            Pred::Not(p) => p.collect_reasons(reasons),
+            Pred::Unsupported { reason, .. } => reasons.push(reason),
+            Pred::Cmp { .. }
+            | Pred::In { .. }
+            | Pred::Between { .. }
+            | Pred::IsNull { .. }
+            | Pred::BoolCol(_) => {}
+        }
+    }
+}
+
+// ── Normalization: semantics-preserving rewrites ────────────────────
+
+impl Pred {
+    /// Normalize the predicate: push negations down to the leaves
+    /// (De Morgan), then factor conjuncts common to every OR branch out
+    /// of the OR. Both rewrites preserve SQL three-valued semantics, so
+    /// the kernel's survivor set cannot change; what changes is how much
+    /// of the predicate the classifier can attribute to a single phase.
+    pub fn normalized(self) -> Pred {
+        factor_or(push_down_not(self, false))
+    }
+
+    /// The predicate with every `Unsupported` subtree removed
+    /// conservatively: a dropped constraint can only keep more files,
+    /// never prune one. Under AND the siblings survive; an OR (or NOT)
+    /// touching an unsupported leaf is dropped whole, because its truth
+    /// value cannot be bounded. `None` means nothing is left to scan with.
+    pub fn without_unsupported(&self) -> Option<Pred> {
+        match self {
+            Pred::And(v) => {
+                let kept: Vec<Pred> = v.iter().filter_map(Pred::without_unsupported).collect();
+                match kept.len() {
+                    0 => None,
+                    _ => Some(and_flat(kept)),
+                }
+            }
+            Pred::Or(_) | Pred::Not(_) => {
+                if self.contains_unsupported() {
+                    None
+                } else {
+                    Some(self.clone())
+                }
+            }
+            Pred::Unsupported { .. } => None,
+            Pred::Cmp { .. }
+            | Pred::In { .. }
+            | Pred::Between { .. }
+            | Pred::IsNull { .. }
+            | Pred::BoolCol(_) => Some(self.clone()),
+        }
+    }
+}
+
+/// Smart constructor: flatten nested ANDs, unwrap the single-element case.
+fn and_flat(parts: Vec<Pred>) -> Pred {
+    let mut out = Vec::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            Pred::And(v) => out.extend(v),
+            other => out.push(other),
+        }
+    }
+    match out.len() {
+        1 => match out.pop() {
+            Some(single) => single,
+            None => Pred::And(out),
+        },
+        _ => Pred::And(out),
+    }
+}
+
+/// Smart constructor: flatten nested ORs, unwrap the single-element case.
+fn or_flat(parts: Vec<Pred>) -> Pred {
+    let mut out = Vec::with_capacity(parts.len());
+    for p in parts {
+        match p {
+            Pred::Or(v) => out.extend(v),
+            other => out.push(other),
+        }
+    }
+    match out.len() {
+        1 => match out.pop() {
+            Some(single) => single,
+            None => Pred::Or(out),
+        },
+        _ => Pred::Or(out),
+    }
+}
+
+/// Push negations toward the leaves. `neg` is the parity accumulated from
+/// enclosing NOTs. Comparisons complement their operator; IN, BETWEEN and
+/// IS NULL toggle their negated flag; a bare boolean column keeps an
+/// explicit NOT (rewriting it to `col = false` would change its meaning
+/// on NULL). An unsupported leaf under NOT stays wrapped: its truth value
+/// is unknown, so its complement is too.
+fn push_down_not(pred: Pred, neg: bool) -> Pred {
+    match pred {
+        Pred::And(v) => {
+            let parts: Vec<Pred> = v.into_iter().map(|p| push_down_not(p, neg)).collect();
+            if neg { or_flat(parts) } else { and_flat(parts) }
+        }
+        Pred::Or(v) => {
+            let parts: Vec<Pred> = v.into_iter().map(|p| push_down_not(p, neg)).collect();
+            if neg { and_flat(parts) } else { or_flat(parts) }
+        }
+        Pred::Not(inner) => push_down_not(*inner, !neg),
+        Pred::Cmp { col, op, lit } => Pred::Cmp {
+            col,
+            op: if neg { op.negated() } else { op },
+            lit,
+        },
+        Pred::In { col, list, negated } => Pred::In {
+            col,
+            list,
+            negated: negated != neg,
+        },
+        Pred::Between {
+            col,
+            low,
+            high,
+            negated,
+        } => Pred::Between {
+            col,
+            low,
+            high,
+            negated: negated != neg,
+        },
+        Pred::IsNull { col, negated } => Pred::IsNull {
+            col,
+            negated: negated != neg,
+        },
+        leaf @ (Pred::BoolCol(_) | Pred::Unsupported { .. }) => {
+            if neg {
+                Pred::Not(Box::new(leaf))
+            } else {
+                leaf
+            }
+        }
+    }
+}
+
+/// Factor conjuncts common to every OR branch out of the OR:
+/// `(a AND x) OR (a AND y)` becomes `a AND (x OR y)` by the distributive
+/// law. When some branch is exactly the common part, the OR collapses to
+/// it (`a OR (a AND x)` is `a`). This is what turns a repeated partition
+/// filter inside an OR into a partition-safe top-level conjunct.
+fn factor_or(pred: Pred) -> Pred {
+    match pred {
+        Pred::And(v) => and_flat(v.into_iter().map(factor_or).collect()),
+        Pred::Or(v) => {
+            let children: Vec<Pred> = v.into_iter().map(factor_or).collect();
+            let branch_sets: Vec<Vec<Pred>> = children
+                .into_iter()
+                .map(|c| match c {
+                    Pred::And(parts) => parts,
+                    other => vec![other],
+                })
+                .collect();
+
+            let common: Vec<Pred> = match branch_sets.first() {
+                Some(first) => first
+                    .iter()
+                    .filter(|item| branch_sets[1..].iter().all(|set| set.contains(item)))
+                    .cloned()
+                    .collect(),
+                None => Vec::new(),
+            };
+
+            if common.is_empty() {
+                return or_flat(branch_sets.into_iter().map(and_flat).collect::<Vec<_>>());
+            }
+
+            let mut remainders: Vec<Pred> = Vec::with_capacity(branch_sets.len());
+            for set in branch_sets {
+                let mut rest = set;
+                for item in &common {
+                    if let Some(pos) = rest.iter().position(|r| r == item) {
+                        rest.remove(pos);
+                    }
+                }
+                if rest.is_empty() {
+                    // This branch is exactly the common part: TRUE absorbs
+                    // the OR, the whole disjunction reduces to the factor.
+                    return and_flat(common);
+                }
+                remainders.push(and_flat(rest));
+            }
+
+            let mut out = common;
+            out.push(or_flat(remainders));
+            and_flat(out)
+        }
+        Pred::Not(inner) => Pred::Not(Box::new(factor_or(*inner))),
+        leaf => leaf,
     }
 }
 
@@ -613,5 +837,101 @@ mod tests {
             p("country = 'DE' AND profile.geo.zip = '10115'").columns(),
             vec!["country", "profile.geo.zip"]
         );
+    }
+
+    fn norm(input: &str) -> String {
+        p(input).normalized().to_string()
+    }
+
+    #[test]
+    fn negation_pushes_through_comparisons() {
+        assert_eq!(norm("NOT age > 30"), "age <= 30");
+        assert_eq!(norm("NOT age = 30"), "age <> 30");
+        assert_eq!(norm("NOT NOT age = 30"), "age = 30");
+    }
+
+    #[test]
+    fn negation_pushes_through_junctions_by_de_morgan() {
+        assert_eq!(
+            norm("NOT (country = 'DE' OR age > 30)"),
+            "country <> 'DE' AND age <= 30"
+        );
+        assert_eq!(
+            norm("NOT (country = 'DE' AND age > 30)"),
+            "country <> 'DE' OR age <= 30"
+        );
+    }
+
+    #[test]
+    fn negation_toggles_sugar_flags() {
+        assert_eq!(norm("NOT country IN ('DE')"), "country NOT IN ('DE')");
+        assert_eq!(
+            norm("NOT age BETWEEN 30 AND 40"),
+            "age NOT BETWEEN 30 AND 40"
+        );
+        assert_eq!(norm("NOT age IS NULL"), "age IS NOT NULL");
+        assert_eq!(norm("NOT age IS NOT NULL"), "age IS NULL");
+    }
+
+    #[test]
+    fn negation_stays_on_boolean_columns_and_unsupported() {
+        assert_eq!(norm("NOT is_active"), "NOT is_active");
+        assert_eq!(norm("NOT UPPER(name) = 'X'"), "NOT UPPER(name) = 'X'");
+    }
+
+    #[test]
+    fn or_factoring_extracts_the_common_conjunct() {
+        assert_eq!(
+            norm("(country = 'DE' AND age > 30) OR (country = 'DE' AND score > 90)"),
+            "country = 'DE' AND (age > 30 OR score > 90)"
+        );
+    }
+
+    #[test]
+    fn or_factoring_collapses_an_absorbed_branch() {
+        assert_eq!(
+            norm("country = 'DE' OR (country = 'DE' AND age > 30)"),
+            "country = 'DE'"
+        );
+    }
+
+    #[test]
+    fn or_factoring_leaves_disjoint_branches_alone() {
+        assert_eq!(
+            norm("country = 'DE' OR age > 30"),
+            "country = 'DE' OR age > 30"
+        );
+    }
+
+    #[test]
+    fn without_unsupported_keeps_and_siblings() {
+        let pred = p("country = 'DE' AND UPPER(name) = 'X'");
+        let clean = pred.without_unsupported().expect("sibling survives");
+        assert_eq!(clean.to_string(), "country = 'DE'");
+    }
+
+    #[test]
+    fn without_unsupported_drops_a_poisoned_or_whole() {
+        let pred = p("age > 30 AND (country = 'DE' OR UPPER(name) = 'X')");
+        let clean = pred.without_unsupported().expect("first conjunct survives");
+        assert_eq!(clean.to_string(), "age > 30");
+    }
+
+    #[test]
+    fn without_unsupported_is_none_when_nothing_remains() {
+        assert!(p("UPPER(name) = 'X'").without_unsupported().is_none());
+        assert!(
+            p("UPPER(name) = 'X' OR country = 'DE'")
+                .without_unsupported()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn unsupported_reasons_surface_in_tree_order() {
+        let pred = p("UPPER(a) = 'X' AND b LIKE 'y%'");
+        let reasons = pred.unsupported_reasons();
+        assert_eq!(reasons.len(), 2);
+        assert!(reasons[0].contains("Unsupported expression"));
     }
 }

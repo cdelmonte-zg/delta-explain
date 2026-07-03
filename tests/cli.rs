@@ -560,14 +560,6 @@ fn is_null_on_partition() {
 // ── Parse error handling ────────────────────────────────────────────
 
 #[test]
-fn unsupported_function_call() {
-    cmd()
-        .args([&test_table(), "-w", "UPPER(country) = 'DE'"])
-        .assert()
-        .failure();
-}
-
-#[test]
 fn invalid_sql_syntax() {
     cmd()
         .args([&test_table(), "-w", "age >>> 30"])
@@ -580,20 +572,117 @@ fn empty_predicate() {
     cmd().args([&test_table(), "-w", ""]).assert().failure();
 }
 
-#[test]
-fn subquery_rejected() {
+// ── Unsupported expressions degrade with a diagnostic, not an error ──
+
+#[rstest]
+#[case("UPPER(country) = 'DE'")]
+#[case("age IN (SELECT 1)")]
+#[case("name LIKE '%Hans%'")]
+#[case("price * 2 > 100")]
+fn unsupported_predicate_keeps_all_files_with_warning(#[case] predicate: &str) {
     cmd()
-        .args([&test_table(), "-w", "age IN (SELECT 1)"])
+        .args([&test_table(), "-w", predicate])
         .assert()
-        .failure();
+        .success()
+        .stdout(
+            predicate::str::contains("files remaining: 6")
+                .and(predicate::str::contains("Warnings!"))
+                .and(predicate::str::contains("UNSUPPORTED_EXPRESSION"))
+                .and(predicate::str::contains("confidence:     incomplete")),
+        );
 }
 
 #[test]
-fn like_rejected() {
+fn unsupported_fragment_under_and_still_prunes_on_siblings() {
+    // country = 'DE' keeps pruning to 2 files; the function fragment
+    // degrades to keep-all instead of failing the whole command.
     cmd()
-        .args([&test_table(), "-w", "name LIKE '%Hans%'"])
+        .args([&test_table(), "-w", "country = 'DE' AND UPPER(name) = 'X'"])
         .assert()
-        .failure();
+        .success()
+        .stdout(
+            predicate::str::contains("partition-safe: country = 'DE'")
+                .and(predicate::str::contains("files remaining: 2"))
+                .and(predicate::str::contains("UNSUPPORTED_EXPRESSION")),
+        );
+}
+
+#[test]
+fn unsupported_inside_or_poisons_the_whole_or_conservatively() {
+    let output = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE' OR UPPER(name) = 'X'",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["analysis"]["confidence"], "incomplete");
+    assert_eq!(
+        json["analysis"]["notes"][0]["code"],
+        "UNSUPPORTED_EXPRESSION"
+    );
+    // conservative: the poisoned OR keeps every file
+    assert_eq!(json["final_files"], 6);
+}
+
+// ── Normalization rewrites (classification, not survivor sets) ──────
+
+#[test]
+fn not_over_mixed_or_splits_into_two_phases_by_de_morgan() {
+    // NOT (country = 'DE' OR age > 30) normalizes to
+    // country <> 'DE' AND age <= 30: partition-safe + stats-safe,
+    // where the raw form would have been one unsplittable fragment.
+    cmd()
+        .args([&test_table(), "-w", "NOT (country = 'DE' OR age > 30)"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("partition-safe: country <> 'DE'")
+                .and(predicate::str::contains("stats-safe:     age <= 30"))
+                .and(predicate::str::contains("confidence:     conservative")),
+        );
+}
+
+#[test]
+fn or_factoring_recovers_the_common_partition_conjunct() {
+    let output = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "(country = 'DE' AND age > 30) OR (country = 'DE' AND score > 90)",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["analysis"]["partition_safe"], "country = 'DE'");
+    assert_eq!(json["analysis"]["stats_safe"], "age > 30 OR score > 90");
+    assert!(json["analysis"]["unsplittable"].is_null());
+    assert_eq!(json["analysis"]["confidence"], "conservative");
+}
+
+#[test]
+fn or_absorption_collapses_to_the_partition_filter() {
+    let output = cmd()
+        .args([
+            &test_table(),
+            "-w",
+            "country = 'DE' OR (country = 'DE' AND age > 30)",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["analysis"]["partition_safe"], "country = 'DE'");
+    assert_eq!(json["analysis"]["confidence"], "exact");
+    assert_eq!(json["final_files"], 2);
 }
 
 // ── Flat table (no partitions) ─────────────────────────────────────

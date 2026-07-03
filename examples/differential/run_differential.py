@@ -48,6 +48,10 @@ PREDICATES = [
     "NOT (country = 'DE')",
     "age > 55 AND score > 95.5",
     "age > 100",
+    # normalization rewrites: De Morgan pushdown and OR factoring must
+    # not change the survivor set
+    "NOT (country = 'DE' OR age > 60)",
+    "(country = 'DE' AND age > 55) OR (country = 'DE' AND score > 95.5)",
 ]
 
 

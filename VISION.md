@@ -53,11 +53,11 @@ Shipped in the same v0.3.0 release: type hardening and the production sprint. Da
 
 ## v0.4: Smarter predicate analysis (planned)
 
-Goal: reduce false negatives for common patterns, without becoming an optimizer. The substrate comes first: replace sqlparser with a small Pratt parser producing our own minimal predicate AST (one parse, positions in errors, no dependency churn), on which the rewrites below become straightforward.
+Goal: reduce false negatives for common patterns, without becoming an optimizer. The substrate comes first: an owned minimal predicate AST, produced by a small converter from sqlparser (one parse, two interpreters: kernel lowering and classification). Owning SQL lexing forever is the wrong trade, so sqlparser stays as the front end; the converter is the only module coupled to it, and everything outside the pruning language collapses into an explainable `Unsupported` leaf at that boundary. The rewrites below operate on the owned AST.
 
-- **Light normalization**: flatten nested ANDs, push down simple negations, simplify constant expressions, treat IN as OR-on-same-column
-- **OR factoring on single column**: recognize `(col = 'A' OR col = 'B')` as partition-safe when `col` is a partition column
-- **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.)
+- **Light normalization**: flatten nested ANDs, push negations down to the leaves (De Morgan, three-valued-logic safe)
+- **OR factoring**: factor conjuncts common to every OR branch out of the OR, so `(col = 'A' AND x) OR (col = 'A' AND y)` exposes `col = 'A'` as a partition-safe top-level conjunct (a single-column OR like `col = 'A' OR col = 'B'` already classifies as partition-safe)
+- **Unsplittable explanations**: for each unsplittable fragment, explain *why* it couldn't be classified (mixed columns, function calls, etc.), and degrade unsupported expressions to a conservative keep-all with a diagnostic warning instead of a fatal error
 
 This is the complexity ceiling for the predicate analyzer. Anything beyond this crosses into optimizer territory.
 

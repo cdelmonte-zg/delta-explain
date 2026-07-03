@@ -9,6 +9,35 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- **Predicate normalization.** Predicates are normalized before
+  classification: negations push down to the leaves (De Morgan,
+  three-valued-logic safe), and conjuncts common to every OR branch factor
+  out of the OR. `NOT (country = 'DE' OR age > 30)` now splits into a
+  partition-pruning phase and a data-skipping phase instead of being one
+  unsplittable fragment, and
+  `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes
+  `country = 'DE'` as partition-safe. Rewrites preserve SQL semantics, so
+  survivor sets do not change; what improves is attribution and confidence.
+- **Diagnostic degradation for unsupported expressions.** Constructs outside
+  the pruning language (function calls, arithmetic, LIKE, subqueries,
+  column-to-column comparisons) no longer abort the command. The fragment is
+  reported as unsplittable with an `UNSUPPORTED_EXPRESSION` warning
+  explaining why, it conservatively keeps all files, and the remaining
+  conjuncts still prune. Malformed SQL still fails. JSON change is additive
+  (a new note code), `schema_version` unchanged.
+
+### Changed
+
+- The predicate pipeline is rebuilt around an owned minimal AST: one parse,
+  two interpreters (kernel lowering with schema-driven coercion, and
+  classification). Reported fragments now render from the normalized AST,
+  so cosmetic differences can appear (`!=` prints as `<>`, flipped
+  comparisons normalize to column-on-the-left, negations appear pushed
+  down). Behavior parity was validated against the differential harness:
+  survivor sets are identical to v0.3.0 on the full predicate matrix.
+
 ## [0.3.0] — 2026-07-02
 
 One release for the whole cycle: the kernel-backed statistics pipeline plus

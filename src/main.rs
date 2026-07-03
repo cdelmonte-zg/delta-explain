@@ -204,7 +204,7 @@ fn try_main() -> Result<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let pred_ast = predicate_ast::parse(pred_str)?;
+        let pred_ast = predicate_ast::parse(pred_str)?.normalized();
         let classified = predicate_analyzer::classify(&pred_ast, &partition_columns);
         let analysis = classified.analysis;
 
@@ -224,9 +224,17 @@ fn try_main() -> Result<()> {
         };
 
         let full_survivors = if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
-            let full_pred = kernel_bridge::emit_predicate(&pred_ast, &schema)?;
-            let surviving =
-                scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?;
+            // Unsupported fragments degrade instead of failing: scan with
+            // the predicate stripped of them (conservative, keeps more
+            // files), or with no predicate at all when nothing survives
+            // the strip. The analysis notes explain the gap to the user.
+            let surviving = match pred_ast.without_unsupported() {
+                Some(scan_pred) => {
+                    let full_pred = kernel_bridge::emit_predicate(&scan_pred, &schema)?;
+                    scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?
+                }
+                None => scan::collect_files(snapshot.clone(), engine.as_ref(), None)?,
+            };
             Some(
                 surviving
                     .into_iter()
