@@ -43,8 +43,9 @@ timestamps, unknown writer features, and the catalog-managed refusal path.
 each of thirteen predicates, Spark computes which files actually contain
 matching rows, and the harness asserts delta-explain's survivor set covers
 them. The matrix includes normalized forms (De Morgan pushdown, factored
-ORs) and null-safe comparisons. It is rerun on every change to predicate
-semantics; results to date: sound on all, exact on that layout.
+ORs) and null-safe comparisons. It reruns on every change to predicate
+semantics and weekly in CI (the Validation workflow); results to date:
+sound on all, exact on that layout.
 
 ## Scale
 
@@ -60,13 +61,15 @@ three invocations). The automated regression ceiling is a 1000-file smoke.
 - **Databricks/Unity-Catalog managed tables**: detected and refused with an
   explanation (their commits live in the catalog, so a filesystem-only
   analysis cannot be trusted). No support, by declaration.
-- **Cloud auth chains in automated CI**: real AWS S3 (both `--profile`
-  and `--env-creds`, which is how the env-creds no-op regression was
-  caught), real GCS (service account), and real Azure (`az://` and
-  `abfss://`/ADLS Gen2, account key and environment credentials; Azurite
-  is how the `az://` log-reader regression was caught) are all manually
-  verified, but the automated validation still runs on local filesystem
-  and MinIO/S3 only. Emulator CI legs are on the trust-track roadmap.
+- **Real-cloud auth chains in CI**: real AWS S3 (both `--profile` and
+  `--env-creds`, which is how the env-creds no-op regression was caught),
+  real GCS (service account), and real Azure (`az://` and
+  `abfss://`/ADLS Gen2) are verified manually. What *is* automated: a
+  weekly Validation workflow runs the Spark differential oracle over
+  MinIO and an Azurite end-to-end smoke of the `az://` path (the
+  automated version of the manual check that caught the `az://`
+  regression). A GCS emulator leg is not possible today (object_store
+  has no emulator support for `gs://`).
 - **Tables written by engines other than delta-rs and delta-spark** (e.g.
   Trino, Flink): the protocol is the contract and the kernel does the
   reading, but no fixture in the suite comes from them.
