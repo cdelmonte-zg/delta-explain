@@ -110,6 +110,27 @@ Download the archive for your platform from the [latest release](https://github.
 
 Each archive ships with a `.sha256` checksum. The musl build is statically linked and runs on any Linux distribution without glibc dependencies.
 
+### From PyPI (Python, no Rust needed)
+
+```bash
+pip install delta-explain
+```
+
+The wheel ships the compiled binary (the `delta-explain` command works from the same environment) plus a thin Python API around the JSON contract:
+
+```python
+from delta_explain import explain
+
+report = explain("s3://warehouse/events",
+                 where="country = 'DE' AND age > 40",
+                 min_pruning=80, env_creds=True)
+report.passed              # gate outcome; False means the CLI would exit 1
+report.total_pruning_pct
+report["analysis"]["confidence"]
+```
+
+Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message — the same exit-code contract as the command line, in Python types.
+
 ### From crates.io (requires Rust 1.88+)
 
 ```bash

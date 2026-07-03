@@ -1,0 +1,32 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "delta-explain"
+description = "Make Delta Lake pruning visible: partition pruning and data skipping diagnostics, as a CLI and a thin Python wrapper around it."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Christian Del Monte" }]
+keywords = ["delta-lake", "pruning", "data-skipping", "observability"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/cdelmonte-zg/delta-explain"
+Documentation = "https://github.com/cdelmonte-zg/delta-explain/tree/main/docs"
+
+[tool.maturin]
+# The wheel ships the compiled CLI binary (scripts/delta-explain) plus the
+# pure-Python wrapper module below. One contract: the module talks to the
+# binary and returns the schema-versioned JSON.
+bindings = "bin"
+python-source = "python"
+module-name = "delta_explain"
