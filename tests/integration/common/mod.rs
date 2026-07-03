@@ -33,6 +33,8 @@ pub struct LogBuilder {
     writer_features: Vec<String>,
     domain_metadata: Vec<serde_json::Value>,
     adds: Vec<serde_json::Value>,
+    closed_commits: Vec<Vec<serde_json::Value>>,
+    compactions: Vec<(u64, u64)>,
 }
 
 impl LogBuilder {
@@ -46,7 +48,29 @@ impl LogBuilder {
             writer_features: Vec::new(),
             domain_metadata: Vec::new(),
             adds: Vec::new(),
+            closed_commits: Vec::new(),
+            compactions: Vec::new(),
         }
+    }
+
+    /// Close the current commit: actions added so far (since the last
+    /// boundary) become one log version, and subsequent adds start the
+    /// next one. Without any boundary the whole log is a single commit 0.
+    #[allow(dead_code)]
+    pub fn commit(mut self) -> Self {
+        let actions = std::mem::take(&mut self.adds);
+        self.closed_commits.push(actions);
+        self
+    }
+
+    /// Write a log-compaction file covering commits `start..=end`
+    /// (`<start>.<end>.compacted.json`), containing the reconciled actions
+    /// of that range. The original commit files stay in place: readers are
+    /// expected to prefer the compacted file and must not double-count.
+    #[allow(dead_code)]
+    pub fn compaction(mut self, start: u64, end: u64) -> Self {
+        self.compactions.push((start, end));
+        self
     }
 
     /// A primitive column: `kind` is the Delta type name ("string", "long",
@@ -175,7 +199,7 @@ impl LogBuilder {
 
     /// Writes the log and returns the table handle; the directory lives as
     /// long as the returned value.
-    pub fn build(self) -> TempTable {
+    pub fn build(mut self) -> TempTable {
         let dir = TempDir::new().unwrap();
         let log_dir = dir.path().join("_delta_log");
         std::fs::create_dir_all(&log_dir).unwrap();
@@ -211,16 +235,51 @@ impl LogBuilder {
             "createdTime": 1_750_000_000_000_u64,
         }});
 
-        let mut commit = String::new();
-        writeln!(commit, "{protocol}").unwrap();
-        writeln!(commit, "{metadata}").unwrap();
-        for dm in &self.domain_metadata {
-            writeln!(commit, "{dm}").unwrap();
+        // Whatever accumulated after the last boundary is the final commit.
+        let trailing = std::mem::take(&mut self.adds);
+        let mut commits = self.closed_commits;
+        if !trailing.is_empty() || commits.is_empty() {
+            commits.push(trailing);
         }
-        for add in &self.adds {
-            writeln!(commit, "{add}").unwrap();
+
+        for (version, actions) in commits.iter().enumerate() {
+            let mut content = String::new();
+            if version == 0 {
+                writeln!(content, "{protocol}").unwrap();
+                writeln!(content, "{metadata}").unwrap();
+                for dm in &self.domain_metadata {
+                    writeln!(content, "{dm}").unwrap();
+                }
+            }
+            for action in actions {
+                writeln!(content, "{action}").unwrap();
+            }
+            std::fs::write(log_dir.join(format!("{version:020}.json")), content).unwrap();
         }
-        std::fs::write(log_dir.join("00000000000000000000.json"), commit).unwrap();
+
+        // Compaction files carry the reconciled actions of their range; with
+        // append-only synthetic commits that is the concatenation, plus
+        // protocol/metaData when commit 0 is in range.
+        for (start, end) in &self.compactions {
+            let mut content = String::new();
+            if *start == 0 {
+                writeln!(content, "{protocol}").unwrap();
+                writeln!(content, "{metadata}").unwrap();
+                for dm in &self.domain_metadata {
+                    writeln!(content, "{dm}").unwrap();
+                }
+            }
+            for actions in commits.iter().take(*end as usize + 1).skip(*start as usize) {
+                for action in actions {
+                    writeln!(content, "{action}").unwrap();
+                }
+            }
+            std::fs::write(
+                log_dir.join(format!("{start:020}.{end:020}.compacted.json")),
+                content,
+            )
+            .unwrap();
+        }
 
         TempTable { dir }
     }
