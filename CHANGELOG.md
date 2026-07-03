@@ -9,6 +9,20 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- **`pip install delta-explain`.** Platform wheels ship the compiled CLI
+  binary plus a thin Python module wrapping the JSON contract: `explain()`
+  returns a `Report` (mapping plus typed accessors), gate failures come
+  back as `passed == False`, runtime errors raise `DeltaExplainError` with
+  the CLI's message - the exit-code contract of docs/semantics.md, in
+  Python types. No Rust toolchain involved; the module is a client of the
+  CLI-and-schema contract, not a second API surface.
+- **Scheduled validation workflow.** The checks too slow for per-PR CI now
+  run weekly and on demand: the Spark differential harness in fresh mode,
+  and an Azurite end-to-end smoke of the az:// path (the automated version
+  of the manual check that caught the az:// regression).
+
 ### Fixed
 
 - **Azure tables work again.** The direct log reader derived its path by

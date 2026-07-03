@@ -34,6 +34,8 @@ not verify for you afterwards.
 - [ ] Bump `version` in `Cargo.toml`; `cargo build` to refresh
       `Cargo.lock`; commit as `chore: release as X.Y.Z`.
 - [ ] `cargo publish --dry-run`
+- [ ] `maturin build --release` locally: the wheel builds and installs in a
+      clean venv, `import delta_explain` and the bundled binary both work
 - [ ] Open the PR, wait for full CI (including `docker-smoke`), merge.
 
 ## 2. Tag
@@ -55,6 +57,11 @@ not verify for you afterwards.
       URL, verify `sha256sum`, run `delta-explain --version`.
 - [ ] `cargo install delta-explain --version X.Y.Z` succeeds and
       `--version` matches.
+- [ ] `pip install delta-explain==X.Y.Z` in a clean venv: `delta-explain
+      --version` matches and `python -c "import delta_explain"` works
+      (first release only: the PyPI trusted publisher must be configured
+      before the tag, see the repository settings note in the PR that
+      introduced the wheels).
 - [ ] Docker image: `docker run --rm ghcr.io/cdelmonte-zg/delta-explain:X.Y.Z --version`
       (both amd64 and arm64 manifests present).
 - [ ] GitHub Action smoke: a workflow using

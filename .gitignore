@@ -8,3 +8,8 @@ key.json
 # differential harness artifacts (generated per run)
 examples/differential/work/ground_truth.json
 examples/differential/work/predicates.json
+
+# Python
+__pycache__/
+*.egg-info/
+dist/
