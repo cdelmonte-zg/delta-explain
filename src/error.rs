@@ -35,6 +35,10 @@ pub enum Error {
     /// mechanism like SSO that delta-explain does not resolve).
     #[error("{0}")]
     Credentials(String),
+
+    /// Rendering the report failed (JSON serialization).
+    #[error("Cannot render output: {0}")]
+    Render(#[from] serde_json::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

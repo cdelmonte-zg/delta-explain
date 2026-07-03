@@ -80,12 +80,10 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
         }
     }
 
-    let partition_pred = match partition_frags.len() {
-        0 => None,
-        1 => Some(partition_frags[0].clone()),
-        _ => Some(Pred::And(
-            partition_frags.iter().map(|p| (*p).clone()).collect(),
-        )),
+    let partition_pred = match partition_frags.as_slice() {
+        [] => None,
+        [single] => Some((*single).clone()),
+        many => Some(Pred::And(many.iter().map(|p| (*p).clone()).collect())),
     };
 
     let partition_safe = join_opt(&partition_frags);

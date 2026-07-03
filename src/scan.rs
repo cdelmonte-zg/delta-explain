@@ -128,12 +128,22 @@ impl FilteredRowVisitor for StatsVisitor {
         getters: &[&'a dyn GetData<'a>],
         rows: RowIndexIterator<'_>,
     ) -> DeltaResult<()> {
+        // The getter arity mirrors selected_column_names_and_types; if the
+        // kernel ever hands us fewer, fail the scan instead of panicking.
+        let (path_getter, stats_getter) = match getters {
+            [path, stats, ..] => (path, stats),
+            _ => {
+                return Err(delta_kernel::Error::generic(
+                    "scan row visitor received fewer getters than requested columns",
+                ));
+            }
+        };
         for row_index in rows {
-            let path: Option<String> = getters[0].get_opt(row_index, "scanFile.path")?;
+            let path: Option<String> = path_getter.get_opt(row_index, "scanFile.path")?;
             let Some(path) = path else {
                 continue;
             };
-            let stats_str: Option<String> = getters[1].get_opt(row_index, "scanFile.stats")?;
+            let stats_str: Option<String> = stats_getter.get_opt(row_index, "scanFile.stats")?;
             if let Some(parsed) = stats_str.as_deref().and_then(parse_stats_json) {
                 self.stats.insert(path, parsed);
             }

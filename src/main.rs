@@ -1,3 +1,15 @@
+// Same production-code rule as the library crate: panics are enforced away
+// by the compiler, not by review discipline (unit tests are exempt).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::{HashMap, HashSet};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -286,7 +298,7 @@ fn try_main() -> Result<()> {
             render::print_text(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
         }
         OutputFormat::Json => {
-            render::print_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
+            render::print_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())?
         }
     }
 
