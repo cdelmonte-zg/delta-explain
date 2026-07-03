@@ -4,6 +4,9 @@
 
 A CLI that shows how partition pruning and data skipping reduce the set of candidate files in a Delta table.
 
+
+**Documentation**: [what delta-explain guarantees (and what it does not)](docs/semantics.md) - [the JSON report, field by field](docs/json-schema.md) - [current limitations](#current-limitations)
+
 ## The problem
 
 You run a query with a filter. The engine reads some files. But how many files were actually eliminated, and *why*?
@@ -263,7 +266,9 @@ The pruning percentage `delta-explain` reports reflects the predicate you pass t
 delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
 ```
 
-The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`. The document includes:
+The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
+
+The contract is formal: [`schemas/report-v0.2.schema.json`](schemas/report-v0.2.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`. In short, the document includes:
 
 - top-level summary fields (`table`, `version`, `predicate`, `total_files`, `final_files`, `total_pruning_pct`)
 - `analysis`: the predicate split (`partition_safe`, `stats_safe`, `unsplittable`), the global `confidence`, and any analyzer `notes`
@@ -343,6 +348,19 @@ payload.age > 30
 
 Literals are resolved against the Delta schema: numeric types (including `SHORT`, `BYTE`, and `DECIMAL`), strings, booleans, and temporal types. A quoted `'2026-07-01'` compared to a `DATE` or `TIMESTAMP` column coerces to the column type, and the explicit `DATE '...'` / `TIMESTAMP '...'` forms work too. Subqueries, functions, and LIKE are not supported. See Current limitations for the type matrix.
 
+## Performance notes
+
+delta-explain reads only the Delta log, never the parquet data files, so its cost scales with the number of `add` actions, not with data volume. Measured on a synthetic log (Linux, local disk):
+
+| Snapshot size | Analysis time | Peak memory |
+|---|---|---|
+| 50k files | ~0.4 s | ~90 MB |
+| 200k files | ~1.6 s | ~320 MB |
+
+Scaling is linear at roughly 1.6 KB of resident memory per file, which extrapolates to ~1.6 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is immaterial at this level: an `IN` list with 500 items over 200k files adds ~0.4 s.
+
+Output is the dimension to manage on large tables: the compact JSON stays summary-only at any size, and per-file detail (`--verbose`, in both formats) should be capped with `--limit`.
+
 ## Current limitations
 
 - **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
@@ -353,7 +371,7 @@ Literals are resolved against the Delta schema: numeric types (including `SHORT`
 
 - **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts, after normalization: negations push down to the leaves (De Morgan) and conjuncts common to every OR branch factor out of the OR, so `NOT (country = 'DE' OR age > 30)` splits into two attributable phases and `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes `country = 'DE'` as partition-safe. What remains is the irreducibly mixed OR (`country = 'DE' OR age > 30`): it is flagged as `unsplittable` per the rule above, never silently downgraded.
 
-- **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons cannot use min/max statistics (no engine can, at the file level); such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune.
+- **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons are outside the pruning language; such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune. Most of these are file-level unskippable for any engine; the exception is prefix `LIKE 'abc%'`, which engines like delta-spark do skip on string min/max and delta-explain does not yet.
 
 - **`IN` pruning strength varies by engine.** delta-explain expands `IN` lists into OR-of-equalities, the strongest sound form, with no size cap. Real engines differ: DataFusion-based engines (delta-rs) do the same expansion but stop skipping past 20 list items, and delta-spark evaluates an imprecise range test over the whole list (`min(values) <= col <= max(values)`), which keeps more files on sparse lists. On `IN`-heavy predicates a specific engine may therefore prune less than this report shows; the report reflects what the metadata makes possible, and it is always sound.
 

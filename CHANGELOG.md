@@ -11,6 +11,17 @@ follow SemVer relative to that field.
 
 ### Added
 
+- **The public contract, written down and enforced.** `docs/semantics.md`
+  states what delta-explain guarantees (conservative survivor sets,
+  degradation with diagnostics, confidence meaning, exit-code table) and
+  what it does not do (no planner simulation, no runtime prediction, no
+  feature compensation). `schemas/report-v0.2.schema.json` is a formal
+  JSON Schema of the report, strict on purpose, and the integration suite
+  validates every emitted document shape against it; `docs/json-schema.md`
+  explains each field, the verbose-only fields, and the stable note codes.
+  The README gains a documentation pointer and a measured "Performance
+  notes" section (200k files: ~1.6 s, ~320 MB, linear).
+
 - **Detect-and-declare for protocol features.** The report now declares the
   table features that distort or reframe its numbers, without changing how
   pruning is computed: deletion vectors (enabled flag and count of files
