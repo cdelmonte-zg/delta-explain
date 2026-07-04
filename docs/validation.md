@@ -61,15 +61,15 @@ three invocations). The automated regression ceiling is a 1000-file smoke.
 - **Databricks/Unity-Catalog managed tables**: detected and refused with an
   explanation (their commits live in the catalog, so a filesystem-only
   analysis cannot be trusted). No support, by declaration.
-- **Real-cloud auth chains in CI**: real AWS S3 (both `--profile` and
-  `--env-creds`, which is how the env-creds no-op regression was caught),
-  real GCS (service account), and real Azure (`az://` and
-  `abfss://`/ADLS Gen2) are verified manually. What *is* automated: a
-  weekly Validation workflow runs the Spark differential oracle over
-  MinIO and an Azurite end-to-end smoke of the `az://` path (the
-  automated version of the manual check that caught the `az://`
-  regression). A GCS emulator leg is not possible today (object_store
-  has no emulator support for `gs://`).
+- **Parts of the real-cloud auth surface**: the weekly Validation
+  workflow now runs, besides the Spark differential oracle over MinIO
+  and the Azurite `az://` smoke, a `real-cloud-smoke` leg against real
+  S3, Azure Blob, and GCS demo tables with `--env-creds` (real
+  authentication, endpoints, and regions: the class of the two 0.4.0
+  cloud bugs, which no emulator caught). Still manual: `--profile`
+  against real AWS, `abfss://`/ADLS Gen2, and every auth mechanism the
+  smoke's credentials do not exercise (instance metadata, SSO, workload
+  identity).
 - **Tables written by engines other than delta-rs and delta-spark** (e.g.
   Trino, Flink): the protocol is the contract and the kernel does the
   reading, but no fixture in the suite comes from them.
