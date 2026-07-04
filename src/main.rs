@@ -56,7 +56,6 @@ Examples:
   Diagnostic (local):
     delta-explain ./my-table -w \"country = 'DE'\"
     delta-explain ./my-table -w \"age > 30\" --verbose
-    delta-explain ./my-table -w \"age > 30\" --debug-ir ir.txt
 
   CI assertion:
     delta-explain ./my-table -w \"country = 'DE'\" --min-pruning 60

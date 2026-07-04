@@ -140,17 +140,6 @@ and file-level data skipping. Parquet row-group predicate pushdown
 file-format concern, deliberately out of scope; it may appear later as a
 separate mode.
 
-## Diagnostics outside the contract
-
-`--debug-ir <FILE>` writes the run's intermediate representations
-(predicate AST before and after normalization, classification, lowered
-kernel predicates, survivor counts, captured kernel trace) to a local
-file. It is a diagnostic: the dump format is unstable and carries no
-compatibility promise. The flag exists only in binaries built with the
-`debug-ir` Cargo feature (`cargo build --features debug-ir`); release
-artifacts ship without it, and nothing in this contract changes when it
-is present.
-
 ## Known blind spots
 
 - Statistics exist only for the first `delta.dataSkippingNumIndexedCols`
