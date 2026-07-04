@@ -6,9 +6,11 @@
 # - azurite-smoke: the az:// path end to end against the Azure emulator
 #   (the automated version of the manual check that caught the az://
 #   log-reader regression).
-#
-# No GCS leg: object_store has no GCS-emulator support, so gs:// coverage
-# stays a manual verification against a real bucket (see docs/validation.md).
+# - real-cloud-smoke: the same end-to-end read against real S3, Azure
+#   Blob, and GCS demo tables. Emulators validate protocol semantics;
+#   this leg validates what they cannot: real authentication, endpoints,
+#   and regions (the class of the two 0.4.0 cloud bugs, which no emulator
+#   caught). A leg skips itself when its secrets are not configured.
 name: Validation
 
 on:
@@ -70,3 +72,79 @@ jobs:
 
       - name: Azurite smoke
         run: DX_BIN=$PWD/target/release/delta-explain python3 .github/scripts/azurite_smoke.py
+
+  real-cloud-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cloud: s3
+            uri_secret: CLOUD_SMOKE_S3_URI
+          - cloud: az
+            uri_secret: CLOUD_SMOKE_AZ_URI
+          - cloud: gs
+            uri_secret: CLOUD_SMOKE_GS_URI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # --env-creds reads a cloud-agnostic variable map and each object_store
+    # backend ignores the keys it does not know, so every leg can carry the
+    # full credential environment.
+    env:
+      TABLE_URI: ${{ secrets[matrix.uri_secret] }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+    steps:
+      - name: Gate on configured credentials
+        id: gate
+        run: |
+          if [ -n "$TABLE_URI" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no table URI configured for '${{ matrix.cloud }}', skipping"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Build
+        if: steps.gate.outputs.run == 'true'
+        run: cargo build --release
+
+      - name: Write the GCS service-account key
+        if: steps.gate.outputs.run == 'true' && matrix.cloud == 'gs'
+        run: |
+          printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > "$RUNNER_TEMP/gcs-key.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcs-key.json" >> "$GITHUB_ENV"
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
+      # Two attempts: a transient cloud hiccup should not page anyone on a
+      # Monday morning, a real regression fails twice.
+      - name: Smoke against the real table
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -o pipefail
+          run_smoke() {
+            ./target/release/delta-explain "$TABLE_URI" \
+              -w "country = 'DE'" --env-creds --min-pruning 30 \
+              --format json > report.json
+            python3 - <<'PY'
+          import json
+          r = json.load(open("report.json"))
+          assert r["schema_version"], "missing schema_version"
+          assert r["stats"]["total_files"] > 0, "empty snapshot"
+          assert r["analysis"]["partition_safe"] == "country = 'DE'", r["analysis"]
+          assert r["result"] == "pass", f"gate failed: {r['assertions']}"
+          print(f"ok: {r['stats']['total_files']} files, result {r['result']}")
+          PY
+          }
+          run_smoke || { echo "first attempt failed, retrying once"; sleep 30; run_smoke; }
