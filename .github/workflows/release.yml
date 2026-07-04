@@ -201,7 +201,7 @@ jobs:
     permissions:
       id-token: write # trusted publishing, no token secrets
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-*
           merge-multiple: true
