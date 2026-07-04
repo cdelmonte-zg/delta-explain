@@ -29,6 +29,26 @@ use delta_explain::{
     render, scan, stats,
 };
 
+#[cfg(feature = "debug-ir")]
+use delta_explain::debug_dump::DebugDump;
+
+/// Stand-in for builds without the debug-ir feature: same call surface,
+/// no behavior. The `Option` holding it is always `None`, so the method
+/// bodies are unreachable; they exist to keep the call sites feature-free.
+#[cfg(not(feature = "debug-ir"))]
+struct DebugDump;
+
+#[cfg(not(feature = "debug-ir"))]
+impl DebugDump {
+    fn section(&mut self, _title: &str, _body: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn finish(self) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
 #[command(after_help = "\
@@ -66,6 +86,14 @@ struct Cli {
     /// Only meaningful together with --verbose.
     #[arg(long, value_name = "N")]
     limit: Option<usize>,
+
+    /// Write this run's intermediate representations (predicate AST before
+    /// and after normalization, classification, lowered kernel predicates,
+    /// survivor counts, kernel trace) to FILE. Diagnostic output: the
+    /// format is unstable and outside the CLI/JSON contract.
+    #[cfg(feature = "debug-ir")]
+    #[arg(long = "debug-ir", value_name = "FILE")]
+    debug_ir: Option<String>,
 
     // ── CI / assertion flags ────────────────────────────────────────
     /// Output format
@@ -225,6 +253,27 @@ fn try_main() -> Result<()> {
     let url = parse_table_uri(&cli.path)?;
     let EngineAndStore { engine, store } = build_engine(&url, &cli)?;
 
+    // Created before the first kernel call so the trace capture sees the
+    // whole log replay, not just the phase scans.
+    #[cfg(feature = "debug-ir")]
+    let mut debug_dump = match cli.debug_ir.as_deref() {
+        Some(path) => {
+            let mut dump = DebugDump::create(path)?;
+            dump.section(
+                "invocation",
+                &format!(
+                    "table: {}\npredicate: {}",
+                    cli.path,
+                    cli.predicate.as_deref().unwrap_or("(none)")
+                ),
+            )?;
+            Some(dump)
+        }
+        None => None,
+    };
+    #[cfg(not(feature = "debug-ir"))]
+    let mut debug_dump: Option<DebugDump> = None;
+
     // Read the log's own metadata before asking the kernel for a snapshot:
     // a catalog-managed table deserves this tool's explanation, not the
     // kernel's API-flavored refusal.
@@ -256,6 +305,18 @@ fn try_main() -> Result<()> {
         partition_columns = scan::partition_columns_from_files(&all_files);
     }
 
+    if let Some(dump) = debug_dump.as_mut() {
+        dump.section(
+            "snapshot",
+            &format!(
+                "version: {}\nfiles in snapshot: {}\npartition columns: {:?}",
+                snapshot.version(),
+                all_files.len(),
+                partition_columns
+            ),
+        )?;
+    }
+
     let table_features = features::detect(
         &snapshot,
         &all_files,
@@ -278,13 +339,35 @@ fn try_main() -> Result<()> {
     };
 
     if let Some(ref pred_str) = cli.predicate {
-        let pred_ast = predicate_ast::parse(pred_str)?.normalized();
+        let parsed = predicate_ast::parse(pred_str)?;
+        if let Some(dump) = debug_dump.as_mut() {
+            dump.section(
+                "owned AST (parsed)",
+                &format!("rendered: {parsed}\n\n{parsed:#?}"),
+            )?;
+        }
+        let pred_ast = parsed.normalized();
+        if let Some(dump) = debug_dump.as_mut() {
+            dump.section(
+                "owned AST (normalized)",
+                &format!("rendered: {pred_ast}\n\n{pred_ast:#?}"),
+            )?;
+        }
         let classified = predicate_analyzer::classify(&pred_ast, &partition_columns);
         let analysis = classified.analysis;
+        if let Some(dump) = debug_dump.as_mut() {
+            dump.section("classification", &format!("{analysis:#?}"))?;
+        }
 
         let partition_survivors = match &classified.partition_pred {
             Some(part_ast) => {
                 let part_pred = kernel_bridge::emit_predicate(part_ast, &schema)?;
+                if let Some(dump) = debug_dump.as_mut() {
+                    dump.section(
+                        "kernel predicate: partition-only scan",
+                        &format!("lowered from: {part_ast}\n\n{part_pred:#?}"),
+                    )?;
+                }
                 let surviving =
                     scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&part_pred))?;
                 Some(
@@ -305,9 +388,27 @@ fn try_main() -> Result<()> {
             let surviving = match pred_ast.without_unsupported() {
                 Some(scan_pred) => {
                     let full_pred = kernel_bridge::emit_predicate(&scan_pred, &schema)?;
+                    if let Some(dump) = debug_dump.as_mut() {
+                        dump.section(
+                            "kernel predicate: full scan",
+                            &format!(
+                                "scan predicate after stripping unsupported fragments: \
+                                 {scan_pred}\n\n{full_pred:#?}"
+                            ),
+                        )?;
+                    }
                     scan::collect_files(snapshot.clone(), engine.as_ref(), Some(&full_pred))?
                 }
-                None => scan::collect_files(snapshot.clone(), engine.as_ref(), None)?,
+                None => {
+                    if let Some(dump) = debug_dump.as_mut() {
+                        dump.section(
+                            "kernel predicate: full scan",
+                            "no fragment survives the strip; the full scan runs without \
+                             a predicate",
+                        )?;
+                    }
+                    scan::collect_files(snapshot.clone(), engine.as_ref(), None)?
+                }
             };
             Some(
                 surviving
@@ -318,6 +419,24 @@ fn try_main() -> Result<()> {
         } else {
             None
         };
+
+        if let Some(dump) = debug_dump.as_mut() {
+            let partition_line = match &partition_survivors {
+                Some(s) => format!("partition-only scan: {} files", s.len()),
+                None => "partition-only scan: skipped (no partition-safe fragment)".to_string(),
+            };
+            let full_line = match &full_survivors {
+                Some(s) => format!("full scan: {} files", s.len()),
+                None => "full scan: skipped (pure-partition predicate)".to_string(),
+            };
+            dump.section(
+                "survivor sets",
+                &format!(
+                    "baseline: {} files\n{partition_line}\n{full_line}",
+                    report.total_files
+                ),
+            )?;
+        }
 
         report.phases = attribution::build_phases(
             &analysis,
@@ -338,6 +457,13 @@ fn try_main() -> Result<()> {
     report.overall_result = outcome.overall;
 
     report.elapsed_ms = start.elapsed().as_millis();
+
+    // All kernel work is done; close the dump (appends the captured kernel
+    // trace) before rendering, so the file is complete even on the exit(1)
+    // path of a failed gate.
+    if let Some(dump) = debug_dump.take() {
+        dump.finish()?;
+    }
 
     // ── Output ──────────────────────────────────────────────────────
 

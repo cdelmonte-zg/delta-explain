@@ -37,7 +37,21 @@ cargo test test_name_here
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-No workspace, no feature flags, no nextest. One package, two targets: the
+No workspace, no nextest. One Cargo feature exists: `debug-ir`, an
+internal developer diagnostic, off by default and never in release
+artifacts, deliberately absent from the public help, CHANGELOG, and
+docs/semantics.md. It compiles the `--debug-ir <FILE>` flag (dump of the
+run's intermediate representations: predicate AST before/after
+normalization, classification, lowered kernel predicates, survivor
+counts, captured delta_kernel trace; filter overridable via
+DELTA_EXPLAIN_DEBUG_FILTER) plus its tracing dependencies:
+
+```bash
+cargo run --features debug-ir -- ./table -w "age > 30" --debug-ir ir.txt
+cargo test --features debug-ir   # includes the debug_ir test module
+```
+
+One package, two targets: the
 `delta_explain` library (analysis machinery) and the `delta-explain` binary
 (CLI layer). The Rust API is internal and unstable; the stable contracts are
 the CLI surface and the versioned JSON output schema.

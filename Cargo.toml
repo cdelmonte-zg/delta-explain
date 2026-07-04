@@ -24,6 +24,14 @@ futures = "0.3"
 sqlparser = "0.62"
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+[features]
+# Compiles the --debug-ir diagnostic (dump of the pipeline's intermediate
+# representations plus kernel trace capture) into the binary. Off by
+# default: release artifacts ship without any debug machinery.
+debug-ir = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dev-dependencies]
 assert_cmd = "2"
