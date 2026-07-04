@@ -189,7 +189,7 @@ jobs:
           "$VENV/delta-explain" --version
           "$VENV/python" -c "import delta_explain; print(delta_explain.binary_path())"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.target }}
           path: dist/
