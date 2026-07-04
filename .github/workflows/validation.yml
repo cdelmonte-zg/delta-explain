@@ -86,16 +86,18 @@ jobs:
             uri_secret: CLOUD_SMOKE_GS_URI
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # --env-creds reads a cloud-agnostic variable map and each object_store
-    # backend ignores the keys it does not know, so every leg can carry the
-    # full credential environment.
+    # Least privilege per leg: each cloud's credentials materialize only in
+    # its own matrix leg (the conditional evaluates to '' elsewhere, and
+    # each object_store backend drops option keys it does not know, so a
+    # stray empty variable is inert). The GCS key is likewise written only
+    # in the gs leg, in its own step below.
     env:
       TABLE_URI: ${{ secrets[matrix.uri_secret] }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT_NAME }}
-      AZURE_STORAGE_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ matrix.cloud == 's3' && secrets.AWS_ACCESS_KEY_ID || '' }}
+      AWS_SECRET_ACCESS_KEY: ${{ matrix.cloud == 's3' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+      AWS_REGION: ${{ matrix.cloud == 's3' && secrets.AWS_REGION || '' }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ matrix.cloud == 'az' && secrets.AZURE_STORAGE_ACCOUNT_NAME || '' }}
+      AZURE_STORAGE_ACCOUNT_KEY: ${{ matrix.cloud == 'az' && secrets.AZURE_STORAGE_ACCOUNT_KEY || '' }}
     steps:
       - name: Gate on configured credentials
         id: gate
