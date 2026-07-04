@@ -18,8 +18,10 @@ follow SemVer relative to that field.
   phase scan (where the stripping of unsupported fragments is visible),
   survivor counts per scan, and delta-kernel's own tracing events
   (`delta_kernel=debug` by default, directive overridable via
-  `DELTA_EXPLAIN_DEBUG_FILTER`). The dump format is unstable and sits
-  outside the CLI/JSON contract.
+  `DELTA_EXPLAIN_DEBUG_FILTER`). Compiled in only with the `debug-ir`
+  Cargo feature: release artifacts ship without the flag, the module,
+  or its dependencies. The dump format is unstable and sits outside the
+  CLI/JSON contract.
 
 ## [0.4.0] — 2026-07-03
 

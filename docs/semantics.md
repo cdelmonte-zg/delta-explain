@@ -146,8 +146,10 @@ separate mode.
 (predicate AST before and after normalization, classification, lowered
 kernel predicates, survivor counts, captured kernel trace) to a local
 file. It is a diagnostic: the dump format is unstable and carries no
-compatibility promise. Nothing in this contract changes when the flag is
-present.
+compatibility promise. The flag exists only in binaries built with the
+`debug-ir` Cargo feature (`cargo build --features debug-ir`); release
+artifacts ship without it, and nothing in this contract changes when it
+is present.
 
 ## Known blind spots
 

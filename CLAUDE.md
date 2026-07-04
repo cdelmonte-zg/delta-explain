@@ -37,7 +37,10 @@ cargo test test_name_here
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
-No workspace, no feature flags, no nextest. One package, two targets: the
+No workspace, no nextest. One Cargo feature exists: `debug-ir` (off by
+default, never in release artifacts) compiles the `--debug-ir` diagnostic
+dump and its tracing dependencies into the binary; its tests run with
+`cargo test --features debug-ir`. One package, two targets: the
 `delta_explain` library (analysis machinery) and the `delta-explain` binary
 (CLI layer). The Rust API is internal and unstable; the stable contracts are
 the CLI surface and the versioned JSON output schema.

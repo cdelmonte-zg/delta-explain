@@ -42,6 +42,14 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: cargo clippy -- -D warnings
 
+      # The debug-ir feature is off in every release artifact; this leg
+      # keeps the gated code compiling and its tests green.
+      - name: Tests and clippy with the debug-ir feature
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo clippy --all-targets --features debug-ir -- -D warnings
+          cargo test --features debug-ir
+
       - name: Format check
         if: matrix.os == 'ubuntu-latest'
         run: cargo fmt -- --check

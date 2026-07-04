@@ -25,9 +25,29 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, debug_dump, features, gates, kernel_bridge, predicate_analyzer,
-    predicate_ast, render, scan, stats,
+    attribution, credentials, features, gates, kernel_bridge, predicate_analyzer, predicate_ast,
+    render, scan, stats,
 };
+
+#[cfg(feature = "debug-ir")]
+use delta_explain::debug_dump::DebugDump;
+
+/// Stand-in for builds without the debug-ir feature: same call surface,
+/// no behavior. The `Option` holding it is always `None`, so the method
+/// bodies are unreachable; they exist to keep the call sites feature-free.
+#[cfg(not(feature = "debug-ir"))]
+struct DebugDump;
+
+#[cfg(not(feature = "debug-ir"))]
+impl DebugDump {
+    fn section(&mut self, _title: &str, _body: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn finish(self) -> Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
@@ -72,6 +92,7 @@ struct Cli {
     /// and after normalization, classification, lowered kernel predicates,
     /// survivor counts, kernel trace) to FILE. Diagnostic output: the
     /// format is unstable and outside the CLI/JSON contract.
+    #[cfg(feature = "debug-ir")]
     #[arg(long = "debug-ir", value_name = "FILE")]
     debug_ir: Option<String>,
 
@@ -235,9 +256,10 @@ fn try_main() -> Result<()> {
 
     // Created before the first kernel call so the trace capture sees the
     // whole log replay, not just the phase scans.
+    #[cfg(feature = "debug-ir")]
     let mut debug_dump = match cli.debug_ir.as_deref() {
         Some(path) => {
-            let mut dump = debug_dump::DebugDump::create(path)?;
+            let mut dump = DebugDump::create(path)?;
             dump.section(
                 "invocation",
                 &format!(
@@ -250,6 +272,8 @@ fn try_main() -> Result<()> {
         }
         None => None,
     };
+    #[cfg(not(feature = "debug-ir"))]
+    let mut debug_dump: Option<DebugDump> = None;
 
     // Read the log's own metadata before asking the kernel for a snapshot:
     // a catalog-managed table deserves this tool's explanation, not the
