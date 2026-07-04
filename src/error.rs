@@ -48,6 +48,11 @@ pub enum Error {
     /// section write, or installing the kernel trace subscriber).
     #[error("Cannot write debug IR dump: {0}")]
     DebugDump(String),
+
+    /// Writing the report to stdout failed. A broken pipe never reaches
+    /// this variant: the CLI layer swallows it and keeps the gate verdict.
+    #[error("Cannot write output: {0}")]
+    Output(std::io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

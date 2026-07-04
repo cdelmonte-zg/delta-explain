@@ -36,7 +36,7 @@ Released as the v0.2.0 → v0.2.3 series. The tool now explains *why* pruning wo
 - **Expanded test fixtures**: tables with partial stats; OR-mixed predicates classified as `unsplittable` and covered by the existing canonical fixture
 - **Distribution**: crates.io, Docker (multi-arch), pre-built binaries for six targets, `.deb` packages, Homebrew tap, Scoop bucket
 
-The architecture and design rationale behind v0.2 are written up in detail in the companion deep-dive: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/deep-dives/delta-explain-making-delta-pruning-visible/).
+The architecture and design rationale behind v0.2 are written up in detail in the companion deep-dive: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/projects/delta-explain-making-delta-pruning-visible/).
 
 ## v0.3: Checkpoint support and type hardening (shipped July 2026)
 
