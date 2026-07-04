@@ -85,6 +85,13 @@ Constructs outside the pruning language — function calls, arithmetic,
 - the fragment is reported as `unsplittable`, confidence degrades to
   `incomplete`, and an `UNSUPPORTED_EXPRESSION` note carries the reason.
 
+These rules hold even when every column the fragment references is a
+partition column. Partition values are exact literals per file, so an
+engine can evaluate any deterministic predicate on them directly; this
+report does not (one pruning language governs both phases), so it may
+understate the partition-side opportunity for such fragments. Direct
+evaluation over partition literals is a tracked extension (#75).
+
 Malformed SQL is different: it is a user error and fails the run.
 
 ## Table features: declared, not compensated
