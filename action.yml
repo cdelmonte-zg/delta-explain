@@ -1,7 +1,7 @@
 name: "delta-explain"
 description: >-
-  Delta Lake pruning gate: fail the pipeline when partition pruning and data
-  skipping fall below a threshold, or when files are missing statistics.
+  Delta Lake pruning gate: fail CI when pruning falls below a threshold or
+  files are missing statistics.
 author: "Christian Del Monte"
 branding:
   icon: "filter"
