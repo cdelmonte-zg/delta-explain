@@ -140,6 +140,15 @@ and file-level data skipping. Parquet row-group predicate pushdown
 file-format concern, deliberately out of scope; it may appear later as a
 separate mode.
 
+## Diagnostics outside the contract
+
+`--debug-ir <FILE>` writes the run's intermediate representations
+(predicate AST before and after normalization, classification, lowered
+kernel predicates, survivor counts, captured kernel trace) to a local
+file. It is a diagnostic: the dump format is unstable and carries no
+compatibility promise. Nothing in this contract changes when the flag is
+present.
+
 ## Known blind spots
 
 - Statistics exist only for the first `delta.dataSkippingNumIndexedCols`

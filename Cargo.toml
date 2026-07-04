@@ -24,6 +24,8 @@ futures = "0.3"
 sqlparser = "0.62"
 thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 assert_cmd = "2"

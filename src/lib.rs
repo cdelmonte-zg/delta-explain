@@ -26,6 +26,7 @@
 
 pub mod attribution;
 pub mod credentials;
+pub mod debug_dump;
 pub mod error;
 pub mod features;
 pub mod gates;

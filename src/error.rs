@@ -43,6 +43,11 @@ pub enum Error {
     /// The table uses a protocol feature this tool cannot analyze honestly.
     #[error("{0}")]
     UnsupportedTable(String),
+
+    /// Writing the --debug-ir diagnostic dump failed (file creation, a
+    /// section write, or installing the kernel trace subscriber).
+    #[error("Cannot write debug IR dump: {0}")]
+    DebugDump(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

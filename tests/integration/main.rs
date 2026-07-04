@@ -9,6 +9,7 @@ mod aws_profile;
 mod checkpoint_partition_columns;
 mod checkpoint_stats;
 mod cli;
+mod debug_ir;
 mod exotic_logs;
 mod json_contract;
 mod nested_stats;

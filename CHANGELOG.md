@@ -9,6 +9,18 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- `--debug-ir <FILE>`: local diagnostic dump of the run's intermediate
+  representations, in the spirit of the JVM's assembly printers. One
+  section per pipeline level: predicate AST before and after
+  normalization, classification, the kernel `Predicate` lowered for each
+  phase scan (where the stripping of unsupported fragments is visible),
+  survivor counts per scan, and delta-kernel's own tracing events
+  (`delta_kernel=debug` by default, directive overridable via
+  `DELTA_EXPLAIN_DEBUG_FILTER`). The dump format is unstable and sits
+  outside the CLI/JSON contract.
+
 ## [0.4.0] — 2026-07-03
 
 This cycle added no single big feature; it gave the tool a public contract,
