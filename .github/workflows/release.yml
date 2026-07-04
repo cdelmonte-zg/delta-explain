@@ -77,10 +77,12 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-          # macos-latest is arm64 since macOS 14: the x86_64 wheel builds
-          # there but cannot execute; macos-13 is the Intel runner
+          # macos-latest is arm64 since macOS 14: the x86_64 binary builds
+          # there but cannot execute; macos-15-intel is the Intel runner
+          # (macos-13 was retired by GitHub on 2025-12-04: jobs requesting
+          # it queue forever without failing)
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -157,9 +159,11 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
           # macos-latest is arm64 since macOS 14: the x86_64 wheel builds
-          # there but cannot execute; macos-13 is the Intel runner
+          # there but cannot execute; macos-15-intel is the Intel runner
+          # (macos-13 was retired by GitHub on 2025-12-04: jobs requesting
+          # it queue forever without failing)
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-pc-windows-msvc
