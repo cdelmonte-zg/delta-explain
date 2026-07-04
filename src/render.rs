@@ -5,6 +5,7 @@
 //! versioned independently of the tool per SemVer.
 
 use std::collections::HashSet;
+use std::io::Write;
 
 use num_format::{Locale, ToFormattedString};
 use serde_json::json;
@@ -27,50 +28,72 @@ pub fn print_text(
     verbose: bool,
     limit: Option<usize>,
     predicate: Option<&str>,
-) {
-    println!("Delta table: {}", report.table_path);
-    println!("Version:     {}", report.version);
+) -> std::io::Result<()> {
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    write_text(&mut out, report, verbose, limit, predicate)
+}
+
+fn write_text(
+    out: &mut impl Write,
+    report: &PruningReport,
+    verbose: bool,
+    limit: Option<usize>,
+    predicate: Option<&str>,
+) -> std::io::Result<()> {
+    writeln!(out, "Delta table: {}", report.table_path)?;
+    writeln!(out, "Version:     {}", report.version)?;
     if let Some(pred) = predicate {
-        println!("Predicate:   {pred}");
+        writeln!(out, "Predicate:   {pred}")?;
     }
 
     if let Some(analysis) = &report.analysis {
-        println!();
-        println!("Predicate Analysis:");
-        println!(
+        writeln!(out)?;
+        writeln!(out, "Predicate Analysis:")?;
+        writeln!(
+            out,
             "  partition-safe: {}",
             analysis.partition_safe.as_deref().unwrap_or("-")
-        );
-        println!(
+        )?;
+        writeln!(
+            out,
             "  stats-safe:     {}",
             analysis.stats_safe.as_deref().unwrap_or("-")
-        );
-        println!(
+        )?;
+        writeln!(
+            out,
             "  unsplittable:   {}",
             analysis.unsplittable.as_deref().unwrap_or("-")
-        );
-        println!("  confidence:     {}", analysis.confidence);
+        )?;
+        writeln!(out, "  confidence:     {}", analysis.confidence)?;
     }
 
-    println!();
-    println!("Files in snapshot: {}", fmt(report.total_files));
+    writeln!(out)?;
+    writeln!(out, "Files in snapshot: {}", fmt(report.total_files))?;
 
     for (i, phase) in report.phases.iter().enumerate() {
         let dropped = phase.input_count.saturating_sub(phase.output_count);
         let pct = pruning_pct(phase.input_count, phase.output_count);
 
-        println!();
-        println!("Phase {}: {} [{}]", i + 1, phase.name, phase.confidence);
-        println!("  predicate:       {}", phase.predicate_display);
-        println!(
+        writeln!(out)?;
+        writeln!(
+            out,
+            "Phase {}: {} [{}]",
+            i + 1,
+            phase.name,
+            phase.confidence
+        )?;
+        writeln!(out, "  predicate:       {}", phase.predicate_display)?;
+        writeln!(
+            out,
             "  files remaining: {}  (-{}, {:.0}% pruned)",
             fmt(phase.output_count),
             fmt(dropped),
             pct
-        );
+        )?;
 
         if verbose {
-            print_phase_details(report, phase, i, limit);
+            write_phase_details(out, report, phase, i, limit)?;
         }
     }
 
@@ -78,13 +101,14 @@ pub fn print_text(
     if report.phases.len() > 1
         && let Some(last_phase) = report.phases.last()
     {
-        println!();
-        println!(
+        writeln!(out)?;
+        writeln!(
+            out,
             "Total reduction: {} -> {} files ({:.0}% pruned)",
             fmt(report.total_files),
             fmt(last_phase.output_count),
             report.total_pruning_pct(),
-        );
+        )?;
     }
 
     let mut warnings = report.table_features.notes(report.total_files);
@@ -92,20 +116,22 @@ pub fn print_text(
         warnings.extend(analysis.notes.iter().cloned());
     }
     if !warnings.is_empty() {
-        println!();
-        println!("Warnings!");
+        writeln!(out)?;
+        writeln!(out, "Warnings!")?;
         for note in &warnings {
-            println!("[{}]: {}", note.code, note.message);
+            writeln!(out, "[{}]: {}", note.code, note.message)?;
         }
     }
+    Ok(())
 }
 
-fn print_phase_details(
+fn write_phase_details(
+    out: &mut impl Write,
     report: &PruningReport,
     phase: &PhaseResult,
     phase_idx: usize,
     limit: Option<usize>,
-) {
+) -> std::io::Result<()> {
     let candidates: HashSet<&str> = if phase_idx == 0 {
         report.all_files.iter().map(|f| f.path.as_str()).collect()
     } else {
@@ -116,7 +142,7 @@ fn print_phase_details(
             .collect()
     };
 
-    println!();
+    writeln!(out)?;
     let mut shown = 0usize;
     for file in &report.all_files {
         if !candidates.contains(file.path.as_str()) {
@@ -126,10 +152,11 @@ fn print_phase_details(
             && shown >= cap
         {
             let remaining = candidates.len().saturating_sub(shown);
-            println!(
+            writeln!(
+                out,
                 "  ... and {} more files (raise --limit to see them)",
                 fmt(remaining)
-            );
+            )?;
             break;
         }
         shown += 1;
@@ -170,8 +197,12 @@ fn print_phase_details(
             .map(|n| format!("  {n} records"))
             .unwrap_or_default();
 
-        println!("  [{tag}] {short_path}  ({size_str}{records_str}){partition_str}{stats_str}");
+        writeln!(
+            out,
+            "  [{tag}] {short_path}  ({size_str}{records_str}){partition_str}{stats_str}"
+        )?;
     }
+    Ok(())
 }
 
 /// Render a file's statistics as the compact ` stats(col: min..max, ...)`
@@ -208,12 +239,14 @@ fn format_stats_compact(stats: &FileStats) -> String {
 
 // ── JSON output ─────────────────────────────────────────────────────
 
-pub fn print_json(
+/// Renders the JSON document as a string; the CLI layer owns writing it,
+/// so serialization errors and output errors stay distinguishable.
+pub fn render_json(
     report: &PruningReport,
     verbose: bool,
     limit: Option<usize>,
     predicate: Option<&str>,
-) -> Result<(), Error> {
+) -> Result<String, Error> {
     let (stats_present, stats_total) = report.stats_coverage();
     let stats_pct = if stats_total > 0 {
         (stats_present as f64 / stats_total as f64) * 100.0
@@ -332,8 +365,7 @@ pub fn print_json(
         output["files"] = json!(files);
     }
 
-    println!("{}", serde_json::to_string_pretty(&output)?);
-    Ok(())
+    Ok(serde_json::to_string_pretty(&output)?)
 }
 
 // ── Shared formatting helpers ───────────────────────────────────────

@@ -9,6 +9,15 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Fixed
+
+- A consumer closing stdout mid-report (`delta-explain ... | head`, a
+  crashed `jq`) made the process panic with a backtrace (exit 101),
+  violating the error contract. The write error is now handled: output
+  stops, stderr stays clean, and the exit code still reflects the gate
+  verdict. Text rendering moved to fallible writes and JSON rendering is
+  now separated from printing along the way.
+
 ## [0.4.0] — 2026-07-03
 
 This cycle added no single big feature; it gave the tool a public contract,

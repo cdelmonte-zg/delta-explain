@@ -131,6 +131,10 @@ Two properties are load-bearing for CI:
   (`clippy::unwrap_used` and friends are denied in production code): any
   defect must surface as exit 1 with a clean message, not exit 101 with a
   backtrace.
+- **A consumer that stops reading does not crash the run.** When stdout
+  closes mid-report (`delta-explain ... | head`, a crashed `jq`), the
+  remaining output is skipped, stderr stays clean, and the exit code
+  still reflects the gates.
 
 ## Scope: table protocol, not file format
 

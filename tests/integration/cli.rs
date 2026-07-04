@@ -1330,3 +1330,66 @@ fn errors_leave_stdout_empty_in_json_mode() {
     assert!(output.stdout.is_empty());
     assert!(!output.stderr.is_empty());
 }
+
+// A consumer that stops reading (closed stdout, e.g. `... | head` or a
+// crashed jq) must not crash the run: output stops, stderr stays clean,
+// and the exit code still reflects the gate verdict.
+mod closed_stdout {
+    use std::process::{Command as StdCommand, Stdio};
+
+    use crate::common::{LogBuilder, int_range_stats};
+
+    fn big_table() -> crate::common::TempTable {
+        // Enough verbose output to overflow any pipe buffer, so writes
+        // keep happening after the reader is gone.
+        LogBuilder::new()
+            .partition_column("country", "string")
+            .column("age", "integer")
+            .add_files(1000, |i| {
+                let country = format!("C{}", i % 10);
+                (
+                    format!("country={country}/part-{i:05}.parquet"),
+                    vec![("country".into(), country.clone())],
+                    Some(int_range_stats(
+                        "age",
+                        (i % 100) as i64,
+                        (i % 100 + 10) as i64,
+                        1000,
+                    )),
+                )
+            })
+            .build()
+    }
+
+    fn run_with_closed_stdout(table: &str, extra: &[&str]) -> std::process::Output {
+        let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("delta-explain"))
+            .arg(table)
+            .args(["-w", "country = 'C3'", "--verbose"])
+            .args(extra)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        child.wait_with_output().unwrap()
+    }
+
+    #[test]
+    fn no_panic_and_exit_zero_without_gates() {
+        let table = big_table();
+        let out = run_with_closed_stdout(&table.path(), &[]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("panicked"), "panic on stderr: {stderr}");
+        assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
+    }
+
+    #[test]
+    fn failing_gate_still_exits_one() {
+        let table = big_table();
+        let out = run_with_closed_stdout(&table.path(), &["--min-pruning", "99.9"]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains("panicked"), "panic on stderr: {stderr}");
+        assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+        assert!(stderr.contains("ASSERTION FAILED"), "stderr: {stderr}");
+    }
+}

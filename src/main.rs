@@ -11,6 +11,7 @@
 )]
 
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -467,12 +468,22 @@ fn try_main() -> Result<()> {
 
     // ── Output ──────────────────────────────────────────────────────
 
-    match output_format {
+    let render_result = match output_format {
         OutputFormat::Text => {
             render::print_text(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
         }
         OutputFormat::Json => {
-            render::print_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())?
+            let doc =
+                render::render_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())?;
+            writeln!(std::io::stdout(), "{doc}")
+        }
+    };
+    if let Err(e) = render_result {
+        // A consumer that stopped reading (closed stdout, e.g. `| head`)
+        // is not a defect: stop writing and still exit with the gate
+        // verdict below. Any other write failure is a real error.
+        if e.kind() != std::io::ErrorKind::BrokenPipe {
+            return Err(Error::Output(e));
         }
     }
 
