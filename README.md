@@ -7,7 +7,7 @@ A CLI that shows how partition pruning and data skipping reduce the set of candi
 Production-usable as a conservative Delta metadata diagnostic and CI guardrail — not yet a fully production-grade general-purpose Delta observability product. That line is meant literally: what the tool guarantees, and what it deliberately does not, is written down in [docs/semantics.md](docs/semantics.md).
 
 
-**Documentation**: [three-minute quickstart](examples/quickstart/) - [what delta-explain guarantees (and what it does not)](docs/semantics.md) - [the JSON report, field by field](docs/json-schema.md) - [what it is validated against](docs/validation.md) - [current limitations](#current-limitations)
+**Documentation**: the full [documentation site](https://cdelmonte-zg.github.io/delta-explain/) (guides, reference, architecture) - or jump to the [three-minute quickstart](examples/quickstart/), [what delta-explain guarantees (and what it does not)](docs/semantics.md), [the JSON report, field by field](docs/json-schema.md), [what it is validated against](docs/validation.md), or [current limitations](#current-limitations).
 
 ## The problem
 

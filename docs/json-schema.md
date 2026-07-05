@@ -2,7 +2,7 @@
 
 The goal of this page: **a consumer can trust the JSON without reading the
 code**. The formal schema lives at
-[`schemas/report-v0.4.schema.json`](../schemas/report-v0.4.schema.json) and
+[`schemas/report-v0.4.schema.json`](https://github.com/cdelmonte-zg/delta-explain/blob/main/schemas/report-v0.4.schema.json) and
 the integration suite validates every emitted document against it; this
 page explains what the fields mean.
 

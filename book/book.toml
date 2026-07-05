@@ -1,0 +1,19 @@
+[book]
+title = "delta-explain"
+description = "Make Delta Lake file pruning visible."
+authors = ["Christian Del Monte"]
+language = "en"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/cdelmonte-zg/delta-explain"
+edit-url-template = "https://github.com/cdelmonte-zg/delta-explain/edit/main/book/{path}"
+no-section-label = true
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
