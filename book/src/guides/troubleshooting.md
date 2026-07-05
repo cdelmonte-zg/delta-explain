@@ -59,8 +59,8 @@ the rows are not ordered by it — no file can be excluded. This is the classic
 "stats exist but are useless" case.
 
 **Fix.** Order the data so each file covers a narrow range of the column: sort
-or cluster (Z-order / liquid clustering) by it. Then a `fare_amount > 60` query
-touches only the high-fare files.
+or cluster the data — for example with Z-order or liquid clustering where
+available. Then a `fare_amount > 60` query touches only the high-fare files.
 
 ### There are no statistics to skip on
 
@@ -91,8 +91,9 @@ can't be split cleanly across the two mechanisms.
 
 **Fix.** For a mixed `OR`, rewrite it so the partition and data filters are
 independent conjuncts (`AND`) where the logic allows. For a function on a
-column, no metadata-level pruning is possible for any engine — filter on the raw
-column instead, or precompute the value into a stored, indexed column.
+column, Delta file metadata cannot prune the computed expression directly —
+filter on the raw column instead, or precompute the value into a stored, indexed
+column.
 
 ## Symptom: I partitioned it, and it got worse
 
