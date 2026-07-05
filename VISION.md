@@ -97,7 +97,7 @@ Moving declared boundaries across the line, one release note at a time:
 - **Deletion vectors: compensate, not just declare.** The DV descriptor carries `cardinality`; `numRecords - cardinality` is the live record count. Cheap, but it changes a reported number's meaning, so it ships with a schema note.
 - **Batch mode** (`--predicates <file>`): one log replay, N reports; also the natural place for task-level parallelism, which stays out of the single-invocation core by design.
 - **One log replay per invocation**: today a predicate costs up to three metadata scans; on remote tables that is the real latency. Redundancy elimination before any parallelism.
-- **`LIKE`**: shipped post-v0.4.0, ahead of this list - prefix patterns rewrite to a lexicographic range and prune on both axes, and any-shape `LIKE` on partition columns is evaluated exactly against the literal partition values (`partition_exact`).
+- **`LIKE`**: shipped in v0.5.0, ahead of this list - prefix patterns rewrite to a lexicographic range and prune on both axes, and any-shape `LIKE` on partition columns is evaluated exactly against the literal partition values (`partition_exact`).
 - **JSON schema 1.0**: declared only after 0.2 has soaked unchanged under real consumers for a few months.
 
 ## Adoption track
