@@ -10,7 +10,8 @@
 # Guides
 
 - [Reading a report](guides/reading-a-report.md)
-- [Why isn't it pruning? (`--explain-why`)](guides/explain-why.md)
+- [Why isn't my query pruning? (troubleshooting)](guides/troubleshooting.md)
+- [The `--explain-why` advisor](guides/explain-why.md)
 - [Tuning a table layout](guides/tuning.md)
 - [Gating pruning in CI](guides/ci-gating.md)
 - [Cloud storage](guides/cloud.md)

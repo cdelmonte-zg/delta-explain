@@ -1,7 +1,8 @@
-# Why isn't it pruning? (`--explain-why`)
+# The `--explain-why` advisor
 
 Counting files tells you *that* a predicate did not prune. `--explain-why` tells
-you *why*, and what to change:
+you *why*, and what to change. (For a symptom-first playbook, see
+[Why isn't my Delta query pruning files?](troubleshooting.md).)
 
 ```text
 $ delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --explain-why
