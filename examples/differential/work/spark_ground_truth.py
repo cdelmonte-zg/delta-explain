@@ -1,11 +1,13 @@
 """Ground truth for the differential harness, computed by Spark.
 
-Writes the test table once (partitioned by country, age-banded files), then
-for every predicate in /home/jovyan/work/predicates.json evaluates which
-files actually contain matching rows, via input_file_name(). Emits one JSON
-document to /home/jovyan/work/ground_truth.json. The predicate list travels
-as a file on the shared volume: argv through docker exec + bash -lc mangles
-the quoting of SQL string literals.
+Writes each table in /home/jovyan/work/predicates.json once, then for every
+predicate evaluates which files actually contain matching rows, via
+input_file_name(). Emits ground_truth.json keyed by table name.
+
+Two tables:
+- `users`: synthetic (partitioned by country, age-banded files).
+- `taxi`: real NYC TLC yellow-taxi data read from work/taxi-src.parquet,
+  partitioned by pickup date - a real writer's layout and statistics.
 
 The soundness contract this feeds: every file that contains a matching row
 must be in delta-explain's survivor set. delta-explain may keep more
@@ -19,8 +21,8 @@ from pyspark.sql import SparkSession, functions as F
 AK = os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
 SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
 ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
-TABLE = "s3a://diff/users"
 OUT = "/home/jovyan/work/ground_truth.json"
+TAXI_SRC = "/home/jovyan/work/taxi-src.parquet"
 
 spark = (
     SparkSession.builder.appName("dx-differential")
@@ -41,21 +43,27 @@ spark = (
 spark.sparkContext.setLogLevel("WARN")
 
 with open("/home/jovyan/work/predicates.json") as f:
-    predicates = json.load(f)
+    config = json.load(f)
 
-# ── Table: written once, layout with real pruning structure ─────────
 # DX_DIFF_FRESH=1 forces a rewrite: an old MinIO volume would otherwise keep
 # serving a table whose layout no longer matches what this script writes.
-fresh = os.environ.get("DX_DIFF_FRESH") == "1"
-exists = False
-if not fresh:
+FRESH = os.environ.get("DX_DIFF_FRESH") == "1"
+
+
+def table_exists(uri):
+    if FRESH:
+        return False
     try:
-        spark.read.format("delta").load(TABLE).limit(1).collect()
-        exists = True
-        print("table exists, reusing (DX_DIFF_FRESH=1 to rewrite)")
+        spark.read.format("delta").load(uri).limit(1).collect()
+        return True
     except Exception:
-        pass
-if not exists:
+        return False
+
+
+def build_users(uri):
+    if table_exists(uri):
+        print(f"{uri} exists, reusing")
+        return
     N = 60000
     df = (
         spark.range(N)
@@ -70,28 +78,52 @@ if not exists:
     )
     (df.orderBy("country", "age").write.format("delta")
        .partitionBy("country").option("maxRecordsPerFile", 4000)
-       .mode("overwrite").save(TABLE))
-    print("table written:", TABLE)
+       .mode("overwrite").save(uri))
+    print("wrote", uri)
 
-full = spark.read.format("delta").load(TABLE)
-total_files = full.select(F.input_file_name()).distinct().count()
 
-# ── Ground truth per predicate ──────────────────────────────────────
-results = []
-for pred in predicates:
-    matched = (
-        full.filter(pred)
-        .select(F.input_file_name().alias("f"))
-        .distinct()
-        .collect()
-    )
-    files = sorted(os.path.basename(r["f"]) for r in matched)
-    rows = full.filter(pred).count()
-    results.append({"predicate": pred, "match_files": files, "match_rows": rows})
-    print(f"  {pred!r}: {len(files)} files contain matches, {rows} rows")
+def build_taxi(uri):
+    if table_exists(uri):
+        print(f"{uri} exists, reusing")
+        return
+    cols = ["tpep_pickup_datetime", "trip_distance", "PULocationID",
+            "DOLocationID", "payment_type", "fare_amount", "tip_amount", "total_amount"]
+    src = spark.read.parquet(TAXI_SRC).select(*cols).limit(900_000)
+    df = src.withColumn("pickup_date", F.date_format("tpep_pickup_datetime", "yyyy-MM-dd"))
+    # first week only, dropping malformed dates
+    week = [f"2024-01-0{d}" for d in range(1, 8)]
+    df = df.filter(F.col("pickup_date").isin(week))
+    # sort by (date, fare) and cap file size so each day splits into several
+    # files with tight fare ranges - the layout that makes data skipping work,
+    # and the interesting case to test against Spark.
+    (df.orderBy("pickup_date", "fare_amount").write.format("delta")
+       .partitionBy("pickup_date").option("maxRecordsPerFile", 20000)
+       .mode("overwrite").save(uri))
+    print("wrote", uri)
+
+
+BUILDERS = {"users": build_users, "taxi": build_taxi}
+URIS = {"users": "s3a://diff/users", "taxi": "s3a://diff/taxi"}
+
+out = {}
+for name, predicates in config.items():
+    uri = URIS[name]
+    BUILDERS[name](uri)
+    full = spark.read.format("delta").load(uri)
+    total_files = full.select(F.input_file_name()).distinct().count()
+
+    results = []
+    for pred in predicates:
+        matched = (full.filter(pred).select(F.input_file_name().alias("f"))
+                   .distinct().collect())
+        files = sorted(os.path.basename(r["f"]) for r in matched)
+        rows = full.filter(pred).count()
+        results.append({"predicate": pred, "match_files": files, "match_rows": rows})
+        print(f"  [{name}] {pred!r}: {len(files)} files, {rows} rows")
+    out[name] = {"total_files": total_files, "results": results}
 
 with open(OUT, "w") as f:
-    json.dump({"total_files": total_files, "results": results}, f, indent=2)
+    json.dump(out, f, indent=2)
 print("ground truth written:", OUT)
 
 spark.stop()
