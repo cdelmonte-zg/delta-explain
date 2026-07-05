@@ -12,6 +12,7 @@ mod cli;
 #[cfg(feature = "debug-ir")]
 mod debug_ir;
 mod exotic_logs;
+mod explain_why;
 mod json_contract;
 mod like_rewrite;
 mod nested_stats;

@@ -141,6 +141,7 @@ mod tests {
                 output_count: 1,
                 surviving_paths: ["a".to_string()].into_iter().collect(),
             }],
+            explain: Vec::new(),
             elapsed_ms: 0,
             assertions: Vec::new(),
             overall_result: None,

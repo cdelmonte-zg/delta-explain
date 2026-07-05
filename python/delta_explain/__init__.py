@@ -87,6 +87,13 @@ class Report(Mapping[str, Any]):
         """Per-file outcomes; present only when verbose=True was requested."""
         return self._raw.get("files")
 
+    @property
+    def explain(self) -> Optional[list]:
+        """Diagnoses of why the predicate pruned as it did; present only when
+        explain_why=True was requested. Each is a mapping with code,
+        severity, message, suggestion."""
+        return self._raw.get("explain")
+
     def __repr__(self) -> str:  # pragma: no cover
         return (
             f"Report(files={self.total_files}->{self.final_files}, "
@@ -122,6 +129,7 @@ def explain(
     at_version: Optional[int] = None,
     verbose: bool = False,
     limit: Optional[int] = None,
+    explain_why: bool = False,
     env_creds: bool = False,
     profile: Optional[str] = None,
     region: Optional[str] = None,
@@ -156,6 +164,8 @@ def explain(
         argv += ["--verbose"]
     if limit is not None:
         argv += ["--limit", str(limit)]
+    if explain_why:
+        argv += ["--explain-why"]
     if env_creds:
         argv += ["--env-creds"]
     if profile is not None:

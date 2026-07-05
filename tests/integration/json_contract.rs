@@ -1,5 +1,5 @@
 //! The JSON output validated against the published schema file: a consumer
-//! can trust `schemas/report-v0.3.schema.json` because every document the
+//! can trust `schemas/report-v0.4.schema.json` because every document the
 //! binary emits in this suite must satisfy it. The schema is strict
 //! (additionalProperties: false), so an accidental new field fails here
 //! before it silently becomes contract.
@@ -8,7 +8,7 @@ use crate::common::{LogBuilder, cmd, fixture, int_range_stats};
 
 fn schema() -> jsonschema::Validator {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let raw = std::fs::read_to_string(format!("{manifest_dir}/schemas/report-v0.3.schema.json"))
+    let raw = std::fs::read_to_string(format!("{manifest_dir}/schemas/report-v0.4.schema.json"))
         .expect("schema file");
     let schema_json: serde_json::Value = serde_json::from_str(&raw).expect("schema parses");
     jsonschema::validator_for(&schema_json).expect("schema compiles")
@@ -112,6 +112,30 @@ fn every_document_shape_satisfies_the_published_schema() {
             "--verbose",
             "--limit",
             "2",
+        ],
+    );
+    // --explain-why: the additive `explain` array (with and without
+    // diagnoses) must satisfy the schema.
+    assert_valid(
+        &validator,
+        &[
+            &table,
+            "-w",
+            "UPPER(name) = 'X'",
+            "--explain-why",
+            "--format",
+            "json",
+        ],
+    );
+    assert_valid(
+        &validator,
+        &[
+            &table,
+            "-w",
+            "country = 'DE'",
+            "--explain-why",
+            "--format",
+            "json",
         ],
     );
 }

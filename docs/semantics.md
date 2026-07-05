@@ -84,6 +84,20 @@ whether it is correct (it always is, in the conservative direction):
 
 The global `confidence` is the least informative label across fragments.
 
+## Diagnostics (`--explain-why`)
+
+`--explain-why` turns the report into advice: a set of diagnoses, each a
+**deterministic** function of the report the tool already computed (the
+classification, the stats coverage, the partition columns, the per-phase
+pruning). No prediction, no model - the *why* is as trustworthy as the
+numbers it explains, and reproducible enough to gate on. Each diagnosis
+carries a stable `code`, a `severity`, a message, and a suggestion where
+one applies; the stable codes are `NO_PARTITION_FILTER`,
+`WEAK_DATA_SKIPPING`, `STATS_ABSENT`, and `UNSUPPORTED_FRAGMENT`. In JSON
+the diagnoses appear as an additive `explain` array, present only with the
+flag. Natural-language phrasing of a diagnosis, if wanted, belongs to a
+consumer of that JSON (an LLM the user brings), never bundled in the tool.
+
 ## Degradation rules
 
 Constructs outside the pruning language — function calls, arithmetic,

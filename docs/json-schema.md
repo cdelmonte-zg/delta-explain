@@ -2,7 +2,7 @@
 
 The goal of this page: **a consumer can trust the JSON without reading the
 code**. The formal schema lives at
-[`schemas/report-v0.3.schema.json`](../schemas/report-v0.3.schema.json) and
+[`schemas/report-v0.4.schema.json`](../schemas/report-v0.4.schema.json) and
 the integration suite validates every emitted document against it; this
 page explains what the fields mean.
 
@@ -20,7 +20,7 @@ changes bump the major. Consumers should:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | string | Schema of this document (`0.3.x`) |
+| `schema_version` | string | Schema of this document (`0.4.x`) |
 | `tool_version` | string | delta-explain release |
 | `elapsed_ms` | integer | Wall-clock analysis duration |
 | `table` | string | Table path/URI as given |
@@ -42,6 +42,12 @@ changes bump the major. Consumers should:
 |---|---|---|
 | `files` | array | Per-file outcomes, capped by `--limit` |
 | `files_truncated` | boolean | True when `--limit` cut the array short |
+
+## Only with `--explain-why`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `explain` | array | Diagnoses of why the predicate pruned as it did: `{code, severity, message, suggestion}`. Stable codes: `NO_PARTITION_FILTER`, `WEAK_DATA_SKIPPING`, `STATS_ABSENT`, `UNSUPPORTED_FRAGMENT` |
 
 Per file: `path`, `size_bytes`, `partition_values` (string map),
 `num_records` (nullable; includes soft-deleted rows under deletion
