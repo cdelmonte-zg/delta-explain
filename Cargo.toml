@@ -7,6 +7,7 @@ description = "Make Delta pruning visible. A CLI that shows step-by-step how par
 license = "MIT"
 repository = "https://github.com/cdelmonte-zg/delta-explain"
 homepage = "https://github.com/cdelmonte-zg/delta-explain"
+documentation = "https://cdelmonte-zg.github.io/delta-explain/"
 readme = "README.md"
 keywords = ["delta-lake", "pruning", "data-skipping", "observability", "parquet"]
 categories = ["command-line-utilities", "database"]
