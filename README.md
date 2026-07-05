@@ -185,6 +185,26 @@ delta-explain ./my-table -w "country = 'DE'"
 delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
 ```
 
+### On a real table
+
+The repo ships `fixtures/taxi-nyc`, a small Delta table written from public
+[NYC TLC yellow-taxi](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
+data, partitioned by pickup date - a realistic shape to see both pruning
+axes on real column names:
+
+```bash
+# date is the partition column: directory-level pruning, exact
+delta-explain fixtures/taxi-nyc -w "pickup_date = '2024-01-03'"
+
+# date prunes partitions, fare prunes on min/max stats within them
+delta-explain fixtures/taxi-nyc -w "pickup_date = '2024-01-03' AND fare_amount > 50"
+
+# a predicate on a non-partition, non-clustered column (pickup zone):
+# stats-safe, but the per-file ranges overlap, so nothing is eliminated -
+# exactly the "why isn't this pruning" case the tool exists to show
+delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --verbose
+```
+
 ### Cloud storage
 
 **Credentials.** Three ways in, by environment:

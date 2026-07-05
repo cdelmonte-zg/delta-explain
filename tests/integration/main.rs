@@ -23,5 +23,6 @@ mod quickstart;
 mod semantic_regression;
 mod stats_budget;
 mod synthetic_log;
+mod taxi;
 mod temporal_coercions;
 mod time_travel;
