@@ -13,3 +13,5 @@ examples/differential/work/predicates.json
 __pycache__/
 *.egg-info/
 dist/
+
+.claude/settings.local.json*

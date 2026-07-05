@@ -1,5 +1,8 @@
 # Report viewer
 
+![The viewer rendering a report from fixtures/test-table: pruning
+funnel, analysis buckets, gates, and the per-file table](screenshot.png)
+
 A single self-contained HTML page that renders one delta-explain JSON
 report: the pruning funnel, the predicate analysis, gates, warnings, and
 a filterable per-file table that stays usable at hundreds of thousands
@@ -64,3 +67,19 @@ Colors are the data-viz reference palette verbatim (both modes,
 neutral hatch for the pruned remainder, reserved status colors for
 pass/fail/warnings - never color alone, always paired with a label.
 System font stacks only, since the page must not fetch anything.
+
+The screenshot above regenerates from a real report, so it never drifts
+from the page:
+
+```bash
+cargo run -q -- fixtures/test-table \
+    -w "country LIKE '%E' AND age > 40 AND UPPER(name) = 'X'" \
+    --format json --verbose --min-pruning 50 > /tmp/report.json
+python3 - <<'EOF'
+tpl = open('examples/report-viewer/report-viewer.html').read()
+doc = open('/tmp/report.json').read().strip()
+open('/tmp/report.html', 'w').write(tpl.replace('/*REPORT_JSON*/', doc, 1))
+EOF
+chromium --headless --disable-gpu --window-size=1100,1500 \
+    --screenshot=examples/report-viewer/screenshot.png /tmp/report.html
+```
