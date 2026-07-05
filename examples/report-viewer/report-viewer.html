@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>delta-explain report</title>
+<style>
+  /* Tokens: the dataviz reference palette, both modes selected. */
+  :root {
+    --paper: #f6f6f3;
+    --card: #fcfcfb;
+    --ink: #17181a;
+    --ink-2: #52514e;
+    --ink-3: #8a887f;
+    --hairline: #e3e2dc;
+    --kept: #2a78d6;          /* data: surviving files, everywhere */
+    --kept-soft: #cde2fb;
+    --ghost: #d6d5cf;         /* pruned remainder, hatched */
+    --good: #0ca30c;
+    --warn: #fab219;
+    --fail: #d03b3b;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #141413;
+      --card: #1a1a19;
+      --ink: #f2f1ea;
+      --ink-2: #c3c2b7;
+      --ink-3: #85847b;
+      --hairline: #2c2c29;
+      --kept: #3987e5;
+      --kept-soft: #104281;
+      --ghost: #383835;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; }
+  html { background: var(--paper); }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    line-height: 1.45;
+    padding: 48px 24px 96px;
+  }
+  .sheet { max-width: 960px; margin: 0 auto; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ── Empty state ─────────────────────────────────────────────── */
+  #dropzone {
+    border: 1.5px dashed var(--hairline);
+    border-radius: 8px;
+    background: var(--card);
+    padding: 72px 32px;
+    text-align: center;
+    margin-top: 18vh;
+    transition: border-color 120ms ease;
+  }
+  #dropzone.armed { border-color: var(--kept); }
+  #dropzone h1 { font-size: 22px; font-weight: 600; margin: 12px 0 6px; }
+  #dropzone p { color: var(--ink-2); font-size: 14px; }
+  #dropzone .gen {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 18px;
+    color: var(--ink-2);
+    text-align: left;
+  }
+  #pick {
+    font: 600 13.5px var(--sans);
+    color: var(--card);
+    background: var(--kept);
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    margin-top: 20px;
+    cursor: pointer;
+  }
+  #pick:focus-visible, .phase:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--kept);
+    outline-offset: 2px;
+  }
+  #load-error {
+    color: var(--fail);
+    font-family: var(--mono);
+    font-size: 13px;
+    margin-top: 16px;
+    display: none;
+  }
+
+  /* ── Report header ───────────────────────────────────────────── */
+  header.report { display: none; }
+  .head-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .table-path {
+    font-family: var(--mono);
+    font-size: clamp(18px, 3.2vw, 27px);
+    font-weight: 600;
+    word-break: break-all;
+    flex: 1;
+    min-width: 200px;
+  }
+  .verdict {
+    font: 700 12px var(--mono);
+    letter-spacing: 0.1em;
+    border-radius: 5px;
+    padding: 5px 11px;
+    white-space: nowrap;
+  }
+  .verdict.pass { color: var(--good); border: 1.5px solid var(--good); }
+  .verdict.fail { color: var(--fail); border: 1.5px solid var(--fail); }
+  .verdict.none { color: var(--ink-3); border: 1.5px solid var(--hairline); }
+  .meta {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-2);
+    margin-top: 10px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .predicate-strip {
+    font-family: var(--mono);
+    font-size: 14px;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--kept);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-top: 20px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .predicate-strip .kw { color: var(--ink-3); }
+
+  section { margin-top: 44px; display: none; }
+  section > h2 {
+    font-size: 15px;
+    font-weight: 650;
+    margin-bottom: 4px;
+  }
+  section > .sub { font-size: 13px; color: var(--ink-2); margin-bottom: 18px; }
+
+  /* ── The funnel (signature) ──────────────────────────────────── */
+  .funnel { display: grid; row-gap: 14px; }
+  .phase {
+    display: grid;
+    grid-template-columns: 170px 1fr 150px;
+    gap: 14px;
+    align-items: center;
+    border: none;
+    background: none;
+    padding: 0;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    border-radius: 4px;
+  }
+  button.phase { cursor: pointer; }
+  .phase-label .eyebrow { display: block; }
+  .phase-label .pname { font-size: 13.5px; font-weight: 600; display: block; margin-top: 1px; }
+  .conf {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-2);
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-top: 4px;
+    display: inline-block;
+  }
+  .track { position: relative; height: 30px; }
+  .bar-input {
+    position: absolute; inset: 0 auto 0 0;
+    border: 1px solid var(--hairline);
+    border-radius: 5px;
+    background: var(--card);
+  }
+  .bar-kept {
+    position: absolute; top: 2px; bottom: 2px; left: 2px;
+    background: var(--kept);
+    border-radius: 4px;
+    min-width: 2px;
+  }
+  .bar-drop {
+    position: absolute; top: 2px; bottom: 2px;
+    border-radius: 4px;
+    background: repeating-linear-gradient(
+      45deg,
+      var(--ghost) 0 3px,
+      transparent 3px 7px
+    );
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar-kept, .bar-drop { transition: width 320ms ease-out, left 320ms ease-out; }
+  }
+  .phase-nums { font-family: var(--mono); font-size: 13px; text-align: right; }
+  .phase-nums .delta { display: block; font-size: 11.5px; color: var(--ink-3); }
+
+  /* ── Analysis ────────────────────────────────────────────────── */
+  .buckets { border: 1px solid var(--hairline); border-radius: 6px; background: var(--card); }
+  .bucket {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 12px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--hairline);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .bucket:first-child { border-top: none; }
+  .bucket .k { color: var(--ink-3); }
+  .bucket .v { word-break: break-word; }
+  .bucket .v.none { color: var(--ink-3); }
+  .note {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--warn);
+    border-radius: 6px;
+    background: var(--card);
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .note .code { font-family: var(--mono); font-size: 11px; color: var(--ink-2); padding-top: 2px; }
+
+  /* ── Assertions ──────────────────────────────────────────────── */
+  .asserts { display: grid; gap: 8px; }
+  .assert {
+    display: flex; gap: 16px; align-items: baseline;
+    font-family: var(--mono); font-size: 13px;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 9px 14px;
+  }
+  .assert .ok { color: var(--good); font-weight: 700; }
+  .assert .ko { color: var(--fail); font-weight: 700; }
+  .assert .detail { color: var(--ink-2); }
+
+  /* ── Files table ─────────────────────────────────────────────── */
+  .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .filters input[type="search"], .filters select {
+    font: 13px var(--mono);
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 7px 10px;
+  }
+  .filters input[type="search"] { flex: 1; min-width: 180px; }
+  #files-count { font: 12px var(--mono); color: var(--ink-2); margin-left: auto; }
+
+  .grid-head, .frow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 170px 76px 60px 150px;
+    gap: 12px;
+    align-items: center;
+    padding: 0 12px;
+  }
+  .grid-head {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 6px;
+  }
+  #viewport {
+    position: relative;
+    height: 432px;
+    overflow-y: auto;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    background: var(--card);
+  }
+  #spacer { position: absolute; inset: 0 auto auto 0; width: 1px; }
+  #rows { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+  .frow {
+    height: 32px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .frow .path {
+    overflow: hidden; white-space: nowrap;
+    text-overflow: ellipsis; direction: rtl; text-align: left;
+  }
+  .frow .pv { color: var(--ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .frow .num { text-align: right; color: var(--ink-2); }
+  .frow .out { display: flex; gap: 7px; align-items: center; font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .dot.kept { background: var(--kept); }
+  .dot.pruned {
+    background: repeating-linear-gradient(45deg, var(--ghost) 0 2px, transparent 2px 4.5px);
+    border: 1px solid var(--ghost);
+  }
+  .frow .out .by { color: var(--ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .truncated-note { font: 12px var(--mono); color: var(--ink-3); margin-top: 8px; }
+  .no-files { font-size: 13px; color: var(--ink-2); font-family: var(--mono); }
+
+  /* ── Tooltip ─────────────────────────────────────────────────── */
+  #tip {
+    position: fixed;
+    max-width: 420px;
+    background: var(--ink);
+    color: var(--paper);
+    font: 12px var(--mono);
+    border-radius: 6px;
+    padding: 8px 11px;
+    pointer-events: none;
+    display: none;
+    z-index: 10;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  footer {
+    margin-top: 64px;
+    font: 11.5px var(--mono);
+    color: var(--ink-3);
+    display: none;
+  }
+  footer a { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<!-- A generated report.html replaces the placeholder below with the JSON
+     document; left as-is, the page shows the drop zone instead. -->
+<script id="delta-explain-report" type="application/json">/*REPORT_JSON*/</script>
+
+<div class="sheet">
+  <div id="dropzone">
+    <div class="eyebrow">delta-explain</div>
+    <h1>Read a pruning report</h1>
+    <p>Drop a report JSON anywhere on this page, or choose a file.</p>
+    <button id="pick" type="button">Choose report</button>
+    <input id="file-input" type="file" accept=".json,application/json" hidden>
+    <div><code class="gen">delta-explain ./table -w "&hellip;" --format json --verbose &gt; report.json</code></div>
+    <p id="load-error" role="alert"></p>
+  </div>
+
+  <header class="report" id="hdr">
+    <div class="eyebrow">delta-explain &middot; pruning report</div>
+    <div class="head-row">
+      <div class="table-path" id="h-table"></div>
+      <div class="verdict" id="h-verdict"></div>
+    </div>
+    <div class="meta" id="h-meta"></div>
+    <div class="predicate-strip" id="h-pred"></div>
+  </header>
+
+  <section id="s-funnel">
+    <h2>How the snapshot shrank</h2>
+    <div class="sub" id="funnel-sub"></div>
+    <div class="funnel" id="funnel"></div>
+  </section>
+
+  <section id="s-analysis">
+    <h2>Predicate analysis</h2>
+    <div class="sub">Each top-level AND conjunct, routed to the mechanism that can prune on it.</div>
+    <div class="buckets" id="buckets"></div>
+    <div id="notes"></div>
+  </section>
+
+  <section id="s-asserts">
+    <h2>Gates</h2>
+    <div class="asserts" id="asserts"></div>
+  </section>
+
+  <section id="s-files">
+    <h2>Files</h2>
+    <div class="sub">The survivor set, file by file. Click a phase above to filter to what it pruned.</div>
+    <div id="files-body"></div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+<div id="tip"></div>
+
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const nf = new Intl.NumberFormat("en-US");
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const fmtBytes = (b) => {
+    if (b == null) return "-";
+    if (b < 1024) return b + " B";
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + " KB";
+    if (b < 1024 * 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + " MB";
+    return (b / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  };
+
+  // ── Loading ──────────────────────────────────────────────────
+  function fail(msg) {
+    const e = $("load-error");
+    e.textContent = msg;
+    e.style.display = "block";
+  }
+
+  function tryLoad(text, sourceName) {
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch {
+      return fail(sourceName + " is not JSON.");
+    }
+    if (typeof doc !== "object" || doc === null || typeof doc.schema_version !== "string") {
+      return fail(sourceName + " is not a delta-explain report (missing schema_version). " +
+        "Generate one with: delta-explain ./table -w \"...\" --format json --verbose");
+    }
+    render(doc);
+  }
+
+  $("pick").addEventListener("click", () => $("file-input").click());
+  $("file-input").addEventListener("change", (ev) => {
+    const f = ev.target.files[0];
+    if (f) f.text().then((t) => tryLoad(t, f.name));
+  });
+  document.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    $("dropzone").classList.add("armed");
+  });
+  document.addEventListener("dragleave", () => $("dropzone").classList.remove("armed"));
+  document.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    $("dropzone").classList.remove("armed");
+    const f = ev.dataTransfer.files[0];
+    if (f) f.text().then((t) => tryLoad(t, f.name));
+  });
+
+  // ── Rendering ────────────────────────────────────────────────
+  let FILES = [];        // full files array
+  let PHASES = [];
+  let filterText = "", filterOutcome = "all", filterPhase = "any";
+
+  function render(doc) {
+    $("dropzone").style.display = "none";
+
+    // header
+    $("hdr").style.display = "block";
+    $("h-table").textContent = doc.table || "(unknown table)";
+    const verdict = $("h-verdict");
+    if (doc.result === "pass") { verdict.textContent = "PASS"; verdict.className = "verdict pass"; }
+    else if (doc.result === "fail") { verdict.textContent = "FAIL"; verdict.className = "verdict fail"; }
+    else { verdict.textContent = "NO GATES"; verdict.className = "verdict none"; }
+
+    const meta = $("h-meta");
+    meta.replaceChildren(
+      el("span", null, "version " + doc.version),
+      el("span", null, nf.format(doc.total_files) + " files in snapshot"),
+      el("span", null, doc.elapsed_ms + " ms"),
+      el("span", null, "tool " + (doc.tool_version || "?") + " / schema " + doc.schema_version),
+    );
+    if (!/^0\./.test(doc.schema_version)) {
+      meta.appendChild(el("span", null, "unknown schema major: fields may be missing"));
+    }
+
+    const pred = $("h-pred");
+    if (doc.predicate) {
+      pred.replaceChildren(el("span", "kw", "WHERE "), el("span", null, doc.predicate));
+    } else {
+      pred.replaceChildren(el("span", "kw", "no predicate: snapshot listing only"));
+    }
+
+    renderFunnel(doc);
+    renderAnalysis(doc);
+    renderAsserts(doc);
+    renderFilesSection(doc);
+
+    const foot = $("foot");
+    foot.style.display = "block";
+    foot.replaceChildren(
+      el("span", null, "delta-explain report viewer - schema and field reference: "),
+      Object.assign(el("a", null, "docs/json-schema.md"), {
+        href: "https://github.com/cdelmonte-zg/delta-explain/blob/main/docs/json-schema.md",
+      }),
+    );
+  }
+
+  function renderFunnel(doc) {
+    const s = $("s-funnel");
+    s.style.display = "block";
+    const total = doc.total_files;
+    const finalFiles = doc.final_files;
+    $("funnel-sub").textContent = nf.format(total) + " files -> " +
+      nf.format(finalFiles) + " (" + Math.round(doc.total_pruning_pct) + "% pruned)";
+
+    const funnel = $("funnel");
+    funnel.replaceChildren();
+    PHASES = doc.phases || [];
+
+    // baseline row
+    funnel.appendChild(phaseRow({
+      eyebrow: "baseline", name: "Files in snapshot", conf: null,
+      input: total, output: total, total,
+      tooltip: "every add action in the snapshot",
+      clickable: false,
+    }));
+
+    PHASES.forEach((p, i) => {
+      funnel.appendChild(phaseRow({
+        eyebrow: "phase " + (i + 1), name: p.name, conf: p.confidence,
+        input: p.input_files, output: p.output_files, total,
+        tooltip: "predicate: " + p.predicate +
+          "\n" + nf.format(p.input_files) + " -> " + nf.format(p.output_files) +
+          " files (" + Math.round(p.pruning_pct) + "% pruned)",
+        clickable: true, phaseName: p.name,
+      }));
+    });
+  }
+
+  function phaseRow(o) {
+    const row = el(o.clickable ? "button" : "div", "phase");
+    if (o.clickable) {
+      row.type = "button";
+      row.addEventListener("click", () => {
+        const sel = $("f-phase");
+        if (!sel) return;
+        sel.value = o.phaseName;
+        filterPhase = o.phaseName;
+        filterOutcome = "pruned";
+        const out = $("f-outcome");
+        if (out) out.value = "pruned";
+        applyFilters();
+        $("s-files").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    const label = el("div", "phase-label");
+    label.appendChild(el("span", "eyebrow", o.eyebrow));
+    label.appendChild(el("span", "pname", o.name));
+    if (o.conf) label.appendChild(el("span", "conf", o.conf));
+    row.appendChild(label);
+
+    const track = el("div", "track");
+    const pctIn = o.total ? (o.input / o.total) * 100 : 0;
+    const pctOut = o.total ? (o.output / o.total) * 100 : 0;
+    const input = el("div", "bar-input");
+    input.style.width = Math.max(pctIn, 1) + "%";
+    track.appendChild(input);
+    if (o.input > o.output) {
+      // dropped ghost sits between the kept end and the input end, with a
+      // 2px spacer against the kept fill
+      const drop = el("div", "bar-drop");
+      drop.style.left = "calc(" + Math.max(pctOut, 0.3) + "% + 4px)";
+      drop.style.width = "calc(" + Math.max(pctIn - pctOut, 0.3) + "% - 6px)";
+      track.appendChild(drop);
+    }
+    const kept = el("div", "bar-kept");
+    kept.style.width = "calc(" + Math.max(pctOut, 0.3) + "% - 2px)";
+    track.appendChild(kept);
+    row.appendChild(track);
+
+    const nums = el("div", "phase-nums");
+    nums.appendChild(el("span", null, nf.format(o.output) + (o.output === 1 ? " file" : " files")));
+    if (o.input > o.output) {
+      const pct = o.input ? Math.round(((o.input - o.output) / o.input) * 100) : 0;
+      nums.appendChild(el("span", "delta", "-" + nf.format(o.input - o.output) + " (" + pct + "%)"));
+    } else if (o.conf) {
+      nums.appendChild(el("span", "delta", "nothing pruned"));
+    }
+    row.appendChild(nums);
+
+    row.addEventListener("mousemove", (ev) => showTip(o.tooltip, ev));
+    row.addEventListener("mouseleave", hideTip);
+    return row;
+  }
+
+  const tip = $("tip");
+  function showTip(text, ev) {
+    tip.textContent = text;
+    tip.style.display = "block";
+    const pad = 14;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    const r = tip.getBoundingClientRect();
+    if (x + r.width > window.innerWidth - 8) x = ev.clientX - r.width - pad;
+    if (y + r.height > window.innerHeight - 8) y = ev.clientY - r.height - pad;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+
+  function renderAnalysis(doc) {
+    const a = doc.analysis;
+    if (!a) return;
+    const s = $("s-analysis");
+    s.style.display = "block";
+
+    const buckets = $("buckets");
+    buckets.replaceChildren();
+    const rows = [
+      ["partition-safe", a.partition_safe],
+      ["partition-exact", a.partition_exact],
+      ["stats-safe", a.stats_safe],
+      ["unsplittable", a.unsplittable],
+      ["confidence", a.confidence],
+    ];
+    for (const [k, v] of rows) {
+      if (k === "partition-exact" && v === undefined) continue; // pre-0.3 report
+      const b = el("div", "bucket");
+      b.appendChild(el("span", "k", k));
+      b.appendChild(el("span", "v" + (v ? "" : " none"), v || "-"));
+      buckets.appendChild(b);
+    }
+
+    const notes = $("notes");
+    notes.replaceChildren();
+    const allNotes = (a.notes || []).concat((doc.table_features && doc.table_features.notes) || []);
+    for (const n of allNotes) {
+      const card = el("div", "note");
+      card.appendChild(el("span", "code", n.code));
+      card.appendChild(el("span", null, n.message));
+      notes.appendChild(card);
+    }
+  }
+
+  function renderAsserts(doc) {
+    const list = doc.assertions || [];
+    if (!list.length) return;
+    $("s-asserts").style.display = "block";
+    const wrap = $("asserts");
+    wrap.replaceChildren();
+    for (const a of list) {
+      const row = el("div", "assert");
+      const ok = a.result === "pass";
+      row.appendChild(el("span", ok ? "ok" : "ko", ok ? "PASS" : "FAIL"));
+      row.appendChild(el("span", null, a.name));
+      const parts = [];
+      if (a.threshold !== undefined) parts.push("threshold " + a.threshold);
+      if (a.actual !== undefined) parts.push("actual " + (typeof a.actual === "number" ? a.actual.toFixed(1) : a.actual));
+      row.appendChild(el("span", "detail", parts.join(" / ")));
+      wrap.appendChild(row);
+    }
+  }
+
+  // ── Files: filters + a windowed list ─────────────────────────
+  const ROW_H = 32;
+
+  function renderFilesSection(doc) {
+    const s = $("s-files");
+    s.style.display = "block";
+    const body = $("files-body");
+    body.replaceChildren();
+
+    if (!doc.files) {
+      body.appendChild(el("p", "no-files",
+        "No per-file detail in this report. Rerun with --verbose to get the files array."));
+      return;
+    }
+    FILES = doc.files;
+
+    const filters = el("div", "filters");
+    const search = el("input");
+    search.type = "search";
+    search.id = "f-search";
+    search.placeholder = "Filter by path or partition value";
+    let deb;
+    search.addEventListener("input", () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => { filterText = search.value.toLowerCase(); applyFilters(); }, 120);
+    });
+
+    const outcome = el("select");
+    outcome.id = "f-outcome";
+    for (const [v, t] of [["all", "kept + pruned"], ["kept", "kept only"], ["pruned", "pruned only"]]) {
+      const o = el("option", null, t); o.value = v; outcome.appendChild(o);
+    }
+    outcome.addEventListener("change", () => { filterOutcome = outcome.value; applyFilters(); });
+
+    const phase = el("select");
+    phase.id = "f-phase";
+    const any = el("option", null, "any phase"); any.value = "any"; phase.appendChild(any);
+    for (const p of PHASES) {
+      const o = el("option", null, "pruned by: " + p.name); o.value = p.name; phase.appendChild(o);
+    }
+    phase.addEventListener("change", () => { filterPhase = phase.value; applyFilters(); });
+
+    filters.append(search, outcome, phase);
+    const count = el("span"); count.id = "files-count";
+    filters.appendChild(count);
+    body.appendChild(filters);
+
+    const head = el("div", "grid-head");
+    for (const h of ["path", "partition values", "records", "stats", "outcome"]) {
+      head.appendChild(el("span", null, h));
+    }
+    body.appendChild(head);
+
+    const viewport = el("div"); viewport.id = "viewport";
+    const spacer = el("div"); spacer.id = "spacer";
+    const rows = el("div"); rows.id = "rows";
+    viewport.append(spacer, rows);
+    body.appendChild(viewport);
+    viewport.addEventListener("scroll", () => requestAnimationFrame(paintWindow));
+
+    if (doc.files_truncated) {
+      body.appendChild(el("p", "truncated-note",
+        "This report was generated with --limit: the files array is truncated, counts above still cover the whole table."));
+    }
+
+    applyFilters();
+  }
+
+  let VISIBLE = [];
+  function applyFilters() {
+    VISIBLE = FILES.filter((f) => {
+      if (filterOutcome === "kept" && !f.kept) return false;
+      if (filterOutcome === "pruned" && f.kept) return false;
+      if (filterPhase !== "any" && f.pruned_by !== filterPhase) return false;
+      if (filterText) {
+        const hay = (f.path + " " + Object.entries(f.partition_values || {})
+          .map(([k, v]) => k + "=" + v).join(" ")).toLowerCase();
+        if (!hay.includes(filterText)) return false;
+      }
+      return true;
+    });
+    $("files-count").textContent =
+      nf.format(VISIBLE.length) + " of " + nf.format(FILES.length) + " files";
+    $("spacer").style.height = VISIBLE.length * ROW_H + "px";
+    $("viewport").scrollTop = 0;
+    paintWindow();
+  }
+
+  function paintWindow() {
+    const vp = $("viewport");
+    const start = Math.max(0, Math.floor(vp.scrollTop / ROW_H) - 4);
+    const end = Math.min(VISIBLE.length, start + Math.ceil(vp.clientHeight / ROW_H) + 8);
+    const rows = $("rows");
+    rows.style.transform = "translateY(" + start * ROW_H + "px)";
+    rows.replaceChildren();
+    for (let i = start; i < end; i++) rows.appendChild(fileRow(VISIBLE[i]));
+  }
+
+  function fileRow(f) {
+    const r = el("div", "frow");
+    const path = el("span", "path", f.path);
+    path.title = f.path;
+    r.appendChild(path);
+
+    const pv = Object.entries(f.partition_values || {})
+      .map(([k, v]) => k + "=" + (v === null ? "null" : v)).join("  ");
+    const pvEl = el("span", "pv", pv || "-");
+    if (pv) pvEl.title = pv;
+    r.appendChild(pvEl);
+
+    r.appendChild(el("span", "num", f.num_records == null ? "-" : nf.format(f.num_records)));
+    r.appendChild(el("span", "num", f.has_stats ? "yes" : "-"));
+
+    const out = el("span", "out");
+    out.appendChild(el("span", "dot " + (f.kept ? "kept" : "pruned")));
+    out.appendChild(el("span", f.kept ? null : "by", f.kept ? "kept" : (f.pruned_by || "pruned")));
+    if (!f.kept) out.title = "size " + fmtBytes(f.size_bytes);
+    else out.title = "size " + fmtBytes(f.size_bytes);
+    r.appendChild(out);
+    return r;
+  }
+
+  // ── Boot: injected document wins, drop zone otherwise ────────
+  const injected = $("delta-explain-report").textContent.trim();
+  if (injected && injected !== "/*REPORT_JSON*/") {
+    try {
+      render(JSON.parse(injected));
+    } catch {
+      fail("The embedded report is not valid JSON.");
+    }
+  }
+})();
+</script>
+</body>
+</html>
