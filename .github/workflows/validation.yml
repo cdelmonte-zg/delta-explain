@@ -48,6 +48,33 @@ jobs:
       - name: Run the differential harness (fresh mode)
         run: DX_BIN=$PWD/target/release/delta-explain DX_DIFF_FRESH=1 python3 examples/differential/run_differential.py
 
+      # Dogfooding the report viewer: every validation run attaches a
+      # self-rendering report.html for the table the harness just
+      # exercised - this project as the viewer's first user, in exactly
+      # the workflow it exists for (a pruning report on a CI run).
+      - name: Render a report.html with the viewer
+        run: |
+          ./target/release/delta-explain s3://diff/users \
+            --option aws_endpoint=http://localhost:9010 \
+            --option aws_allow_http=true \
+            --option aws_access_key_id=minioadmin \
+            --option aws_secret_access_key=minioadmin \
+            --option aws_virtual_hosted_style_request=false \
+            --option aws_region=us-east-1 \
+            -w "country LIKE '%E' AND age > 55" \
+            --format json --verbose > report.json
+          python3 - <<'EOF'
+          tpl = open('viewer/report-viewer.html').read()
+          doc = open('report.json').read().strip()
+          open('report.html', 'w').write(tpl.replace('/*REPORT_JSON*/', doc, 1))
+          EOF
+
+      - name: Upload the rendered report
+        uses: actions/upload-artifact@v7
+        with:
+          name: pruning-report
+          path: report.html
+
   azurite-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
