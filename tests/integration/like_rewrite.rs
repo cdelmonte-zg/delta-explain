@@ -79,12 +79,14 @@ fn prefix_like_on_a_data_column_skips_on_min_max() {
         );
 }
 
-// ── Everything else keeps the degradation path ──────────────────────
+// ── Non-prefix shapes on a data column keep the degradation path ────
+// (on a partition column they are evaluated exactly instead: see the
+// partition_exact module)
 
 #[test]
-fn non_prefix_like_still_degrades_conservatively() {
+fn non_prefix_like_on_a_data_column_degrades_conservatively() {
     cmd()
-        .args([&fixture("test-table"), "-w", "country LIKE '%E'"])
+        .args([&fixture("test-table"), "-w", "name LIKE '%son'"])
         .assert()
         .success()
         .stdout(
@@ -95,9 +97,9 @@ fn non_prefix_like_still_degrades_conservatively() {
 }
 
 #[test]
-fn not_like_still_degrades_conservatively() {
+fn not_like_on_a_data_column_degrades_conservatively() {
     cmd()
-        .args([&fixture("test-table"), "-w", "country NOT LIKE 'D%'"])
+        .args([&fixture("test-table"), "-w", "name NOT LIKE 'D%'"])
         .assert()
         .success()
         .stdout(

@@ -14,7 +14,7 @@ use crate::error::Error;
 use crate::report::{PhaseResult, PruningReport};
 use crate::stats::FileStats;
 
-pub const SCHEMA_VERSION: &str = "0.2.0";
+pub const SCHEMA_VERSION: &str = "0.3.0";
 
 pub enum OutputFormat {
     Text,
@@ -55,6 +55,9 @@ fn write_text(
             "  partition-safe: {}",
             analysis.partition_safe.as_deref().unwrap_or("-")
         )?;
+        if let Some(exact) = &analysis.partition_exact {
+            writeln!(out, "  partition-exact: {exact}")?;
+        }
         writeln!(
             out,
             "  stats-safe:     {}",
@@ -280,6 +283,7 @@ pub fn render_json(
     let analysis_block = report.analysis.as_ref().map(|analysis| {
         json!({
             "partition_safe": analysis.partition_safe,
+            "partition_exact": analysis.partition_exact,
             "stats_safe": analysis.stats_safe,
             "unsplittable": analysis.unsplittable,
             "confidence": analysis.confidence.to_string(),

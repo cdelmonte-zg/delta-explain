@@ -168,6 +168,27 @@ impl Pred {
         }
     }
 
+    /// True when the tree contains a subtree whose *semantics* are unknown
+    /// (an [`Pred::Unsupported`] leaf). Narrower than
+    /// [`Pred::contains_unsupported`]: a surviving `Like` has no kernel
+    /// lowering but its meaning is fully known, so an interpreter with its
+    /// own evaluation (the partition-literal evaluator) can still consume
+    /// the fragment. An opaque subtree can never be evaluated by anyone.
+    pub fn contains_opaque(&self) -> bool {
+        match self {
+            Pred::And(v) | Pred::Or(v) => v.iter().any(Pred::contains_opaque),
+            Pred::Not(p) => p.contains_opaque(),
+            Pred::Unsupported { .. } => true,
+            Pred::Cmp { .. }
+            | Pred::In { .. }
+            | Pred::Between { .. }
+            | Pred::IsNull { .. }
+            | Pred::Distinct { .. }
+            | Pred::Like { .. }
+            | Pred::BoolCol(_) => false,
+        }
+    }
+
     /// Dotted names of every column the predicate touches.
     pub fn columns(&self) -> Vec<String> {
         let mut cols = Vec::new();

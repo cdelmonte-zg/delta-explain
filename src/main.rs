@@ -26,8 +26,8 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, features, gates, kernel_bridge, predicate_analyzer, predicate_ast,
-    render, scan, stats,
+    attribution, credentials, features, gates, kernel_bridge, partition_eval, predicate_analyzer,
+    predicate_ast, render, scan, stats,
 };
 
 #[cfg(feature = "debug-ir")]
@@ -355,12 +355,12 @@ fn try_main() -> Result<()> {
             )?;
         }
         let classified = predicate_analyzer::classify(&pred_ast, &partition_columns);
-        let analysis = classified.analysis;
+        let mut analysis = classified.analysis;
         if let Some(dump) = debug_dump.as_mut() {
             dump.section("classification", &format!("{analysis:#?}"))?;
         }
 
-        let partition_survivors = match &classified.partition_pred {
+        let kernel_partition_survivors = match &classified.partition_pred {
             Some(part_ast) => {
                 let part_pred = kernel_bridge::emit_predicate(part_ast, &schema)?;
                 if let Some(dump) = debug_dump.as_mut() {
@@ -379,6 +379,60 @@ fn try_main() -> Result<()> {
                 )
             }
             None => None,
+        };
+
+        // The partition-exact fragment never reaches the kernel: it is
+        // evaluated per file against the literal partition values. TRUE
+        // keeps, FALSE and NULL drop exactly, Unknown (an unparseable
+        // value) keeps conservatively and downgrades the confidence.
+        let exact_survivors = match &classified.partition_exact_pred {
+            Some(exact_ast) => {
+                let mut survivors: HashSet<String> = HashSet::new();
+                let mut gap = false;
+                for file in &report.all_files {
+                    match partition_eval::eval(exact_ast, &file.partition_values, &schema) {
+                        partition_eval::Truth::True => {
+                            survivors.insert(file.path.clone());
+                        }
+                        partition_eval::Truth::Unknown => {
+                            survivors.insert(file.path.clone());
+                            gap = true;
+                        }
+                        partition_eval::Truth::False | partition_eval::Truth::Null => {}
+                    }
+                }
+                if gap {
+                    if analysis.confidence == predicate_analyzer::Confidence::Exact {
+                        analysis.confidence = predicate_analyzer::Confidence::Conservative;
+                    }
+                    analysis.notes.push(predicate_analyzer::AnalysisNote {
+                        code: "PARTITION_EVAL_GAP".into(),
+                        message: format!(
+                            "some partition values could not be evaluated against \
+                             '{exact_ast}'; the affected files are kept conservatively"
+                        ),
+                    });
+                }
+                if let Some(dump) = debug_dump.as_mut() {
+                    dump.section(
+                        "partition-literal evaluation",
+                        &format!(
+                            "fragment: {exact_ast}\nsurvivors: {} of {} files{}",
+                            survivors.len(),
+                            report.total_files,
+                            if gap { " (evaluation gaps, kept)" } else { "" }
+                        ),
+                    )?;
+                }
+                Some(survivors)
+            }
+            None => None,
+        };
+
+        let partition_survivors = match (kernel_partition_survivors, exact_survivors.clone()) {
+            (Some(a), Some(b)) => Some(a.intersection(&b).cloned().collect()),
+            (Some(a), None) => Some(a),
+            (None, b) => b,
         };
 
         let full_survivors = if analysis.stats_safe.is_some() || analysis.unsplittable.is_some() {
@@ -411,12 +465,17 @@ fn try_main() -> Result<()> {
                     scan::collect_files(snapshot.clone(), engine.as_ref(), None)?
                 }
             };
-            Some(
-                surviving
-                    .into_iter()
-                    .map(|f| f.path)
-                    .collect::<HashSet<String>>(),
-            )
+            let mut set = surviving
+                .into_iter()
+                .map(|f| f.path)
+                .collect::<HashSet<String>>();
+            // The kernel scan honors every lowerable fragment, but the
+            // partition-exact one never reaches it: apply the evaluator's
+            // verdict here, or the final set would not chain from phase 1.
+            if let Some(exact) = &exact_survivors {
+                set.retain(|path| exact.contains(path));
+            }
+            Some(set)
         } else {
             None
         };

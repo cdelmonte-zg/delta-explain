@@ -28,7 +28,7 @@ STUB = Path(__file__).parent / "_argv_stub.py"
 
 def test_basic_report():
     r = explain(TABLE, where="country = 'DE' AND age > 40", binary=BINARY)
-    assert r.schema_version.startswith("0.2.")
+    assert r.schema_version.startswith("0.3.")
     assert r.total_files == 6
     assert r.final_files == 1
     assert r.passed and r.result is None

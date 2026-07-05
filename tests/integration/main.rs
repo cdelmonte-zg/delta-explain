@@ -17,6 +17,7 @@ mod like_rewrite;
 mod nested_stats;
 mod partial_stats;
 mod partition_columns;
+mod partition_exact;
 mod protocol_features;
 mod quickstart;
 mod semantic_regression;

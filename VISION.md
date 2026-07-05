@@ -97,7 +97,7 @@ Moving declared boundaries across the line, one release note at a time:
 - **Deletion vectors: compensate, not just declare.** The DV descriptor carries `cardinality`; `numRecords - cardinality` is the live record count. Cheap, but it changes a reported number's meaning, so it ships with a schema note.
 - **Batch mode** (`--predicates <file>`): one log replay, N reports; also the natural place for task-level parallelism, which stays out of the single-invocation core by design.
 - **One log replay per invocation**: today a predicate costs up to three metadata scans; on remote tables that is the real latency. Redundancy elimination before any parallelism.
-- **Prefix `LIKE 'abc%'`** as a rewrite to a range (engines like delta-spark already skip on it; the rewrite infrastructure is ready).
+- **`LIKE`**: shipped post-v0.4.0, ahead of this list - prefix patterns rewrite to a lexicographic range and prune on both axes, and any-shape `LIKE` on partition columns is evaluated exactly against the literal partition values (`partition_exact`).
 - **JSON schema 1.0**: declared only after 0.2 has soaked unchanged under real consumers for a few months.
 
 ## Adoption track
@@ -108,7 +108,7 @@ Moving declared boundaries across the line, one release note at a time:
 
 ## Trust track
 
-- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a thirteen-predicate matrix including normalized forms (De Morgan, factored ORs) and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text (the "validated against" documentation shipped in `docs/validation.md`). A scheduled weekly Validation workflow now runs the harness and an Azurite leg for the az:// path (a GCS emulator leg is not possible today: object_store has no emulator support for gs://, so GCS coverage stays a manual verification against a real bucket). Next: fixtures written by third-party engines (Trino, Flink).
+- **Differential testing**: the same predicates over the same tables through a reference engine, asserting the survivor set covers every file with matching rows. The harness in `examples/differential` (MinIO + Spark 4.1) runs a twenty-predicate matrix including normalized forms (De Morgan, factored ORs), `LIKE` in both its rewritten and partition-evaluated shapes, and null-safe comparisons: sound on all, exact on that layout. It now consumes the JSON `files[]` contract instead of scraping text (the "validated against" documentation shipped in `docs/validation.md`). A scheduled weekly Validation workflow now runs the harness and an Azurite leg for the az:// path (a GCS emulator leg is not possible today: object_store has no emulator support for gs://, so GCS coverage stays a manual verification against a real bucket). Next: fixtures written by third-party engines (Trino, Flink).
 
 ## Ongoing: the kernel track
 

@@ -20,6 +20,19 @@ follow SemVer relative to that field.
   Non-prefix patterns, `NOT LIKE`, and `ESCAPE` forms keep the
   conservative degradation path. No JSON schema change: the fragment
   strings simply show the rewritten form.
+- Partition-only fragments outside the kernel's predicate language now
+  evaluate exactly against the literal partition values instead of
+  degrading (#75): `country LIKE '%E'` on a partitioned table prunes in
+  Phase 1 with `confidence: exact`, in any pattern shape including
+  `NOT LIKE`. A file whose partition values make the fragment FALSE or
+  NULL is dropped exactly (the fragment is constant across the file's
+  rows, and SQL selects a row only on TRUE); a value the evaluator cannot
+  parse keeps the file and downgrades confidence with a new
+  `PARTITION_EVAL_GAP` note. Opaque constructs (functions, arithmetic,
+  subqueries) still degrade, partition columns or not. Additive JSON
+  change: the analysis block gains `partition_exact`, `schema_version`
+  moves to `0.3.0`, and the formal schema ships as
+  `schemas/report-v0.3.schema.json`.
 
 ### Fixed
 
