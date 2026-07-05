@@ -9,6 +9,23 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.0] — 2026-07-05
+
+The release that turns the explainer into an advisor, and makes a report
+readable without a terminal. `--explain-why` adds a deterministic diagnostic
+layer — *why* a fragment did not prune and what to change — built as a rules
+engine over data the tool already computes, never a model, so the answer stays
+as trustworthy as the numbers and gate-able in CI. A self-contained report
+viewer renders a JSON report as a navigable page (pruning funnel, analysis,
+diagnoses, a per-file table usable at 200k files), and a new documentation site
+gives the now-larger project a single navigable home. The JSON contract grows
+additively (`schema_version` 0.3.0 → 0.4.0, a flag-gated `explain` array). The
+survivor-set oracle now runs on real NYC-taxi data in addition to synthetic
+tables, and the architecture decisions behind the diagnostic layer are recorded
+in `docs/adr/0007`.
+
 ### Added
 
 - `--explain-why`: a deterministic diagnostic layer that turns the report
@@ -26,10 +43,22 @@ follow SemVer relative to that field.
 
 - A report viewer (`viewer/`): one self-contained HTML
   page that renders a `--format json --verbose` report - pruning funnel,
-  analysis buckets, gates, warnings, and a filterable per-file table
-  that stays usable at 200k files. A pure client of the versioned JSON
-  schema (#89): no new analysis, no CLI surface change, works on any
+  analysis buckets, gates, warnings, diagnoses, and a filterable per-file
+  table that stays usable at 200k files. A pure client of the versioned
+  JSON schema (#89): no new analysis, no CLI surface change, works on any
   saved report and as an air-gapped CI artifact.
+
+- A documentation site (`book/`, mdBook -> GitHub Pages at
+  <https://cdelmonte-zg.github.io/delta-explain/>): a navigable, searchable
+  home with guides, reference, and architecture. The reference and project
+  pages are symlinks into the canonical `docs/`, `VISION.md`, and
+  `CHANGELOG.md`, so nothing is duplicated.
+
+- Real-data examples: `fixtures/taxi-nyc`, a small Delta table written by a
+  real writer (deltalake) from public NYC TLC data, and an executable
+  `examples/taxi-optimization` notebook that uses `delta-explain` to drive a
+  layout optimization. The differential harness gained a taxi table so the
+  Spark survivor-set oracle runs on real data too.
 
 ## [0.5.0] — 2026-07-05
 

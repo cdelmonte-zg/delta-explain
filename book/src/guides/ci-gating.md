@@ -34,7 +34,7 @@ a partial document.
 A composite action wraps the CLI with matching inputs. Pin the release tag:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.5.0
+- uses: cdelmonte-zg/delta-explain@v0.6.0
   with:
     table: s3://lake/events
     where: "region = 'eu'"
