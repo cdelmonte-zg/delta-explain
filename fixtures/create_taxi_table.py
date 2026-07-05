@@ -7,12 +7,15 @@ partition layout and per-file statistics a real table has - the kind of
 shape LogBuilder cannot synthesize. It is the recognizable table behind
 the quickstart and the `taxi` integration tests.
 
-The source is the January 2024 yellow-taxi trips
-(https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page,
-public domain). We keep a deterministic subset (the first N trips of the
-first few days), a tidy column set, and partition by pickup date so the
-table stays a few hundred KB - delta-explain never reads the parquet
-data, but the fixture is checked in, so the data files must be small.
+Data source and attribution: NYC Taxi & Limousine Commission (TLC) trip
+record data, January 2024 yellow taxi
+(https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page). The TLC
+publishes these files for public use under its data usage terms linked
+on that page; this fixture redistributes a small derived subset for
+testing. We keep a deterministic subset (the first N trips of the first
+few days), a tidy column set, and partition by pickup date so the table
+stays a few hundred KB - delta-explain never reads the parquet data, but
+the fixture is checked in, so the data files must be small.
 
 Regenerate (from the repo root, with the deltalake writer available):
 

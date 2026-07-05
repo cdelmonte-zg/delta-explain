@@ -31,4 +31,8 @@ in one case the checkpoint rewritten); the script cannot rebuild those.
 | `test-table-checkpoint-multipart` | classic checkpoint split in two parts (`delta.checkpoint.partSize=2`), 3 commits, Spark-written | full | `exotic_logs` |
 | `test-table-checkpoint-v2` | V2 checkpoint: UUID-named JSON manifest + parquet sidecars in `_sidecars/` (`delta.checkpointPolicy=v2`), Spark-written | full | `exotic_logs` |
 | `taxi-nyc` | real NYC TLC yellow-taxi data (deltalake-written), partitioned by `pickup_date`, 5 date partitions, 4000 rows | full (real writer) | `taxi` |
+
+`taxi-nyc` data source: NYC Taxi & Limousine Commission (TLC) trip record data
+([terms](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)); a small
+derived subset is redistributed here for testing.
 | `users` / `users-flat` | demo tables, same canonical data as `test-table` | full | README examples, not tests |
