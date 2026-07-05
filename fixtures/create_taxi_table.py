@@ -81,7 +81,9 @@ def main() -> None:
     table = table.filter(pc.is_in(table["pickup_date"], value_set=pa.array(KEEP_DATES)))
 
     # Cap each day deterministically (stable sort by pickup time, then head
-    # per date), so regeneration is byte-reproducible.
+    # per date), so the same rows are selected on every run. (The rows are
+    # reproducible; the on-disk table is not byte-identical - deltalake
+    # assigns random parquet file names and timestamps each write.)
     table = table.sort_by([("pickup_date", "ascending"), ("tpep_pickup_datetime", "ascending")])
     keep_idx = []
     seen: dict[str, int] = {}

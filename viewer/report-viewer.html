@@ -481,6 +481,11 @@
   function render(doc) {
     $("dropzone").style.display = "none";
 
+    // Reset filter state: loading a second report rebuilds the controls at
+    // their defaults, so the stale filters must reset with them or the table
+    // would filter by the previous report's phase/outcome/search.
+    filterText = ""; filterOutcome = "all"; filterPhase = "any";
+
     // header
     $("hdr").style.display = "block";
     $("h-table").textContent = doc.table || "(unknown table)";
@@ -489,12 +494,13 @@
     else if (doc.result === "fail") { verdict.textContent = "FAIL"; verdict.className = "verdict fail"; }
     else { verdict.textContent = "NO GATES"; verdict.className = "verdict none"; }
 
+    const num = (v) => (typeof v === "number" ? v : null);
     const meta = $("h-meta");
     meta.replaceChildren(
-      el("span", null, "version " + doc.version),
-      el("span", null, nf.format(doc.total_files) + " files in snapshot"),
-      el("span", null, doc.elapsed_ms + " ms"),
-      el("span", null, "tool " + (doc.tool_version || "?") + " / schema " + doc.schema_version),
+      el("span", null, "version " + (doc.version ?? "-")),
+      el("span", null, nf.format(num(doc.total_files) ?? 0) + " files in snapshot"),
+      el("span", null, (num(doc.elapsed_ms) ?? "-") + " ms"),
+      el("span", null, "tool " + (doc.tool_version || "?") + " / schema " + (doc.schema_version || "?")),
     );
     if (!/^0\./.test(doc.schema_version)) {
       meta.appendChild(el("span", null, "unknown schema major: fields may be missing"));
@@ -526,10 +532,11 @@
   function renderFunnel(doc) {
     const s = $("s-funnel");
     s.style.display = "block";
-    const total = doc.total_files;
-    const finalFiles = doc.final_files;
+    const total = doc.total_files ?? 0;
+    const finalFiles = doc.final_files ?? total;
+    const pct = typeof doc.total_pruning_pct === "number" ? Math.round(doc.total_pruning_pct) + "%" : "-";
     $("funnel-sub").textContent = nf.format(total) + " files -> " +
-      nf.format(finalFiles) + " (" + Math.round(doc.total_pruning_pct) + "% pruned)";
+      nf.format(finalFiles) + " (" + pct + " pruned)";
 
     const funnel = $("funnel");
     funnel.replaceChildren();
@@ -662,12 +669,12 @@
 
   function renderExplain(doc) {
     // present only when the report was produced with --explain-why
-    if (!("explain" in doc)) return;
+    if (!Array.isArray(doc.explain)) return;
     $("s-explain").style.display = "block";
     const wrap = $("diagnoses");
     wrap.replaceChildren();
     if (!doc.explain.length) {
-      wrap.appendChild(el("div", "diag-ok", "No pruning issues found for this predicate."));
+      wrap.appendChild(el("div", "diag-ok", "No pruning issues found."));
       return;
     }
     for (const d of doc.explain) {
@@ -814,8 +821,8 @@
     const out = el("span", "out");
     out.appendChild(el("span", "dot " + (f.kept ? "kept" : "pruned")));
     out.appendChild(el("span", f.kept ? null : "by", f.kept ? "kept" : (f.pruned_by || "pruned")));
-    if (!f.kept) out.title = "size " + fmtBytes(f.size_bytes);
-    else out.title = "size " + fmtBytes(f.size_bytes);
+    out.title = "size " + fmtBytes(f.size_bytes) +
+      (f.kept ? "" : "\npruned by " + (f.pruned_by || "?"));
     r.appendChild(out);
     return r;
   }

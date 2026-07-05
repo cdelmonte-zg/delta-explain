@@ -13,6 +13,12 @@ use std::collections::HashSet;
 use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::report::PhaseResult;
 
+/// Phase display names. Shared so a consumer that must recognize a phase
+/// (the diagnostics engine) matches the same string this module writes; a
+/// rename here is a compile-time change for every user, not a silent break.
+pub const PARTITION_PRUNING_PHASE: &str = "Partition pruning";
+pub const DATA_SKIPPING_PHASE: &str = "Data skipping (min/max statistics)";
+
 /// Build the attributed phases from the survivor sets of the comparative
 /// scans. Callers pass `None` for a scan they did not run: the partition
 /// survivors exist only when the analysis produced a `partition_safe` or
@@ -41,7 +47,7 @@ pub fn build_phases(
         let count = survivors.len();
         phases.push(PhaseResult {
             confidence: Confidence::Exact,
-            name: "Partition pruning".into(),
+            name: PARTITION_PRUNING_PHASE.into(),
             predicate_display: partition_display,
             conservative_fragments: 0,
             scan_predicate_display: None,
@@ -61,7 +67,7 @@ pub fn build_phases(
             .join(" AND ");
 
         phases.push(PhaseResult {
-            name: "Data skipping (min/max statistics)".into(),
+            name: DATA_SKIPPING_PHASE.into(),
             // The kernel reasons over the whole predicate; when part of it is
             // unsplittable the delta from the partition-only scan is no longer
             // a clean attribution to data skipping alone.

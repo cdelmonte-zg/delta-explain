@@ -153,8 +153,14 @@ fn write_text(
     if explain_why {
         writeln!(out)?;
         writeln!(out, "Why:")?;
-        if report.explain.is_empty() {
-            writeln!(out, "  No pruning issues found for this predicate.")?;
+        if report.analysis.is_none() {
+            // --explain-why with no --where: there is no predicate to diagnose.
+            writeln!(
+                out,
+                "  No predicate given (pass --where to diagnose pruning)."
+            )?;
+        } else if report.explain.is_empty() {
+            writeln!(out, "  No pruning issues found.")?;
         }
         for d in &report.explain {
             writeln!(out, "  [{}] {}", d.code, d.message)?;
@@ -295,13 +301,9 @@ pub fn render_json(
     } else {
         0.0
     };
-    let stats_mode = if stats_total == 0 || stats_present == 0 {
-        "absent"
-    } else if stats_present == stats_total {
-        "exact"
-    } else {
-        "partial"
-    };
+    // Single source of truth for the mode, shared with the diagnostics
+    // engine so the `stats.mode` field and the stats-based diagnoses agree.
+    let stats_mode = report.stats_mode().as_str();
 
     let phases: Vec<serde_json::Value> = report
         .phases

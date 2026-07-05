@@ -95,10 +95,12 @@ TABLES = {
             # both axes at once
             "pickup_date = '2024-01-03' AND fare_amount > 60",
             # LIKE on the real partition column, against Spark's own LIKE:
-            # prefix rewrites to a range, non-prefix evaluates exactly
+            # prefix rewrites to a range, non-prefix evaluates exactly. The
+            # NOT LIKE must match a proper subset (all but Jan 3) - not every
+            # date starts outside the pattern, or the case would be vacuous.
             "pickup_date LIKE '2024-01-0%'",
             "pickup_date LIKE '%-03'",
-            "pickup_date NOT LIKE '2024-01-0%'",
+            "pickup_date NOT LIKE '%-03'",
         ],
     },
 }
@@ -109,8 +111,13 @@ def ensure_taxi_source():
     local = os.environ.get("TAXI_SRC")
     dest = WORK / "taxi-src.parquet"
     if local:
-        if not dest.exists():
-            dest.symlink_to(Path(local).resolve())
+        # Always (re)point at the current TAXI_SRC: clear whatever is there
+        # (a stale download, or a dangling symlink from a moved source) so a
+        # changed TAXI_SRC is honored instead of silently reusing old data.
+        # `exists()` follows symlinks, so a dangling link needs is_symlink().
+        if dest.is_symlink() or dest.exists():
+            dest.unlink()
+        dest.symlink_to(Path(local).resolve())
         return
     if not dest.exists():
         print(f"downloading {TAXI_URL}")
