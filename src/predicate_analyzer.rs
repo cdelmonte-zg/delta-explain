@@ -23,6 +23,15 @@ pub struct PredicateAnalysis {
     pub partition_exact: Option<String>,
     pub stats_safe: Option<String>,
     pub unsplittable: Option<String>,
+    /// The `unsplittable` fragments that still reach the final kernel scan
+    /// (mixed-axis but fully lowerable, e.g. a mixed OR): their
+    /// attribution is lost, their pruning is not. Feeds the text rendering
+    /// of the phase line; not part of the JSON document.
+    pub unsplittable_scanned: Option<String>,
+    /// How many top-level conjuncts are stripped from every scan (they
+    /// contain unsupported subtrees) and thus applied conservatively.
+    /// Feeds the text rendering; not part of the JSON document.
+    pub stripped_count: usize,
     pub confidence: Confidence,
     pub notes: Vec<AnalysisNote>,
 }
@@ -53,6 +62,8 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
     let mut exact_frags: Vec<&Pred> = Vec::new();
     let mut stats_frags: Vec<&Pred> = Vec::new();
     let mut unsplittable_frags: Vec<&Pred> = Vec::new();
+    let mut scanned_unsplittable_frags: Vec<&Pred> = Vec::new();
+    let mut stripped_count = 0usize;
     let mut notes: Vec<AnalysisNote> = Vec::new();
 
     for clause in pred.conjuncts() {
@@ -70,6 +81,7 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
                 continue;
             }
             unsplittable_frags.push(clause);
+            stripped_count += 1;
             let reasons = clause.unsupported_reasons().join("; ");
             notes.push(AnalysisNote {
                 code: "UNSUPPORTED_EXPRESSION".into(),
@@ -87,6 +99,9 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
             stats_frags.push(clause);
         } else {
             unsplittable_frags.push(clause);
+            // Mixed-axis but fully lowerable: the final scan honors it,
+            // only the per-phase attribution is lost.
+            scanned_unsplittable_frags.push(clause);
             notes.push(AnalysisNote {
                 code: "UNSPLITTABLE_OR".into(),
                 message: "Mixed expression across partition and non-partition \
@@ -108,6 +123,7 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
     let partition_exact = join_opt(&exact_frags);
     let stats_safe = join_opt(&stats_frags);
     let unsplittable = join_opt(&unsplittable_frags);
+    let unsplittable_scanned = join_opt(&scanned_unsplittable_frags);
 
     let confidence = if unsplittable.is_some() {
         Confidence::Incomplete
@@ -123,6 +139,8 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
             partition_exact,
             stats_safe,
             unsplittable,
+            unsplittable_scanned,
+            stripped_count,
             confidence,
             notes,
         },

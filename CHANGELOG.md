@@ -37,6 +37,16 @@ follow SemVer relative to that field.
   moves to `0.3.0`, and the formal schema ships as
   `schemas/report-v0.3.schema.json`.
 
+### Changed
+
+- Degraded phase lines in text output no longer print a stripped fragment
+  as if it contributed (#76): the line shows what actually reached the
+  kernel scan plus an annotation, e.g.
+  `predicate: age > 40  (+1 unsupported fragment, keeps all files)`.
+  Mixed-axis fragments that the kernel does scan with (an unsplittable
+  OR) keep the full display: only attribution is lost there, not
+  pruning. Text only; the JSON `phases[].predicate` field is unchanged.
+
 ### Fixed
 
 - A consumer closing stdout mid-report (`delta-explain ... | head`, a

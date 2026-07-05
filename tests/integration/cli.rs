@@ -624,6 +624,63 @@ fn unsupported_inside_or_poisons_the_whole_or_conservatively() {
     assert_eq!(json["final_files"], 6);
 }
 
+// ── Degraded phase lines annotate what was stripped (issue #76) ─────
+
+#[test]
+fn degraded_phase_line_shows_the_scanned_part_plus_an_annotation() {
+    cmd()
+        .args([&test_table(), "-w", "age > 40 AND UPPER(name) = 'X'"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains(
+                "predicate:       age > 40  (+1 unsupported fragment, keeps all files)",
+            )
+            .and(predicate::str::contains("predicate:       age > 40 AND UPPER").not()),
+        );
+}
+
+#[test]
+fn fully_stripped_predicate_reports_the_unpredicated_scan() {
+    cmd()
+        .args([&test_table(), "-w", "UPPER(name) = 'X'"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "predicate:       (1 unsupported fragment, keeps all files)",
+        ));
+}
+
+#[test]
+fn lowerable_mixed_or_is_not_annotated_as_stripped() {
+    // Unsplittable for attribution, but the kernel scans with it: the
+    // phase line keeps the full display, no keeps-all-files claim.
+    cmd()
+        .args([&test_table(), "-w", "country = 'DE' OR age > 30"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "predicate:       country = 'DE' OR age > 30\n",
+        ));
+}
+
+#[test]
+fn json_phase_predicate_keeps_the_full_honored_display() {
+    // The annotation is text-only: phases[].predicate stays the full
+    // predicate the phase honored, stripped fragments included.
+    let json = run_json(&[
+        &test_table(),
+        "-w",
+        "age > 40 AND UPPER(name) = 'X'",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(
+        json["phases"][0]["predicate"],
+        "age > 40 AND UPPER(name) = 'X'"
+    );
+}
+
 // ── Null-safe comparison (IS DISTINCT FROM) ─────────────────────────
 
 #[test]

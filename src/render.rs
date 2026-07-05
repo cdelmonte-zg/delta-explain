@@ -86,7 +86,29 @@ fn write_text(
             phase.name,
             phase.confidence
         )?;
-        writeln!(out, "  predicate:       {}", phase.predicate_display)?;
+        // A stripped fragment is applied conservatively, never scanned
+        // with: showing it on the predicate line as if it contributed
+        // would contradict the analysis block three lines above. Show
+        // what reached the kernel, annotate the rest.
+        match (phase.conservative_fragments, &phase.scan_predicate_display) {
+            (0, _) => writeln!(out, "  predicate:       {}", phase.predicate_display)?,
+            (1, Some(scanned)) => writeln!(
+                out,
+                "  predicate:       {scanned}  (+1 unsupported fragment, keeps all files)"
+            )?,
+            (n, Some(scanned)) => writeln!(
+                out,
+                "  predicate:       {scanned}  (+{n} unsupported fragments, keep all files)"
+            )?,
+            (1, None) => writeln!(
+                out,
+                "  predicate:       (1 unsupported fragment, keeps all files)"
+            )?,
+            (n, None) => writeln!(
+                out,
+                "  predicate:       ({n} unsupported fragments, keep all files)"
+            )?,
+        }
         writeln!(
             out,
             "  files remaining: {}  (-{}, {:.0}% pruned)",
