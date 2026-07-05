@@ -43,6 +43,8 @@ pub fn build_phases(
             confidence: Confidence::Exact,
             name: "Partition pruning".into(),
             predicate_display: partition_display,
+            conservative_fragments: 0,
+            scan_predicate_display: None,
             input_count: prev_count,
             output_count: count,
             surviving_paths: survivors,
@@ -69,6 +71,25 @@ pub fn build_phases(
                 Confidence::Conservative
             },
             predicate_display: display,
+            // Stripped fragments never reach the kernel scan: text
+            // rendering shows what did (the stats-safe part plus any
+            // lowerable mixed-axis fragment), with an annotation, instead
+            // of printing the stripped part as if it contributed.
+            conservative_fragments: analysis.stripped_count,
+            scan_predicate_display: if analysis.stripped_count > 0 {
+                let scanned = [&analysis.stats_safe, &analysis.unsplittable_scanned]
+                    .iter()
+                    .filter_map(|f| f.as_ref())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if scanned.is_empty() {
+                    None
+                } else {
+                    Some(scanned.join(" AND "))
+                }
+            } else {
+                None
+            },
             input_count: prev_count,
             output_count: survivors.len(),
             surviving_paths: survivors,

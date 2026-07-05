@@ -33,7 +33,18 @@ pub struct FileInfo {
 pub struct PhaseResult {
     pub confidence: Confidence,
     pub name: String,
+    /// The full predicate this phase honored, stripped fragments included
+    /// (they are applied conservatively). This is the JSON contract's
+    /// `phases[].predicate`.
     pub predicate_display: String,
+    /// Top-level fragments this phase applied conservatively instead of
+    /// scanning with; 0 when everything in `predicate_display` reached
+    /// the kernel. Text rendering annotates the phase line with it.
+    pub conservative_fragments: usize,
+    /// What actually reached the kernel scan when
+    /// `conservative_fragments > 0`; `None` there means the scan ran
+    /// without a predicate.
+    pub scan_predicate_display: Option<String>,
     pub input_count: usize,
     pub output_count: usize,
     pub surviving_paths: HashSet<String>,

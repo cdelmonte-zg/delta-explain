@@ -135,6 +135,8 @@ mod tests {
                 confidence: Confidence::Conservative,
                 name: "Data skipping (min/max statistics)".into(),
                 predicate_display: "x > 1".into(),
+                conservative_fragments: 0,
+                scan_predicate_display: None,
                 input_count: 4,
                 output_count: 1,
                 surviving_paths: ["a".to_string()].into_iter().collect(),
