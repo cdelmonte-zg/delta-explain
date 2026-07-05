@@ -29,7 +29,9 @@ jobs:
         run: cargo build --release
 
       - name: Run tests
-        run: cargo test
+        # --all-targets so example unit tests run too (e.g. gen_scale_log's
+        # build_stats JSON guard), not just lib/bin/integration.
+        run: cargo test --all-targets
 
       - uses: actions/setup-python@v6
         with:
