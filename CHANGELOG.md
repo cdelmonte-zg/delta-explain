@@ -11,7 +11,7 @@ follow SemVer relative to that field.
 
 ### Added
 
-- A report viewer (`examples/report-viewer/`): one self-contained HTML
+- A report viewer (`viewer/`): one self-contained HTML
   page that renders a `--format json --verbose` report - pruning funnel,
   analysis buckets, gates, warnings, and a filterable per-file table
   that stays usable at 200k files. A pure client of the versioned JSON

@@ -76,10 +76,10 @@ cargo run -q -- fixtures/test-table \
     -w "country LIKE '%E' AND age > 40 AND UPPER(name) = 'X'" \
     --format json --verbose --min-pruning 50 > /tmp/report.json
 python3 - <<'EOF'
-tpl = open('examples/report-viewer/report-viewer.html').read()
+tpl = open('viewer/report-viewer.html').read()
 doc = open('/tmp/report.json').read().strip()
 open('/tmp/report.html', 'w').write(tpl.replace('/*REPORT_JSON*/', doc, 1))
 EOF
 chromium --headless --disable-gpu --window-size=1100,1500 \
-    --screenshot=examples/report-viewer/screenshot.png /tmp/report.html
+    --screenshot=viewer/screenshot.png /tmp/report.html
 ```
