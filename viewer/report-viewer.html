@@ -238,6 +238,23 @@
   }
   .note .code { font-family: var(--mono); font-size: 11px; color: var(--ink-2); padding-top: 2px; }
 
+  /* ── Diagnoses (--explain-why) ───────────────────────────────── */
+  .diag {
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--warn);
+    border-radius: 6px;
+    background: var(--card);
+    padding: 11px 14px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .diag.info { border-left-color: var(--kept); }
+  .diag .code { font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .diag .msg { margin-top: 3px; }
+  .diag .fix { margin-top: 6px; color: var(--ink-2); }
+  .diag .fix::before { content: "\2192  "; color: var(--kept); }
+  .diag-ok { font-size: 13px; color: var(--ink-2); }
+
   /* ── Assertions ──────────────────────────────────────────────── */
   .asserts { display: grid; gap: 8px; }
   .assert {
@@ -377,6 +394,12 @@
     <div id="notes"></div>
   </section>
 
+  <section id="s-explain">
+    <h2>Why</h2>
+    <div class="sub">Deterministic diagnoses of why the predicate pruned as it did, with suggestions.</div>
+    <div id="diagnoses"></div>
+  </section>
+
   <section id="s-asserts">
     <h2>Gates</h2>
     <div class="asserts" id="asserts"></div>
@@ -486,6 +509,7 @@
 
     renderFunnel(doc);
     renderAnalysis(doc);
+    renderExplain(doc);
     renderAsserts(doc);
     renderFilesSection(doc);
 
@@ -633,6 +657,25 @@
       card.appendChild(el("span", "code", n.code));
       card.appendChild(el("span", null, n.message));
       notes.appendChild(card);
+    }
+  }
+
+  function renderExplain(doc) {
+    // present only when the report was produced with --explain-why
+    if (!("explain" in doc)) return;
+    $("s-explain").style.display = "block";
+    const wrap = $("diagnoses");
+    wrap.replaceChildren();
+    if (!doc.explain.length) {
+      wrap.appendChild(el("div", "diag-ok", "No pruning issues found for this predicate."));
+      return;
+    }
+    for (const d of doc.explain) {
+      const card = el("div", "diag" + (d.severity === "info" ? " info" : ""));
+      card.appendChild(el("div", "code", d.code));
+      card.appendChild(el("div", "msg", d.message));
+      if (d.suggestion) card.appendChild(el("div", "fix", d.suggestion));
+      wrap.appendChild(card);
     }
   }
 

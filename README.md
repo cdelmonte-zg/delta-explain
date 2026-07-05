@@ -167,6 +167,8 @@ Options:
   -v, --verbose             Show per-file details (kept/dropped with reason);
                             in JSON, adds the "files" array
       --limit <N>           Cap per-file listings at N entries
+      --explain-why         Diagnose why the predicate pruned as it did, with
+                            suggestions; in JSON, adds the "explain" array
       --format <FORMAT>     Output format: text (default) or json
       --min-pruning <PCT>   Fail if total pruning is below this percentage
       --assert-stats        Fail if any file is missing statistics
@@ -203,6 +205,12 @@ delta-explain fixtures/taxi-nyc -w "pickup_date = '2024-01-03' AND fare_amount >
 # stats-safe, but the per-file ranges overlap, so nothing is eliminated -
 # exactly the "why isn't this pruning" case the tool exists to show
 delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --verbose
+
+# --explain-why turns that into advice:
+delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --explain-why
+#   Why:
+#     [NO_PARTITION_FILTER] ... filter on a partition column (pickup_date) ...
+#     [WEAK_DATA_SKIPPING]  ... sort or cluster the table by that column ...
 ```
 
 ### Cloud storage
@@ -299,7 +307,7 @@ delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_
 
 The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
 
-The contract is formal: [`schemas/report-v0.3.schema.json`](schemas/report-v0.3.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
+The contract is formal: [`schemas/report-v0.4.schema.json`](schemas/report-v0.4.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
 
 Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
 

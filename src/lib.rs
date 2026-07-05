@@ -28,6 +28,7 @@ pub mod attribution;
 pub mod credentials;
 #[cfg(feature = "debug-ir")]
 pub mod debug_dump;
+pub mod diagnostics;
 pub mod error;
 pub mod features;
 pub mod gates;

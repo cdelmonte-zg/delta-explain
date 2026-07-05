@@ -14,7 +14,7 @@ use crate::error::Error;
 use crate::report::{PhaseResult, PruningReport};
 use crate::stats::FileStats;
 
-pub const SCHEMA_VERSION: &str = "0.3.0";
+pub const SCHEMA_VERSION: &str = "0.4.0";
 
 pub enum OutputFormat {
     Text,
@@ -27,11 +27,12 @@ pub fn print_text(
     report: &PruningReport,
     verbose: bool,
     limit: Option<usize>,
+    explain_why: bool,
     predicate: Option<&str>,
 ) -> std::io::Result<()> {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    write_text(&mut out, report, verbose, limit, predicate)
+    write_text(&mut out, report, verbose, limit, explain_why, predicate)
 }
 
 fn write_text(
@@ -39,6 +40,7 @@ fn write_text(
     report: &PruningReport,
     verbose: bool,
     limit: Option<usize>,
+    explain_why: bool,
     predicate: Option<&str>,
 ) -> std::io::Result<()> {
     writeln!(out, "Delta table: {}", report.table_path)?;
@@ -145,6 +147,20 @@ fn write_text(
         writeln!(out, "Warnings!")?;
         for note in &warnings {
             writeln!(out, "[{}]: {}", note.code, note.message)?;
+        }
+    }
+
+    if explain_why {
+        writeln!(out)?;
+        writeln!(out, "Why:")?;
+        if report.explain.is_empty() {
+            writeln!(out, "  No pruning issues found for this predicate.")?;
+        }
+        for d in &report.explain {
+            writeln!(out, "  [{}] {}", d.code, d.message)?;
+            if let Some(s) = &d.suggestion {
+                writeln!(out, "    -> {s}")?;
+            }
         }
     }
     Ok(())
@@ -270,6 +286,7 @@ pub fn render_json(
     report: &PruningReport,
     verbose: bool,
     limit: Option<usize>,
+    explain_why: bool,
     predicate: Option<&str>,
 ) -> Result<String, Error> {
     let (stats_present, stats_total) = report.stats_coverage();
@@ -389,6 +406,23 @@ pub fn render_json(
             .collect();
         output["files_truncated"] = json!(report.all_files.len() > files.len());
         output["files"] = json!(files);
+    }
+
+    // The diagnoses ride behind --explain-why, like files[] behind
+    // --verbose, so the compact document stays byte-stable.
+    if explain_why {
+        output["explain"] = json!(
+            report
+                .explain
+                .iter()
+                .map(|d| json!({
+                    "code": d.code,
+                    "severity": d.severity.as_str(),
+                    "message": d.message,
+                    "suggestion": d.suggestion,
+                }))
+                .collect::<Vec<_>>()
+        );
     }
 
     Ok(serde_json::to_string_pretty(&output)?)

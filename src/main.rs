@@ -26,8 +26,8 @@ use delta_explain::error::{Error, Result};
 use delta_explain::render::OutputFormat;
 use delta_explain::report::{OverallResult, PruningReport};
 use delta_explain::{
-    attribution, credentials, features, gates, kernel_bridge, partition_eval, predicate_analyzer,
-    predicate_ast, render, scan, stats,
+    attribution, credentials, diagnostics, features, gates, kernel_bridge, partition_eval,
+    predicate_analyzer, predicate_ast, render, scan, stats,
 };
 
 #[cfg(feature = "debug-ir")]
@@ -87,6 +87,11 @@ struct Cli {
     /// Only meaningful together with --verbose.
     #[arg(long, value_name = "N")]
     limit: Option<usize>,
+
+    /// Diagnose why the predicate pruned as it did, with suggestions; in
+    /// JSON, adds the "explain" array
+    #[arg(long = "explain-why")]
+    explain_why: bool,
 
     /// Write this run's intermediate representations (predicate AST before
     /// and after normalization, classification, lowered kernel predicates,
@@ -335,6 +340,7 @@ fn try_main() -> Result<()> {
         all_files,
         file_stats,
         phases: Vec::new(),
+        explain: Vec::new(),
         elapsed_ms: 0,
         assertions: Vec::new(),
         overall_result: None,
@@ -508,6 +514,9 @@ fn try_main() -> Result<()> {
             full_survivors,
         );
         report.analysis = Some(analysis);
+        // Diagnoses read the finished report (phases, analysis, stats);
+        // computed unconditionally, rendered only under --explain-why.
+        report.explain = diagnostics::diagnose(&report, &partition_columns, &pred_ast.columns());
     }
 
     // ── Assertions (CI mode) ────────────────────────────────────────
@@ -531,12 +540,21 @@ fn try_main() -> Result<()> {
     // ── Output ──────────────────────────────────────────────────────
 
     let render_result = match output_format {
-        OutputFormat::Text => {
-            render::print_text(&report, cli.verbose, cli.limit, cli.predicate.as_deref())
-        }
+        OutputFormat::Text => render::print_text(
+            &report,
+            cli.verbose,
+            cli.limit,
+            cli.explain_why,
+            cli.predicate.as_deref(),
+        ),
         OutputFormat::Json => {
-            let doc =
-                render::render_json(&report, cli.verbose, cli.limit, cli.predicate.as_deref())?;
+            let doc = render::render_json(
+                &report,
+                cli.verbose,
+                cli.limit,
+                cli.explain_why,
+                cli.predicate.as_deref(),
+            )?;
             writeln!(std::io::stdout(), "{doc}")
         }
     };

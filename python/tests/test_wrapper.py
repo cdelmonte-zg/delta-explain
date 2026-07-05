@@ -28,7 +28,7 @@ STUB = Path(__file__).parent / "_argv_stub.py"
 
 def test_basic_report():
     r = explain(TABLE, where="country = 'DE' AND age > 40", binary=BINARY)
-    assert r.schema_version.startswith("0.3.")
+    assert r.schema_version.startswith("0.4.")
     assert r.total_files == 6
     assert r.final_files == 1
     assert r.passed and r.result is None
@@ -56,6 +56,16 @@ def test_gate_failure_is_a_report_not_an_error():
     assert not r.passed
     assert r.result == "fail"
     assert r["assertions"][0]["name"] == "min_pruning"
+
+
+def test_explain_why_surfaces_diagnoses():
+    # UPPER(name) is unsupported: the wrapper exposes the diagnosis.
+    r = explain(TABLE, where="UPPER(name) = 'X'", explain_why=True, binary=BINARY)
+    codes = {d["code"] for d in r.explain}
+    assert "UNSUPPORTED_FRAGMENT" in codes
+    # without the flag the array is absent
+    r2 = explain(TABLE, where="UPPER(name) = 'X'", binary=BINARY)
+    assert r2.explain is None
 
 
 def test_verbose_files_and_limit():

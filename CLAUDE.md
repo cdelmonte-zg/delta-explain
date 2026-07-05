@@ -17,7 +17,7 @@ Design references live alongside the code:
 
 - `VISION.md`: public-facing roadmap (v0.1 → v0.5)
 - `docs/semantics.md`: the public contract (guarantees, degradation rules,
-  exit codes); `schemas/report-v0.3.schema.json` is the formal JSON contract,
+  exit codes); `schemas/report-v0.4.schema.json` is the formal JSON contract,
   enforced by `tests/integration/json_contract.rs`
 - `docs/adr/`: architecture decision records, the *why* behind module
   boundaries and contracts. Its README states the bar a decision must meet

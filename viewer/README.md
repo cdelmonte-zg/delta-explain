@@ -10,7 +10,7 @@ of files (the text listing does not). No dependencies, no network
 requests: it works air-gapped and as a CI artifact.
 
 The viewer is a **client of the versioned JSON contract**
-(`schemas/report-v0.3.schema.json`), exactly like the Python wrapper:
+(`schemas/report-v0.4.schema.json`), exactly like the Python wrapper:
 it adds no analysis of its own, and it renders any saved report,
 retroactively. See issue #89 and ADR 0004 for the boundary.
 
@@ -83,14 +83,13 @@ The screenshot above regenerates from a real report, so it never drifts
 from the page:
 
 ```bash
-cargo run -q -- fixtures/test-table \
-    -w "country LIKE '%E' AND age > 40 AND UPPER(name) = 'X'" \
-    --format json --verbose --min-pruning 50 > /tmp/report.json
+cargo run -q -- fixtures/taxi-nyc -w "PULocationID = 132" \
+    --explain-why --format json --verbose > /tmp/report.json
 python3 - <<'EOF'
 tpl = open('viewer/report-viewer.html').read()
 doc = open('/tmp/report.json').read().strip()
 open('/tmp/report.html', 'w').write(tpl.replace('/*REPORT_JSON*/', doc, 1))
 EOF
-chromium --headless --disable-gpu --window-size=1100,1500 \
+chromium --headless --disable-gpu --window-size=1100,1700 \
     --screenshot=viewer/screenshot.png /tmp/report.html
 ```

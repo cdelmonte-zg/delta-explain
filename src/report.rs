@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::diagnostics::Diagnosis;
 use crate::features::TableFeatures;
 use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::stats::FileStats;
@@ -59,6 +60,9 @@ pub struct PruningReport {
     pub all_files: Vec<FileInfo>,
     pub file_stats: HashMap<String, FileStats>,
     pub phases: Vec<PhaseResult>,
+    /// Diagnoses of why the predicate pruned as it did (ADR 0007). Populated
+    /// unconditionally (it is cheap); rendered only under `--explain-why`.
+    pub explain: Vec<Diagnosis>,
     pub elapsed_ms: u128,
     pub assertions: Vec<serde_json::Value>,
     pub overall_result: Option<OverallResult>,

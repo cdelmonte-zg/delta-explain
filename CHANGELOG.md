@@ -11,6 +11,17 @@ follow SemVer relative to that field.
 
 ### Added
 
+- `--explain-why`: a deterministic diagnostic layer that turns the report
+  into advice (ADR 0007). Each diagnosis is a function of data the tool
+  already computes - no ML, no prediction, so the *why* is as trustworthy
+  as the numbers and reproducible enough to gate on. v1 codes:
+  `NO_PARTITION_FILTER` (predicate misses the partition column),
+  `WEAK_DATA_SKIPPING` (stats present but ranges overlap - the column is
+  unordered), `STATS_ABSENT`, `UNSUPPORTED_FRAGMENT`. Additive JSON change:
+  an `explain` array present only with the flag, `schema_version` 0.3.0 ->
+  0.4.0, new `schemas/report-v0.4.schema.json`. The report viewer and the
+  Python wrapper render the new field.
+
 - A report viewer (`viewer/`): one self-contained HTML
   page that renders a `--format json --verbose` report - pruning funnel,
   analysis buckets, gates, warnings, and a filterable per-file table
