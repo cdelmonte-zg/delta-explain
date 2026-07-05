@@ -100,4 +100,37 @@ impl PruningReport {
             .count();
         (with_stats, self.total_files)
     }
+
+    /// Statistics coverage as a single classification, the source of truth
+    /// for both the JSON `stats.mode` field and the diagnostics that reason
+    /// about stats. `Absent` means the table has files but none carry stats;
+    /// an empty table (no files) is `Absent` too, but callers that care about
+    /// the distinction check `total_files` first.
+    pub fn stats_mode(&self) -> StatsMode {
+        let (present, total) = self.stats_coverage();
+        if total == 0 || present == 0 {
+            StatsMode::Absent
+        } else if present == total {
+            StatsMode::Exact
+        } else {
+            StatsMode::Partial
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatsMode {
+    Exact,
+    Partial,
+    Absent,
+}
+
+impl StatsMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StatsMode::Exact => "exact",
+            StatsMode::Partial => "partial",
+            StatsMode::Absent => "absent",
+        }
+    }
 }

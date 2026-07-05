@@ -3,7 +3,8 @@
 //! hand (classification, stats coverage, partition columns, per-phase
 //! pruning); nothing is predicted. Codes are stable once shipped.
 
-use crate::report::PruningReport;
+use crate::attribution::DATA_SKIPPING_PHASE;
+use crate::report::{PruningReport, StatsMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -75,13 +76,14 @@ pub fn diagnose(
     }
 
     // Data-skipping diagnostics apply only when a stats-safe fragment
-    // actually reached the min/max phase.
-    if let Some(stats_frag) = &analysis.stats_safe {
-        let (present, total) = report.stats_coverage();
-        let stats_absent = total == 0 || present == 0;
-
-        if stats_absent {
-            out.push(Diagnosis::new(
+    // actually reached the min/max phase, and only on a non-empty table
+    // (an empty table has no pruning problem to diagnose).
+    if let Some(stats_frag) = &analysis.stats_safe
+        && report.total_files > 0
+    {
+        match report.stats_mode() {
+            // No file carries statistics: data skipping cannot act at all.
+            StatsMode::Absent => out.push(Diagnosis::new(
                 "STATS_ABSENT",
                 Severity::Warning,
                 format!(
@@ -93,33 +95,39 @@ pub fn diagnose(
                      covers the columns you filter on)."
                         .into(),
                 ),
-            ));
-        } else if let Some(phase) = report
-            .phases
-            .iter()
-            .find(|p| p.name.contains("Data skipping"))
-            && phase.input_count > 0
-            && phase.input_count == phase.output_count
-        {
-            // Stats exist and the phase ran, but it removed nothing: every
-            // file's min/max range overlaps the bound (unordered column).
-            out.push(Diagnosis::new(
-                "WEAK_DATA_SKIPPING",
-                Severity::Warning,
-                format!(
-                    "Data skipping eliminated no files for '{stats_frag}': the per-file \
-                     min/max ranges all overlap the predicate's bound."
-                ),
-                // The tool observes the overlap, not the physical layout: wide
-                // ranges usually mean the data is not ordered by the column,
-                // but that is a likely cause and a recommendation, not a proof.
-                Some(
-                    "Ranges this wide usually mean the data is not sorted or clustered \
-                     by that column; ordering by it so each file covers a narrower range \
-                     may enable skipping."
-                        .into(),
-                ),
-            ));
+            )),
+            // Every file has statistics and the phase still removed nothing:
+            // the overlap claim is provably about the ranges, not missing
+            // stats. Only assert it when we know all survivors carry stats.
+            StatsMode::Exact => {
+                if let Some(phase) = report.phases.iter().find(|p| p.name == DATA_SKIPPING_PHASE)
+                    && phase.input_count > 0
+                    && phase.input_count == phase.output_count
+                {
+                    out.push(Diagnosis::new(
+                        "WEAK_DATA_SKIPPING",
+                        Severity::Warning,
+                        format!(
+                            "Data skipping eliminated no files for '{stats_frag}': the \
+                             per-file min/max ranges all overlap the predicate's bound."
+                        ),
+                        // The tool observes the overlap, not the physical
+                        // layout: wide ranges usually mean the data is not
+                        // ordered by the column, but that is a likely cause
+                        // and a recommendation, not a proof.
+                        Some(
+                            "Ranges this wide usually mean the data is not sorted or \
+                             clustered by that column; ordering by it so each file covers \
+                             a narrower range may enable skipping."
+                                .into(),
+                        ),
+                    ));
+                }
+            }
+            // Partial stats: some survivors may be kept because they lack
+            // stats, not because their ranges overlap. Neither claim is
+            // provable, so stay silent rather than assert a wrong cause.
+            StatsMode::Partial => {}
         }
     }
 
@@ -270,6 +278,33 @@ mod tests {
         let d = diagnose(&r, &parts, &cols);
         assert!(codes(&d).contains(&"STATS_ABSENT"));
         assert!(!codes(&d).contains(&"WEAK_DATA_SKIPPING"));
+    }
+
+    #[test]
+    fn partial_stats_does_not_claim_weak_skipping() {
+        // Two files, only one with stats; the phase keeps both (the no-stats
+        // file is kept because the kernel cannot exclude it). The overlap
+        // claim would be false for the no-stats file, so no WEAK diagnosis.
+        let (r, parts, cols) = report_with(
+            "age > 40",
+            &[],
+            vec![file("a"), file("b")],
+            stats_map(&["a"]), // only "a" has stats -> partial
+            None,
+            Some(["a".into(), "b".into()].into_iter().collect()),
+        );
+        let d = diagnose(&r, &parts, &cols);
+        assert!(!codes(&d).contains(&"WEAK_DATA_SKIPPING"));
+        assert!(!codes(&d).contains(&"STATS_ABSENT"));
+    }
+
+    #[test]
+    fn empty_table_raises_no_stats_diagnosis() {
+        // Zero files: STATS_ABSENT must not fire (there is nothing to prune,
+        // not a statistics problem).
+        let (r, parts, cols) = report_with("age > 40", &[], vec![], HashMap::new(), None, None);
+        let d = diagnose(&r, &parts, &cols);
+        assert!(!codes(&d).contains(&"STATS_ABSENT"));
     }
 
     #[test]

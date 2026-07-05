@@ -88,11 +88,13 @@ def build_taxi(uri):
         return
     cols = ["tpep_pickup_datetime", "trip_distance", "PULocationID",
             "DOLocationID", "payment_type", "fare_amount", "tip_amount", "total_amount"]
-    src = spark.read.parquet(TAXI_SRC).select(*cols).limit(900_000)
+    src = spark.read.parquet(TAXI_SRC).select(*cols)
     df = src.withColumn("pickup_date", F.date_format("tpep_pickup_datetime", "yyyy-MM-dd"))
-    # first week only, dropping malformed dates
+    # Filter to the first week FIRST, then cap: a plain .limit() before the
+    # filter takes the first N rows in file order, which would silently yield
+    # an empty table if the source is not time-ordered.
     week = [f"2024-01-0{d}" for d in range(1, 8)]
-    df = df.filter(F.col("pickup_date").isin(week))
+    df = df.filter(F.col("pickup_date").isin(week)).limit(900_000)
     # sort by (date, fare) and cap file size so each day splits into several
     # files with tight fare ranges - the layout that makes data skipping work,
     # and the interesting case to test against Spark.
@@ -107,6 +109,11 @@ URIS = {"users": "s3a://diff/users", "taxi": "s3a://diff/taxi"}
 
 out = {}
 for name, predicates in config.items():
+    if name not in BUILDERS:
+        raise SystemExit(
+            f"unknown table {name!r} in predicates.json; add a builder and URI "
+            f"here (known: {sorted(BUILDERS)})"
+        )
     uri = URIS[name]
     BUILDERS[name](uri)
     full = spark.read.format("delta").load(uri)
