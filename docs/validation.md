@@ -39,13 +39,15 @@ timestamps, unknown writer features, and the catalog-managed refusal path.
 
 ## The differential oracle
 
-`examples/differential` runs Spark as ground truth over MinIO (S3 API): for
-each of twenty predicates, Spark computes which files actually contain
-matching rows, and the harness asserts delta-explain's survivor set covers
-them. The matrix includes normalized forms (De Morgan pushdown, factored
-ORs), `LIKE` in both its rewritten shape (prefix ranges) and its
-partition-evaluated shapes (non-prefix, `NOT LIKE`, `_`), and null-safe
-comparisons. It reruns on every change to predicate
+`examples/differential` runs Spark as ground truth over MinIO (S3 API), on
+two tables - a synthetic `users` table and a `taxi` table written by Spark
+from real NYC TLC data: for each of 29 predicates, Spark computes which files
+actually contain matching rows, and the harness asserts delta-explain's
+survivor set covers them. The matrix includes normalized forms (De Morgan
+pushdown, factored ORs), `LIKE` in both its rewritten shape (prefix ranges)
+and its partition-evaluated shapes (non-prefix, `NOT LIKE`, `_`) - the latter
+checked against Spark's own `LIKE` on the real taxi partition column - and
+null-safe comparisons. It reruns on every change to predicate
 semantics and weekly in CI (the Validation workflow); results to date:
 sound on all, exact on that layout.
 
