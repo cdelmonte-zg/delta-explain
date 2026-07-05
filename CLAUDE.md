@@ -19,6 +19,11 @@ Design references live alongside the code:
 - `docs/semantics.md`: the public contract (guarantees, degradation rules,
   exit codes); `schemas/report-v0.2.schema.json` is the formal JSON contract,
   enforced by `tests/integration/json_contract.rs`
+- `docs/adr/`: architecture decision records, the *why* behind module
+  boundaries and contracts. Its README states the bar a decision must meet
+  to earn one (crosses module boundaries or constrains future work, AND
+  rejected a plausible alternative); architectural changes that meet it
+  should land with their ADR
 - `DELTA-EXPLAIN-ROADMAP.md` (in the parent directory): internal P0/P1 step list
 
 ## Build & Test Commands
