@@ -110,6 +110,15 @@ pub enum Pred {
     },
     /// A bare boolean column used as a predicate: `WHERE is_active`.
     BoolCol(ColRef),
+    /// `col [NOT] LIKE 'pattern'`, kept structural so normalization can
+    /// rewrite the literal-prefix shape into a lexicographic range. A Like
+    /// that survives normalization is outside the pruning language and
+    /// degrades exactly like an [`Pred::Unsupported`] leaf.
+    Like {
+        col: ColRef,
+        pattern: String,
+        negated: bool,
+    },
     /// Anything sqlparser accepted but the pruning language cannot express.
     /// `raw` is the original SQL fragment, `reason` explains why.
     Unsupported {
@@ -147,7 +156,9 @@ impl Pred {
         match self {
             Pred::And(v) | Pred::Or(v) => v.iter().any(Pred::contains_unsupported),
             Pred::Not(p) => p.contains_unsupported(),
-            Pred::Unsupported { .. } => true,
+            // A Like at this point survived normalization (or was never
+            // normalized): no rewrite applies, so it cannot prune.
+            Pred::Unsupported { .. } | Pred::Like { .. } => true,
             Pred::Cmp { .. }
             | Pred::In { .. }
             | Pred::Between { .. }
@@ -177,6 +188,7 @@ impl Pred {
             | Pred::Between { col, .. }
             | Pred::IsNull { col, .. }
             | Pred::Distinct { col, .. }
+            | Pred::Like { col, .. }
             | Pred::BoolCol(col) => cols.push(col.dotted()),
             Pred::Unsupported { .. } => {}
         }
@@ -206,6 +218,10 @@ impl Pred {
             }
             Pred::Not(p) => p.collect_reasons(reasons),
             Pred::Unsupported { reason, .. } => reasons.push(reason),
+            Pred::Like { .. } => reasons.push(
+                "LIKE cannot contribute to pruning: only a non-negated literal-prefix \
+                 pattern (e.g. LIKE 'abc%') rewrites to a comparison range",
+            ),
             Pred::Cmp { .. }
             | Pred::In { .. }
             | Pred::Between { .. }
@@ -220,12 +236,13 @@ impl Pred {
 
 impl Pred {
     /// Normalize the predicate: push negations down to the leaves
-    /// (De Morgan), then factor conjuncts common to every OR branch out
-    /// of the OR. Both rewrites preserve SQL three-valued semantics, so
-    /// the kernel's survivor set cannot change; what changes is how much
-    /// of the predicate the classifier can attribute to a single phase.
+    /// (De Morgan), rewrite prefix-shaped LIKE patterns into comparison
+    /// ranges, then factor conjuncts common to every OR branch out of the
+    /// OR. All three rewrites preserve SQL three-valued semantics, so the
+    /// kernel's survivor set cannot change; what changes is how much of
+    /// the predicate the classifier can attribute to a single phase.
     pub fn normalized(self) -> Pred {
-        factor_or(push_down_not(self, false))
+        factor_or(rewrite_prefix_like(push_down_not(self, false)))
     }
 
     /// The predicate with every `Unsupported` subtree removed
@@ -249,7 +266,7 @@ impl Pred {
                     Some(self.clone())
                 }
             }
-            Pred::Unsupported { .. } => None,
+            Pred::Unsupported { .. } | Pred::Like { .. } => None,
             Pred::Cmp { .. }
             | Pred::In { .. }
             | Pred::Between { .. }
@@ -343,6 +360,17 @@ fn push_down_not(pred: Pred, neg: bool) -> Pred {
             lit,
             negated: negated != neg,
         },
+        // LIKE is NULL exactly when the column is NULL, so NOT toggles it
+        // as cleanly as it complements a comparison operator.
+        Pred::Like {
+            col,
+            pattern,
+            negated,
+        } => Pred::Like {
+            col,
+            pattern,
+            negated: negated != neg,
+        },
         leaf @ (Pred::BoolCol(_) | Pred::Unsupported { .. }) => {
             if neg {
                 Pred::Not(Box::new(leaf))
@@ -351,6 +379,109 @@ fn push_down_not(pred: Pred, neg: bool) -> Pred {
             }
         }
     }
+}
+
+/// The shape of a LIKE pattern, as far as the range rewrite cares.
+enum LikeShape {
+    /// No wildcards at all: LIKE is plain equality on the pattern text.
+    Exact(String),
+    /// A non-empty literal chunk followed only by `%` wildcards.
+    Prefix(String),
+    /// Anything else: leading or embedded wildcards, any `_`.
+    Other,
+}
+
+fn like_shape(pattern: &str) -> LikeShape {
+    match pattern.find(['%', '_']) {
+        None => LikeShape::Exact(pattern.to_string()),
+        Some(0) => LikeShape::Other,
+        Some(i) if pattern[i..].chars().all(|c| c == '%') => {
+            LikeShape::Prefix(pattern[..i].to_string())
+        }
+        Some(_) => LikeShape::Other,
+    }
+}
+
+/// Rewrite prefix-shaped LIKE leaves into the pruning language: a
+/// wildcard-free pattern becomes plain equality, and `col LIKE 'p%'`
+/// becomes the lexicographic range `col >= 'p' AND col < succ(p)`.
+///
+/// Both rewrites are exact under three-valued semantics (LIKE and the
+/// comparisons are all NULL exactly when the column is NULL) over binary
+/// code-point order, which is the order partition values and min/max
+/// string statistics compare with. Negated LIKE and every other pattern
+/// shape pass through untouched and degrade downstream.
+fn rewrite_prefix_like(pred: Pred) -> Pred {
+    match pred {
+        Pred::And(v) => and_flat(v.into_iter().map(rewrite_prefix_like).collect()),
+        Pred::Or(v) => or_flat(v.into_iter().map(rewrite_prefix_like).collect()),
+        Pred::Not(inner) => Pred::Not(Box::new(rewrite_prefix_like(*inner))),
+        Pred::Like {
+            col,
+            pattern,
+            negated: false,
+        } => match like_shape(&pattern) {
+            LikeShape::Exact(text) => Pred::Cmp {
+                col,
+                op: CmpOp::Eq,
+                lit: Literal::Str(text),
+            },
+            LikeShape::Prefix(prefix) => {
+                let lower = Pred::Cmp {
+                    col: col.clone(),
+                    op: CmpOp::Ge,
+                    lit: Literal::Str(prefix.clone()),
+                };
+                match prefix_successor(&prefix) {
+                    Some(upper) => Pred::And(vec![
+                        lower,
+                        Pred::Cmp {
+                            col,
+                            op: CmpOp::Lt,
+                            lit: Literal::Str(upper),
+                        },
+                    ]),
+                    // A prefix made of maximal code points has no
+                    // successor, but every string >= it starts with it,
+                    // so the lower bound alone is already exact.
+                    None => lower,
+                }
+            }
+            LikeShape::Other => Pred::Like {
+                col,
+                pattern,
+                negated: false,
+            },
+        },
+        leaf => leaf,
+    }
+}
+
+/// The least string greater than every string that starts with `prefix`,
+/// in code-point order: bump the last character to its successor, carrying
+/// over characters that have none. `None` when every character is
+/// `char::MAX` (no such string exists).
+fn prefix_successor(prefix: &str) -> Option<String> {
+    let mut chars: Vec<char> = prefix.chars().collect();
+    while let Some(last) = chars.pop() {
+        if let Some(next) = char_successor(last) {
+            chars.push(next);
+            return Some(chars.into_iter().collect());
+        }
+    }
+    None
+}
+
+/// The next Unicode scalar value after `c`, skipping the surrogate gap.
+fn char_successor(c: char) -> Option<char> {
+    let mut u = c as u32 + 1;
+    while u <= char::MAX as u32 {
+        if let Some(next) = char::from_u32(u) {
+            return Some(next);
+        }
+        u += 1;
+    }
+    None
 }
 
 /// Factor conjuncts common to every OR branch out of the OR:
@@ -530,6 +661,40 @@ fn convert(expr: &SqlExpr) -> Pred {
                 low: lo,
                 high: hi,
                 negated: *negated,
+            }
+        }
+
+        SqlExpr::Like {
+            negated,
+            any,
+            expr: lhs,
+            pattern,
+            escape_char,
+        } => {
+            if *any {
+                return unsupported(expr, "LIKE ANY is not supported".into());
+            }
+            if escape_char.is_some() {
+                return unsupported(expr, "LIKE with an ESCAPE clause is not supported".into());
+            }
+            let col = match operand(lhs) {
+                Ok(Operand::Col(c)) => c,
+                Ok(Operand::Lit(_)) => {
+                    return unsupported(expr, format!("LIKE requires a column, got: {lhs}"));
+                }
+                Err(reason) => return unsupported(expr, reason),
+            };
+            match operand(pattern) {
+                Ok(Operand::Lit(Literal::Str(s))) => Pred::Like {
+                    col,
+                    pattern: s,
+                    negated: *negated,
+                },
+                Ok(_) => unsupported(
+                    expr,
+                    format!("LIKE pattern must be a string literal, got: {pattern}"),
+                ),
+                Err(reason) => unsupported(expr, reason),
             }
         }
 
@@ -742,6 +907,14 @@ impl fmt::Display for Pred {
                 write!(f, "{col} IS {not}NULL")
             }
             Pred::BoolCol(col) => write!(f, "{col}"),
+            Pred::Like {
+                col,
+                pattern,
+                negated,
+            } => {
+                let not = if *negated { "NOT " } else { "" };
+                write!(f, "{col} {not}LIKE '{}'", pattern.replace('\'', "''"))
+            }
             Pred::Unsupported { raw, .. } => f.write_str(raw),
         }
     }
@@ -837,8 +1010,10 @@ mod tests {
     }
 
     #[test]
-    fn like_becomes_unsupported() {
+    fn non_prefix_like_counts_as_unsupported() {
         assert!(p("name LIKE '%Hans%'").contains_unsupported());
+        assert!(p("name LIKE '%Hans%'").normalized().contains_unsupported());
+        assert!(!p("name LIKE 'Hans%'").normalized().contains_unsupported());
     }
 
     #[test]
@@ -1183,6 +1358,87 @@ mod tests {
     fn double_negation_over_sugar_cancels_exactly() {
         assert_eq!(norm("NOT NOT country IN ('DE')"), "country IN ('DE')");
         assert_eq!(norm("NOT NOT age BETWEEN 1 AND 2"), "age BETWEEN 1 AND 2");
+    }
+
+    // ── LIKE: parsing, display, and the prefix rewrite ──────────────
+
+    #[test]
+    fn like_parses_structurally_and_roundtrips_through_display() {
+        assert_eq!(p("name LIKE '%son'").to_string(), "name LIKE '%son'");
+        assert_eq!(
+            p("name NOT LIKE '%son'").to_string(),
+            "name NOT LIKE '%son'"
+        );
+        assert_eq!(p("name LIKE 'D''s%'").to_string(), "name LIKE 'D''s%'");
+    }
+
+    #[test]
+    fn prefix_like_rewrites_to_a_lexicographic_range() {
+        assert_eq!(
+            norm("country LIKE 'D%'"),
+            "country >= 'D' AND country < 'E'"
+        );
+        assert_eq!(norm("name LIKE 'ab%'"), "name >= 'ab' AND name < 'ac'");
+        // a trailing run of % is one wildcard
+        assert_eq!(norm("name LIKE 'ab%%'"), "name >= 'ab' AND name < 'ac'");
+        // the rewritten range flattens into the surrounding AND
+        assert_eq!(
+            norm("country LIKE 'D%' AND age > 40"),
+            "country >= 'D' AND country < 'E' AND age > 40"
+        );
+    }
+
+    #[test]
+    fn wildcard_free_like_rewrites_to_equality() {
+        assert_eq!(norm("name LIKE 'abc'"), "name = 'abc'");
+        assert_eq!(norm("name LIKE ''"), "name = ''");
+    }
+
+    #[test]
+    fn non_prefix_patterns_do_not_rewrite() {
+        assert_eq!(norm("name LIKE '%son'"), "name LIKE '%son'");
+        assert_eq!(norm("name LIKE 'a%b'"), "name LIKE 'a%b'");
+        assert_eq!(norm("name LIKE 'a_'"), "name LIKE 'a_'");
+        assert_eq!(norm("name LIKE '_bc'"), "name LIKE '_bc'");
+        assert_eq!(norm("name LIKE '%'"), "name LIKE '%'");
+    }
+
+    #[test]
+    fn negated_like_does_not_rewrite_but_double_negation_does() {
+        assert_eq!(norm("name NOT LIKE 'D%'"), "name NOT LIKE 'D%'");
+        assert_eq!(norm("NOT name LIKE 'D%'"), "name NOT LIKE 'D%'");
+        assert_eq!(norm("NOT name NOT LIKE 'D%'"), "name >= 'D' AND name < 'E'");
+    }
+
+    #[test]
+    fn prefix_successor_carries_over_maximal_code_points() {
+        // a prefix ending in char::MAX carries into the previous character
+        assert_eq!(
+            norm(&format!("c LIKE 'a{}%'", '\u{10FFFF}')),
+            format!("c >= 'a{}' AND c < 'b'", '\u{10FFFF}')
+        );
+        // a prefix of only maximal code points keeps just the lower bound
+        assert_eq!(
+            norm(&format!("c LIKE '{}%'", '\u{10FFFF}')),
+            format!("c >= '{}'", '\u{10FFFF}')
+        );
+        // the successor skips the surrogate gap
+        assert_eq!(
+            norm(&format!("c LIKE '{}%'", '\u{D7FF}')),
+            format!("c >= '{}' AND c < '{}'", '\u{D7FF}', '\u{E000}')
+        );
+    }
+
+    #[test]
+    fn like_variants_outside_the_vocabulary_become_unsupported() {
+        let escaped = p("name LIKE 'D!%x' ESCAPE '!'");
+        match &escaped {
+            Pred::Unsupported { reason, .. } => assert!(reason.contains("ESCAPE")),
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+        assert!(p("name LIKE country").contains_unsupported());
+        assert!(p("'D' LIKE 'D%'").contains_unsupported());
+        assert!(p("name ILIKE 'd%'").contains_unsupported());
     }
 
     #[test]

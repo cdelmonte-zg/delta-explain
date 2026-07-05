@@ -233,6 +233,44 @@ mod tests {
     }
 
     #[test]
+    fn prefix_like_on_a_partition_column_classifies_exact() {
+        let r = analyze("country LIKE 'D%'", &parts(&["country"])).unwrap();
+
+        assert_eq!(
+            r.partition_safe.as_deref(),
+            Some("country >= 'D' AND country < 'E'")
+        );
+        assert_eq!(r.stats_safe, None);
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+        assert!(r.notes.is_empty());
+    }
+
+    #[test]
+    fn prefix_like_on_a_data_column_classifies_stats_safe() {
+        let r = analyze("name LIKE 'Ha%' AND country = 'IT'", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_safe.as_deref(), Some("country = 'IT'"));
+        assert_eq!(
+            r.stats_safe.as_deref(),
+            Some("name >= 'Ha' AND name < 'Hb'")
+        );
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Conservative);
+    }
+
+    #[test]
+    fn non_prefix_like_routes_unsplittable_with_note() {
+        let r = analyze("name LIKE '%son'", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.unsplittable.as_deref(), Some("name LIKE '%son'"));
+        assert_eq!(r.confidence, Confidence::Incomplete);
+        assert_eq!(r.notes.len(), 1);
+        assert_eq!(r.notes[0].code, "UNSUPPORTED_EXPRESSION");
+        assert!(r.notes[0].message.contains("LIKE"));
+    }
+
+    #[test]
     fn invalid_sql_returns_error() {
         assert!(analyze("((", &parts(&[])).is_err());
     }

@@ -9,6 +9,18 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- Prefix `LIKE` patterns now prune instead of degrading (#72):
+  normalization rewrites `col LIKE 'abc%'` into the lexicographic range
+  `col >= 'abc' AND col < 'abd'` (and a wildcard-free pattern into plain
+  equality), so the fragment classifies and prunes through the ordinary
+  column rules on both the partition and the stats axis. The rewrite is
+  exact under SQL three-valued semantics over binary code-point order.
+  Non-prefix patterns, `NOT LIKE`, and `ESCAPE` forms keep the
+  conservative degradation path. No JSON schema change: the fragment
+  strings simply show the rewritten form.
+
 ### Fixed
 
 - A consumer closing stdout mid-report (`delta-explain ... | head`, a

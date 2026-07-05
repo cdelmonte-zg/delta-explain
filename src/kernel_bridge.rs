@@ -153,6 +153,12 @@ fn emit(pred: &Pred, schema: &SchemaRef) -> Result<Predicate, String> {
             })
         }
         Pred::BoolCol(col) => Ok(Predicate::from_expr(column_expr(col))),
+        // A Like reaching emission survived normalization unrewritten: the
+        // kernel has no LIKE, so the caller must strip it, same as
+        // Unsupported.
+        Pred::Like { .. } => Err("LIKE has no kernel predicate form; only a literal-prefix \
+             pattern rewrites to a comparison range during normalization"
+            .into()),
         Pred::Unsupported { reason, .. } => Err(reason.clone()),
     }
 }
@@ -524,5 +530,21 @@ mod tests {
         let pred = parse("UPPER(name) = 'X'").unwrap();
         let err = emit_predicate(&pred, &schema);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn unrewritten_like_is_fatal_at_emission() {
+        use crate::predicate_ast::parse;
+        let schema = delta_kernel::schema::StructType::try_new(vec![
+            delta_kernel::schema::StructField::nullable(
+                "name",
+                DataType::Primitive(PrimitiveType::String),
+            ),
+        ])
+        .unwrap();
+        let schema = std::sync::Arc::new(schema);
+        let pred = parse("name LIKE '%son'").unwrap().normalized();
+        let err = emit_predicate(&pred, &schema);
+        assert!(err.is_err_and(|e| e.to_string().contains("LIKE")));
     }
 }
