@@ -56,6 +56,17 @@ prune and which files survived, instead of an exit code.
   outcome filters. Rows render through a windowed list, so a 200k-file
   report scrolls smoothly.
 
+## Scale, measured
+
+A 200,000-file verbose report is a 51 MB JSON document; injected into
+the page it loads and renders in about one second (headless Chromium,
+2026 laptop), because the table only ever mounts the ~25 rows in view
+and search runs against haystacks precomputed once at load. The
+practical ceiling is the browser's JSON parse: toward a million files
+(~250 MB) expect several seconds and real memory use - at that size
+generate the report with `--limit` (the `files_truncated` flag is
+displayed, and the phase totals still cover the whole table).
+
 Reports from older schema minors render too (fields the schema did not
 have yet are simply absent); a non-report JSON gets a plain error with
 the command to generate a real one.
