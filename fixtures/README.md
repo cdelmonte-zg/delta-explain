@@ -18,7 +18,7 @@ in one case the checkpoint rewritten); the script cannot rebuild those.
 
 | Fixture | Layout | Stats | Used by (tests/integration/) |
 |---|---|---|---|
-| `test-table` | partitioned by `country` (DE/US/IT), 6 files, versions 0-5 | full | `cli`, `semantic_regression`, `time_travel`, `partition_columns` |
+| `test-table` | partitioned by `country` (DE/US/IT), 6 files, versions 0-5 | full | `cli`, `semantic_regression`, `time_travel`, `partition_columns`, `like_rewrite`, `partition_exact`, `json_contract`, `protocol_features`, `debug_ir` |
 | `test-table-flat` | non-partitioned twin of `test-table`, 6 files | full (hand-crafted) | `cli`, `partition_columns` |
 | `test-table-empty` | partition metadata only, zero data files | n/a | `partition_columns`, `semantic_regression` |
 | `test-table-partial-stats` | partitioned, 4 files, 2 with `stats` stripped | partial | `partial_stats`, `semantic_regression` |

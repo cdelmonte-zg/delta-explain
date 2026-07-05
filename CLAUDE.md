@@ -52,9 +52,9 @@ internal developer diagnostic, off by default and never in release
 artifacts, deliberately absent from the public help, CHANGELOG, and
 docs/semantics.md. It compiles the `--debug-ir <FILE>` flag (dump of the
 run's intermediate representations: predicate AST before/after
-normalization, classification, lowered kernel predicates, survivor
-counts, captured delta_kernel trace; filter overridable via
-DELTA_EXPLAIN_DEBUG_FILTER) plus its tracing dependencies:
+normalization, classification, lowered kernel predicates, partition-literal
+evaluation, survivor counts, captured delta_kernel trace; filter
+overridable via DELTA_EXPLAIN_DEBUG_FILTER) plus its tracing dependencies:
 
 ```bash
 cargo run --features debug-ir -- ./table -w "age > 30" --debug-ir ir.txt
@@ -93,18 +93,27 @@ CLI in `main.rs`:
 - **`predicate_ast.rs`**: SQL string → owned `Pred` AST, via a converter from
   sqlparser (the only module coupled to sqlparser types). The AST vocabulary is
   the language of pruning: column-op-literal comparisons, junctions, null checks,
-  `IN`/`BETWEEN` sugar. Anything outside it becomes an `Unsupported` leaf carrying
-  the raw fragment and a reason; the converter is total, consumers decide severity.
+  `IN`/`BETWEEN` sugar, structural `LIKE`. Anything outside it becomes an
+  `Unsupported` leaf carrying the raw fragment and a reason; the converter is
+  total, consumers decide severity. Normalization (De Morgan, the string-gated
+  prefix-LIKE range rewrite, OR factoring) also lives here.
 - **`predicate_analyzer.rs`**: `Pred` → `PredicateAnalysis` (top-level AND split,
-  classification of each fragment as `partition_safe` / `stats_safe` / `unsplittable`,
-  `Confidence` derivation, encoded notes like `UNSPLITTABLE_OR`). `classify` also
-  returns the partition-safe subtree so the CLI can lower it without re-parsing.
+  classification of each fragment as `partition_safe` / `partition_exact` /
+  `stats_safe` / `unsplittable`, `Confidence` derivation, encoded notes like
+  `UNSPLITTABLE_OR`). `classify` also returns the partition-safe and
+  partition-exact subtrees so the CLI can consume them without re-parsing.
 - **`kernel_bridge.rs`**: the only module that names the kernel's expression
   vocabulary. Lowers `Pred` to `delta_kernel::expressions::Predicate` with
   schema-driven literal coercion (temporal, decimal, narrow ints, nested leaf
   types), and maps every kernel operator to a `Capability` tier through
   exhaustive matches with no catch-all arm, so a kernel bump that widens an
   enum breaks compilation instead of silently gapping support.
+- **`partition_eval.rs`**: the third interpreter (ADR 0006). Evaluates a `Pred`
+  against a file's literal partition values under a four-valued logic: SQL
+  `Null` drops exactly (the fragment is constant per file, rows are selected
+  only on TRUE), evaluator ignorance (`Unknown`) keeps conservatively. Its
+  vocabulary is `Pred` minus `Unsupported`; growing it means growing the AST
+  first, never a second parser.
 - **`features.rs`**: detect-and-declare for protocol features that distort or
   reframe the report's numbers (deletion vectors, column mapping, liquid
   clustering). Detection reads `snapshot.table_properties()` plus the
@@ -130,11 +139,12 @@ CLI in `main.rs`:
 - **`main.rs`**: CLI layer: parse args, build the kernel engine, baseline scan,
   analyzer, per-phase scans, `build_phases`, gates, render, exit code.
 
-Why the AST sits between sqlparser and everything else: one parse, two
+Why the AST sits between sqlparser and everything else: one parse, three
 interpreters. `kernel_bridge` produces the type the kernel consumes; the
-analyzer produces the metadata we report to the user. Both read the same owned
-`Pred`, so "what the kernel sees" and "what the user reads" can never drift,
-while neither module touches sqlparser types.
+analyzer produces the metadata we report to the user; `partition_eval`
+decides what the partition literals decide. All read the same owned `Pred`,
+so "what the kernel sees", "what the user reads" and "what gets evaluated"
+can never drift, while no module but the converter touches sqlparser types.
 
 ## Testing
 

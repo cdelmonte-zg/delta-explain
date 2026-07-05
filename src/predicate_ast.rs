@@ -1,12 +1,16 @@
 //! The owned predicate AST: the language of pruning, not the language of SQL.
 //!
-//! The vocabulary mirrors what delta-kernel's scan planner can actually use
-//! (column-op-literal comparisons, junctions, null checks), plus `In` and
-//! `Between` kept as sugar for display fidelity. Everything outside that
-//! vocabulary is compressed into an [`Pred::Unsupported`] leaf at the
-//! sqlparser boundary, once, with a reason; downstream interpreters
-//! (classification in `predicate_analyzer`, kernel emission in
-//! `kernel_bridge`) never see raw SQL nodes.
+//! The vocabulary mirrors what the downstream interpreters can consume:
+//! what delta-kernel's scan planner uses directly (column-op-literal
+//! comparisons, junctions, null checks, with `In` and `Between` kept as
+//! sugar for display fidelity), plus `Like`, which has no kernel lowering
+//! but rewrites to a comparison range in its string-prefix shape and stays
+//! evaluable against partition literals in every other. Anything else is
+//! compressed into an [`Pred::Unsupported`] leaf at the sqlparser
+//! boundary, once, with a reason; the interpreters (classification in
+//! `predicate_analyzer`, kernel emission in `kernel_bridge`,
+//! partition-literal evaluation in `partition_eval`) never see raw SQL
+//! nodes.
 
 use std::fmt;
 
@@ -111,9 +115,11 @@ pub enum Pred {
     /// A bare boolean column used as a predicate: `WHERE is_active`.
     BoolCol(ColRef),
     /// `col [NOT] LIKE 'pattern'`, kept structural so normalization can
-    /// rewrite the literal-prefix shape into a lexicographic range. A Like
-    /// that survives normalization is outside the pruning language and
-    /// degrades exactly like an [`Pred::Unsupported`] leaf.
+    /// rewrite the literal-prefix shape (on string columns) into a
+    /// lexicographic range. A Like that survives normalization has no
+    /// kernel lowering: when its columns are all partition columns the
+    /// partition evaluator consumes it exactly; anywhere else it degrades
+    /// like an [`Pred::Unsupported`] leaf.
     Like {
         col: ColRef,
         pattern: String,
@@ -152,12 +158,17 @@ impl Pred {
         Pred::Or(v)
     }
 
+    /// True when the tree contains a node the kernel cannot lower: an
+    /// [`Pred::Unsupported`] leaf, or a `Like` that survived normalization
+    /// unrewritten. Narrower interpreters may still consume the latter;
+    /// see [`Pred::contains_opaque`] for the distinction.
     pub fn contains_unsupported(&self) -> bool {
         match self {
             Pred::And(v) | Pred::Or(v) => v.iter().any(Pred::contains_unsupported),
             Pred::Not(p) => p.contains_unsupported(),
             // A Like at this point survived normalization (or was never
-            // normalized): no rewrite applies, so it cannot prune.
+            // normalized): no rewrite applies, so the kernel cannot
+            // consume it.
             Pred::Unsupported { .. } | Pred::Like { .. } => true,
             Pred::Cmp { .. }
             | Pred::In { .. }
@@ -240,8 +251,9 @@ impl Pred {
             Pred::Not(p) => p.collect_reasons(reasons),
             Pred::Unsupported { reason, .. } => reasons.push(reason),
             Pred::Like { .. } => reasons.push(
-                "LIKE cannot contribute to pruning: only a non-negated literal-prefix \
-                 pattern (e.g. LIKE 'abc%') rewrites to a comparison range",
+                "this LIKE cannot prune here: only a non-negated literal-prefix pattern \
+                 on a string column rewrites to a comparison range, and only a fragment \
+                 referencing partition columns alone evaluates against partition values",
             ),
             Pred::Cmp { .. }
             | Pred::In { .. }

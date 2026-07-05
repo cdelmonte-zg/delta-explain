@@ -51,3 +51,12 @@ to say so explicitly.
 - The vocabulary now contains a node the kernel cannot lower; emission
   treats it as fatal and callers strip it, same as `Unsupported`. This
   is the enabling step for ADR 0006.
+
+Postscript (2026-07-05, during ADR 0006's implementation): the rewrite's
+domain was narrowed to string columns. On any other column type SQL's
+LIKE matches the value cast to a string, which the ungated rewrite
+mis-expressed badly enough to abort the kernel scan on an integer
+partition column; the gated Like now reaches the partition evaluator
+(0006) or degrades. The decision stands; only its domain was made
+precise. Recorded as a postscript rather than a superseding record
+because nothing in the decision was reversed.

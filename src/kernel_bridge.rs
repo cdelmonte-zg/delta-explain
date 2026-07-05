@@ -154,10 +154,10 @@ fn emit(pred: &Pred, schema: &SchemaRef) -> Result<Predicate, String> {
         }
         Pred::BoolCol(col) => Ok(Predicate::from_expr(column_expr(col))),
         // A Like reaching emission survived normalization unrewritten: the
-        // kernel has no LIKE, so the caller must strip it, same as
-        // Unsupported.
+        // kernel has no LIKE, so the caller must strip it (or route it to
+        // the partition evaluator), same as Unsupported.
         Pred::Like { .. } => Err("LIKE has no kernel predicate form; only a literal-prefix \
-             pattern rewrites to a comparison range during normalization"
+             pattern on a string column rewrites to a comparison range during normalization"
             .into()),
         Pred::Unsupported { reason, .. } => Err(reason.clone()),
     }

@@ -90,8 +90,9 @@ struct Cli {
 
     /// Write this run's intermediate representations (predicate AST before
     /// and after normalization, classification, lowered kernel predicates,
-    /// survivor counts, kernel trace) to FILE. Diagnostic output: the
-    /// format is unstable and outside the CLI/JSON contract.
+    /// partition-literal evaluation, survivor counts, kernel trace) to
+    /// FILE. Diagnostic output: the format is unstable and outside the
+    /// CLI/JSON contract.
     #[cfg(feature = "debug-ir")]
     #[arg(long = "debug-ir", value_name = "FILE")]
     debug_ir: Option<String>,

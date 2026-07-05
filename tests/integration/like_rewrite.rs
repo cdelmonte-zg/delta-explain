@@ -1,8 +1,10 @@
 //! Prefix LIKE rewriting (issue #72): normalization turns `col LIKE 'p%'`
-//! into a lexicographic range and a wildcard-free pattern into equality,
-//! so the fragment prunes through the ordinary column rules on both the
-//! partition and the stats axis. Every other LIKE shape keeps the
-//! conservative degradation path.
+//! on a string column into a lexicographic range and a wildcard-free
+//! pattern into equality, so the fragment prunes through the ordinary
+//! column rules on both the partition and the stats axis. Every other
+//! LIKE shape keeps the conservative degradation path on data columns;
+//! on partition-only columns it evaluates exactly instead (see the
+//! `partition_exact` module).
 
 use crate::common::{LogBuilder, cmd, fixture};
 use predicates::prelude::*;
