@@ -16,10 +16,26 @@ follow SemVer relative to that field.
   `col >= 'abc' AND col < 'abd'` (and a wildcard-free pattern into plain
   equality), so the fragment classifies and prunes through the ordinary
   column rules on both the partition and the stats axis. The rewrite is
-  exact under SQL three-valued semantics over binary code-point order.
+  exact under SQL three-valued semantics over binary code-point order,
+  and applies to string columns only: on any other type `LIKE` matches
+  the value cast to a string, which a comparison range cannot express.
   Non-prefix patterns, `NOT LIKE`, and `ESCAPE` forms keep the
   conservative degradation path. No JSON schema change: the fragment
   strings simply show the rewritten form.
+- Partition-only fragments outside the kernel's predicate language now
+  evaluate exactly against the literal partition values instead of
+  degrading (#75): `country LIKE '%E'` on a partitioned table prunes in
+  Phase 1 with `confidence: exact`, in any pattern shape including
+  `NOT LIKE`. A file whose partition values make the fragment FALSE or
+  NULL is dropped exactly (the fragment is constant across the file's
+  rows, and SQL selects a row only on TRUE); when the evaluator must
+  abstain (e.g. `LIKE` over a timestamp column, whose cast-to-string
+  format is engine-dependent) the files are kept and confidence
+  downgrades with a new `PARTITION_EVAL_GAP` note. Opaque constructs (functions, arithmetic,
+  subqueries) still degrade, partition columns or not. Additive JSON
+  change: the analysis block gains `partition_exact`, `schema_version`
+  moves to `0.3.0`, and the formal schema ships as
+  `schemas/report-v0.3.schema.json`.
 
 ### Fixed
 

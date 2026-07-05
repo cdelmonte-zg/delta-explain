@@ -17,7 +17,7 @@ Design references live alongside the code:
 
 - `VISION.md`: public-facing roadmap (v0.1 → v0.5)
 - `docs/semantics.md`: the public contract (guarantees, degradation rules,
-  exit codes); `schemas/report-v0.2.schema.json` is the formal JSON contract,
+  exit codes); `schemas/report-v0.3.schema.json` is the formal JSON contract,
   enforced by `tests/integration/json_contract.rs`
 - `docs/adr/`: architecture decision records, the *why* behind module
   boundaries and contracts. Its README states the bar a decision must meet
@@ -40,6 +40,11 @@ cargo test test_name_here
 
 # Format, lint, and run tests (pre-commit check)
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
+
+# Python wrapper tests (pytest comes from python/requirements-dev.txt; the
+# repo .venv has it. DX_BIN defaults to target/release - point it at the
+# debug build after a plain `cargo build`)
+DX_BIN=$PWD/target/debug/delta-explain .venv/bin/python -m pytest python/tests/
 ```
 
 No workspace, no nextest. One Cargo feature exists: `debug-ir`, an

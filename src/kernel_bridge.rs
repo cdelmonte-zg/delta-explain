@@ -167,6 +167,17 @@ fn column_expr(col: &ColRef) -> Expression {
     Expression::column(col.0.clone())
 }
 
+/// True when the column resolves to a STRING leaf in the schema. Gates
+/// the prefix-LIKE range rewrite: the lexicographic equivalence holds on
+/// no other type. Unknown columns answer false, which safely leaves the
+/// Like unrewritten to degrade downstream.
+pub fn column_is_string(col: &ColRef, schema: &SchemaRef) -> bool {
+    matches!(
+        resolve_column_type(col, schema),
+        Some(DataType::Primitive(PrimitiveType::String))
+    )
+}
+
 /// Walk the dotted path (profile.geo.zip) through struct fields so the
 /// literal on the other side coerces to the leaf type. Without this, a
 /// nested double compared to an integer literal aborts the scan
@@ -315,7 +326,7 @@ fn coerce_string_literal(text: &str, hint: &DataType) -> Result<Option<Expressio
 }
 
 /// Days since the Unix epoch for a `YYYY-MM-DD` string.
-fn parse_date_days(text: &str) -> Result<i32, String> {
+pub(crate) fn parse_date_days(text: &str) -> Result<i32, String> {
     const EPOCH_DAYS_FROM_CE: i32 = 719_163; // 1970-01-01 in chrono's day count
     let d = chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
         .map_err(|e| format!("Invalid date '{text}' (expected YYYY-MM-DD): {e}"))?;
@@ -325,7 +336,7 @@ fn parse_date_days(text: &str) -> Result<i32, String> {
 /// Microseconds since the Unix epoch for a TIMESTAMP string. Accepts RFC 3339
 /// (with offset, normalized to UTC), `YYYY-MM-DD[ T]HH:MM:SS[.ffffff]` treated
 /// as UTC, and a bare date as midnight UTC: Delta TIMESTAMP is UTC-normalized.
-fn parse_timestamp_micros(text: &str) -> Result<i64, String> {
+pub(crate) fn parse_timestamp_micros(text: &str) -> Result<i64, String> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(text) {
         return Ok(dt.timestamp_micros());
     }
@@ -351,7 +362,7 @@ fn parse_timestamp_micros(text: &str) -> Result<i64, String> {
 /// timezone-naive, so `2026-07-01 09:00:00` means nine o'clock as written,
 /// wherever it was written; an explicit offset would silently shift the
 /// value, so it is rejected instead of normalized.
-fn parse_timestamp_ntz_micros(text: &str) -> Result<i64, String> {
+pub(crate) fn parse_timestamp_ntz_micros(text: &str) -> Result<i64, String> {
     for fmt in [
         "%Y-%m-%d %H:%M:%S%.f",
         "%Y-%m-%dT%H:%M:%S%.f",
@@ -378,7 +389,7 @@ fn parse_timestamp_ntz_micros(text: &str) -> Result<i64, String> {
 /// Parse a numeric literal into a decimal scaled to the column's type.
 /// The literal must fit the column scale exactly; silently rounding a
 /// predicate bound would change its meaning.
-fn parse_decimal(text: &str, dt: &DecimalType) -> Result<Scalar, String> {
+pub(crate) fn parse_decimal(text: &str, dt: &DecimalType) -> Result<Scalar, String> {
     let (int_part, frac_part) = match text.split_once('.') {
         Some((i, f)) => (i, f),
         None => (text, ""),

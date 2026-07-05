@@ -134,12 +134,37 @@ impl LogBuilder {
     /// One add action. `partition_values` must name every partition column;
     /// `stats` is the stats JSON blob, or None for a stats-less file.
     pub fn add_file(
-        mut self,
+        self,
         path: &str,
         partition_values: &[(&str, &str)],
         stats: Option<serde_json::Value>,
     ) -> Self {
-        let pv: BTreeMap<&str, &str> = partition_values.iter().copied().collect();
+        let nullable: Vec<(&str, Option<&str>)> = partition_values
+            .iter()
+            .map(|(k, v)| (*k, Some(*v)))
+            .collect();
+        self.add_file_nullable(path, &nullable, stats)
+    }
+
+    /// Like `add_file`, but a partition value may be `None`, which the log
+    /// stores as JSON null - the shape the kernel later reports as an
+    /// absent key in the file's partition values.
+    #[allow(dead_code)]
+    pub fn add_file_nullable(
+        mut self,
+        path: &str,
+        partition_values: &[(&str, Option<&str>)],
+        stats: Option<serde_json::Value>,
+    ) -> Self {
+        let pv: BTreeMap<&str, serde_json::Value> = partition_values
+            .iter()
+            .map(|(k, v)| {
+                (
+                    *k,
+                    v.map_or(serde_json::Value::Null, |s| serde_json::json!(s)),
+                )
+            })
+            .collect();
         let mut add = serde_json::json!({
             "path": path,
             "partitionValues": pv,

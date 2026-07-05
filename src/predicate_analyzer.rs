@@ -17,19 +17,25 @@ pub struct AnalysisNote {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PredicateAnalysis {
     pub partition_safe: Option<String>,
+    /// Fragments outside the kernel's language whose columns are all
+    /// partition columns and whose semantics are fully known: evaluated
+    /// per file against the literal partition values instead of degrading.
+    pub partition_exact: Option<String>,
     pub stats_safe: Option<String>,
     pub unsplittable: Option<String>,
     pub confidence: Confidence,
     pub notes: Vec<AnalysisNote>,
 }
 
-/// The analysis plus the partition-safe subtree, kept as an AST so the
-/// caller can lower it for the partition-only scan without re-parsing
-/// the rendered fragment string.
+/// The analysis plus the classified subtrees, kept as ASTs so the caller
+/// can lower the partition-safe one for the partition-only scan and hand
+/// the partition-exact one to the evaluator, without re-parsing the
+/// rendered fragment strings.
 #[derive(Debug, Clone)]
 pub struct Classified {
     pub analysis: PredicateAnalysis,
     pub partition_pred: Option<Pred>,
+    pub partition_exact_pred: Option<Pred>,
 }
 
 pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAnalysis, Error> {
@@ -37,18 +43,32 @@ pub fn analyze(input: &str, partition_columns: &[String]) -> Result<PredicateAna
     Ok(classify(&pred, partition_columns).analysis)
 }
 
-/// Split the predicate's top-level conjuncts into the three buckets:
-/// partition_safe (prunes at directory level), stats_safe (prunes on
-/// min/max file statistics), unsplittable (cannot be attributed to a
-/// single phase, routed conservatively).
+/// Split the predicate's top-level conjuncts into the four buckets:
+/// partition_safe (prunes at directory level), partition_exact (outside
+/// the kernel's language but evaluable against partition literals),
+/// stats_safe (prunes on min/max file statistics), unsplittable (cannot
+/// be attributed to a single phase, routed conservatively).
 pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
     let mut partition_frags: Vec<&Pred> = Vec::new();
+    let mut exact_frags: Vec<&Pred> = Vec::new();
     let mut stats_frags: Vec<&Pred> = Vec::new();
     let mut unsplittable_frags: Vec<&Pred> = Vec::new();
     let mut notes: Vec<AnalysisNote> = Vec::new();
 
     for clause in pred.conjuncts() {
+        let refs = clause.columns();
+        let any_partition = refs.iter().any(|r| partition_columns.contains(r));
+        let all_partitions = !refs.is_empty() && refs.iter().all(|r| partition_columns.contains(r));
+
         if clause.contains_unsupported() {
+            // Outside the kernel's language. When the semantics are fully
+            // known (no opaque subtree) and every column is a partition
+            // column, the fragment is evaluated exactly against the
+            // literal partition values; otherwise it degrades.
+            if all_partitions && !clause.contains_opaque() {
+                exact_frags.push(clause);
+                continue;
+            }
             unsplittable_frags.push(clause);
             let reasons = clause.unsupported_reasons().join("; ");
             notes.push(AnalysisNote {
@@ -60,10 +80,6 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
             });
             continue;
         }
-
-        let refs = clause.columns();
-        let any_partition = refs.iter().any(|r| partition_columns.contains(r));
-        let all_partitions = !refs.is_empty() && refs.iter().all(|r| partition_columns.contains(r));
 
         if all_partitions {
             partition_frags.push(clause);
@@ -80,13 +96,16 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
         }
     }
 
-    let partition_pred = match partition_frags.as_slice() {
+    let subtree = |frags: &[&Pred]| match frags {
         [] => None,
         [single] => Some((*single).clone()),
         many => Some(Pred::And(many.iter().map(|p| (*p).clone()).collect())),
     };
+    let partition_pred = subtree(&partition_frags);
+    let partition_exact_pred = subtree(&exact_frags);
 
     let partition_safe = join_opt(&partition_frags);
+    let partition_exact = join_opt(&exact_frags);
     let stats_safe = join_opt(&stats_frags);
     let unsplittable = join_opt(&unsplittable_frags);
 
@@ -101,12 +120,14 @@ pub fn classify(pred: &Pred, partition_columns: &[String]) -> Classified {
     Classified {
         analysis: PredicateAnalysis {
             partition_safe,
+            partition_exact,
             stats_safe,
             unsplittable,
             confidence,
             notes,
         },
         partition_pred,
+        partition_exact_pred,
     }
 }
 
@@ -268,6 +289,106 @@ mod tests {
         assert_eq!(r.notes.len(), 1);
         assert_eq!(r.notes[0].code, "UNSUPPORTED_EXPRESSION");
         assert!(r.notes[0].message.contains("LIKE"));
+    }
+
+    #[test]
+    fn non_prefix_like_on_partition_columns_routes_partition_exact() {
+        let r = analyze("country LIKE '%E'", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_exact.as_deref(), Some("country LIKE '%E'"));
+        assert_eq!(r.partition_safe, None);
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+        assert!(r.notes.is_empty());
+    }
+
+    #[test]
+    fn partition_exact_splits_alongside_the_other_buckets() {
+        let r = analyze(
+            "country NOT LIKE 'D%' AND region = 'EU' AND age > 40",
+            &parts(&["country", "region"]),
+        )
+        .unwrap();
+
+        assert_eq!(r.partition_exact.as_deref(), Some("country NOT LIKE 'D%'"));
+        assert_eq!(r.partition_safe.as_deref(), Some("region = 'EU'"));
+        assert_eq!(r.stats_safe.as_deref(), Some("age > 40"));
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Conservative);
+    }
+
+    // ── Combinatorial classification: OR/NOT across the two axes ────
+
+    #[test]
+    fn all_partition_or_mixing_like_and_equality_routes_partition_exact_whole() {
+        let r = analyze("country LIKE '%E' OR country = 'IT'", &parts(&["country"])).unwrap();
+
+        assert_eq!(
+            r.partition_exact.as_deref(),
+            Some("country LIKE '%E' OR country = 'IT'")
+        );
+        assert_eq!(r.partition_safe, None);
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+    }
+
+    #[test]
+    fn mixed_axis_or_with_like_stays_unsplittable() {
+        let r = analyze("country LIKE '%E' OR age > 40", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_exact, None);
+        assert!(r.unsplittable.is_some());
+        assert_eq!(r.confidence, Confidence::Incomplete);
+    }
+
+    #[test]
+    fn not_over_mixed_and_becomes_the_unsplittable_or() {
+        let r = analyze("NOT (country LIKE '%E' AND age > 40)", &parts(&["country"])).unwrap();
+
+        assert_eq!(
+            r.unsplittable.as_deref(),
+            Some("country NOT LIKE '%E' OR age <= 40")
+        );
+        assert_eq!(r.confidence, Confidence::Incomplete);
+    }
+
+    #[test]
+    fn not_over_partition_only_junction_splits_across_both_partition_routes() {
+        let r = analyze(
+            "NOT (country LIKE '%E' OR country = 'IT')",
+            &parts(&["country"]),
+        )
+        .unwrap();
+
+        assert_eq!(r.partition_safe.as_deref(), Some("country <> 'IT'"));
+        assert_eq!(r.partition_exact.as_deref(), Some("country NOT LIKE '%E'"));
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+    }
+
+    #[test]
+    fn opaque_fragments_never_route_partition_exact() {
+        let r = analyze("UPPER(country) = 'DE'", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_exact, None);
+        assert!(r.unsplittable.is_some());
+        assert_eq!(r.confidence, Confidence::Incomplete);
+        assert_eq!(r.notes[0].code, "UNSUPPORTED_EXPRESSION");
+    }
+
+    #[test]
+    fn classify_exposes_the_partition_exact_subtree() {
+        let pred = predicate_ast::parse("country LIKE '%E' AND country NOT LIKE 'X%'")
+            .unwrap()
+            .normalized();
+        let c = classify(&pred, &parts(&["country"]));
+
+        let exact = c.partition_exact_pred.expect("exact subtree");
+        assert_eq!(
+            exact.to_string(),
+            "country LIKE '%E' AND country NOT LIKE 'X%'"
+        );
+        assert!(c.partition_pred.is_none());
     }
 
     #[test]

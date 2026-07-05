@@ -35,4 +35,4 @@ old one, never an edit that rewrites history. Statuses: `proposed`,
 | [0003](0003-kernel-capability-sentinel.md) | Exhaustive capability matches over the kernel vocabulary, no catch-all | accepted |
 | [0004](0004-cli-and-json-schema-as-the-stable-contract.md) | The stable contracts are the CLI surface and the versioned JSON schema | accepted |
 | [0005](0005-like-as-a-structural-node-with-a-normalization-rewrite.md) | LIKE enters the AST as a structural node with a normalization rewrite | accepted |
-| [0006](0006-partition-literal-evaluator-as-a-third-interpreter.md) | A partition-literal evaluator as a third interpreter over the same AST | proposed |
+| [0006](0006-partition-literal-evaluator-as-a-third-interpreter.md) | A partition-literal evaluator as a third interpreter over the same AST | accepted |

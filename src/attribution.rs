@@ -24,12 +24,22 @@ pub fn build_phases(
     let mut phases = Vec::new();
     let mut prev_count = total_files;
 
-    if let (Some(part_frag), Some(survivors)) = (&analysis.partition_safe, partition_survivors) {
+    // Phase 1 covers both partition routes: the kernel scan on the
+    // partition-safe fragment and the literal evaluation of the
+    // partition-exact one; the caller intersects their survivor sets.
+    let partition_display = [&analysis.partition_safe, &analysis.partition_exact]
+        .iter()
+        .filter_map(|f| f.as_ref())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" AND ");
+
+    if let (false, Some(survivors)) = (partition_display.is_empty(), partition_survivors) {
         let count = survivors.len();
         phases.push(PhaseResult {
             confidence: Confidence::Exact,
             name: "Partition pruning".into(),
-            predicate_display: part_frag.clone(),
+            predicate_display: partition_display,
             input_count: prev_count,
             output_count: count,
             surviving_paths: survivors,

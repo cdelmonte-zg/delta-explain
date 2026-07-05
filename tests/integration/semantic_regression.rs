@@ -200,3 +200,30 @@ fn case_7_prefix_like_rewrites_to_a_range() {
 
     assert_eq!(json["final_files"], 2);
 }
+
+// ── Case 8: partition-only LIKE evaluates exactly on partition values ──
+
+/// Issue #75: a fragment outside the kernel's language whose columns are
+/// all partition columns and whose semantics are known (any-shape `LIKE`)
+/// is evaluated per file against the literal partition values: it lands in
+/// `partition_exact`, prunes in phase 1, and keeps `confidence == "exact"`
+/// instead of degrading with an `UNSUPPORTED_EXPRESSION` note.
+#[test]
+fn case_8_partition_only_like_evaluates_exactly() {
+    let json = run_json(&fixture("test-table"), Some("country LIKE '%E'"));
+
+    let analysis = &json["analysis"];
+    assert_eq!(analysis["partition_exact"], "country LIKE '%E'");
+    assert!(analysis["partition_safe"].is_null());
+    assert!(analysis["stats_safe"].is_null());
+    assert!(analysis["unsplittable"].is_null());
+    assert_eq!(analysis["confidence"], "exact");
+    assert!(analysis["notes"].as_array().unwrap().is_empty());
+
+    let phases = json["phases"].as_array().unwrap();
+    assert_eq!(phases.len(), 1, "partition-only predicate uses one phase");
+    assert_eq!(phases[0]["name"], "Partition pruning");
+    assert_eq!(phases[0]["confidence"], "exact");
+
+    assert_eq!(json["final_files"], 2);
+}

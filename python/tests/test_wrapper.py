@@ -28,11 +28,27 @@ STUB = Path(__file__).parent / "_argv_stub.py"
 
 def test_basic_report():
     r = explain(TABLE, where="country = 'DE' AND age > 40", binary=BINARY)
-    assert r.schema_version.startswith("0.2.")
+    assert r.schema_version.startswith("0.3.")
     assert r.total_files == 6
     assert r.final_files == 1
     assert r.passed and r.result is None
     assert r["analysis"]["confidence"] == "conservative"
+
+
+def test_prefix_like_rewrites_to_a_range():
+    r = explain(TABLE, where="country LIKE 'D%'", binary=BINARY)
+    assert r["analysis"]["partition_safe"] == "country >= 'D' AND country < 'E'"
+    assert r["analysis"]["confidence"] == "exact"
+    assert r.final_files == 2
+
+
+def test_partition_only_like_is_evaluated_exactly():
+    r = explain(TABLE, where="country LIKE '%E'", binary=BINARY)
+    assert r["analysis"]["partition_exact"] == "country LIKE '%E'"
+    assert r["analysis"]["partition_safe"] is None
+    assert r["analysis"]["confidence"] == "exact"
+    assert r["analysis"]["notes"] == []
+    assert r.final_files == 2
 
 
 def test_gate_failure_is_a_report_not_an_error():

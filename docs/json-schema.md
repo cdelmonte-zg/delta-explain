@@ -2,7 +2,7 @@
 
 The goal of this page: **a consumer can trust the JSON without reading the
 code**. The formal schema lives at
-[`schemas/report-v0.2.schema.json`](../schemas/report-v0.2.schema.json) and
+[`schemas/report-v0.3.schema.json`](../schemas/report-v0.3.schema.json) and
 the integration suite validates every emitted document against it; this
 page explains what the fields mean.
 
@@ -20,7 +20,7 @@ changes bump the major. Consumers should:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | string | Schema of this document (`0.2.x`) |
+| `schema_version` | string | Schema of this document (`0.3.x`) |
 | `tool_version` | string | delta-explain release |
 | `elapsed_ms` | integer | Wall-clock analysis duration |
 | `table` | string | Table path/URI as given |
@@ -29,7 +29,7 @@ changes bump the major. Consumers should:
 | `total_files` | integer | Files before pruning |
 | `final_files` | integer | Files surviving the last phase |
 | `total_pruning_pct` | number | Overall reduction in percent |
-| `analysis` | object \| null | Predicate classification, null without `--where` |
+| `analysis` | object \| null | Predicate classification (`partition_safe`, `partition_exact`, `stats_safe`, `unsplittable`, `confidence`, `notes`), null without `--where` |
 | `table_features` | object | Detect-and-declare block: deletion vectors, `column_mapping_mode`, `clustering_columns`, `in_commit_timestamps`, `unrecognized_writer_features`, and warning `notes` |
 | `stats` | object | Statistics coverage: `mode` is `exact` / `partial` / `absent` |
 | `phases` | array | Chained pruning phases, empty without `--where` |
@@ -77,6 +77,7 @@ additive:
 |---|---|---|
 | `UNSPLITTABLE_OR` | `analysis.notes` | An OR mixes partition and non-partition columns; routed conservatively |
 | `UNSUPPORTED_EXPRESSION` | `analysis.notes` | A fragment is outside the pruning language; it keeps all files, siblings still prune |
+| `PARTITION_EVAL_GAP` | `analysis.notes` | Some partition values could not be evaluated against the `partition_exact` fragment; the affected files are kept |
 | `DELETION_VECTORS` | `table_features.notes` | Files carry deletion vectors; record counts include soft-deleted rows |
 | `COLUMN_MAPPING` | `table_features.notes` | The log stores physical column names; verbose stats may display them |
 | `LIQUID_CLUSTERING` | `table_features.notes` | The table is liquid-clustered; layout is not directory partitions, data skipping still applies |

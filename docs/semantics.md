@@ -23,19 +23,26 @@ concurrency and no adaptive behavior:
    Parquet) enumerates the snapshot's files and their statistics.
 2. **Parse and normalize** — the `--where` predicate is parsed once into an
    owned AST, then normalized: negations push down to the leaves
-   (De Morgan), a literal-prefix `LIKE` rewrites to a lexicographic range
-   (`country LIKE 'D%'` becomes `country >= 'D' AND country < 'E'`, in the
-   binary code-point order that partition values and min/max statistics
-   compare with), and conjuncts common to every `OR` branch factor out of
-   the `OR`. All rewrites preserve SQL three-valued semantics, so they can
-   change attribution and confidence but never the survivor set.
+   (De Morgan), a literal-prefix `LIKE` on a string column rewrites to a
+   lexicographic range (`country LIKE 'D%'` becomes
+   `country >= 'D' AND country < 'E'`, in the binary code-point order
+   that partition values and min/max statistics compare with; on any
+   other column type `LIKE` matches the value cast to a string, which a
+   range cannot express, so the fragment routes to the evaluator or
+   degrades), and conjuncts common to every `OR` branch factor out of
+   the `OR`. All rewrites preserve SQL three-valued semantics, so they
+   can change attribution and confidence but never the survivor set.
 3. **Classify** — each top-level `AND` conjunct is routed to one bucket:
-   `partition_safe` (references partition columns only), `stats_safe`
+   `partition_safe` (references partition columns only), `partition_exact`
+   (outside the kernel's predicate language — any-shape `LIKE` — but with
+   fully known semantics and every column a partition column), `stats_safe`
    (references no partition column), or `unsplittable` (mixes both, or
-   contains an unsupported construct).
+   contains an opaque construct).
 4. **Phase scans** — the partition-safe fragment runs as its own kernel
-   scan (Phase 1); the full predicate, conservatively stripped of
-   unsupported fragments, runs as the final scan.
+   scan, and the partition-exact fragment is evaluated per file against
+   the literal partition values; their intersection is Phase 1. The full
+   predicate, conservatively stripped of unsupported fragments and
+   intersected with the partition-exact verdict, runs as the final scan.
 5. **Attribution** — the survivor-set difference between phases is
    attributed: directory-level partition pruning first, min/max data
    skipping second.
@@ -56,7 +63,8 @@ This is validated continuously by the differential harness
 (`examples/differential`): Spark computes, per predicate, the files that
 actually contain matching rows, and the harness asserts the survivor set
 covers them, on a matrix that includes rewritten forms (`NOT` over mixed
-`OR`, factored `OR`-of-`AND`s, prefix `LIKE` ranges) and null-safe
+`OR`, factored `OR`-of-`AND`s, prefix `LIKE` ranges), partition-literal
+evaluation (non-prefix `LIKE` on partition columns) and null-safe
 comparisons.
 
 ## Confidence
@@ -91,12 +99,20 @@ abort the run:
 - the fragment is reported as `unsplittable`, confidence degrades to
   `incomplete`, and an `UNSUPPORTED_EXPRESSION` note carries the reason.
 
-These rules hold even when every column the fragment references is a
-partition column. Partition values are exact literals per file, so an
-engine can evaluate any deterministic predicate on them directly; this
-report does not (one pruning language governs both phases), so it may
-understate the partition-side opportunity for such fragments. Direct
-evaluation over partition literals is a tracked extension (#75).
+The partition axis has one carve-out. Partition values are exact literals
+per file, so a fragment whose semantics the tool fully knows (any-shape
+`LIKE` today) and whose columns are all partition columns does not
+degrade: it is evaluated per file against those literals
+(`partition_exact`), it prunes in Phase 1, and confidence stays `exact`.
+The fragment is constant across a file's rows and a row is selected only
+when the predicate is TRUE, so a file whose values make it FALSE *or
+NULL* is dropped exactly. When the evaluator must abstain instead of
+deciding (e.g. `LIKE` over a timestamp column, whose cast-to-string
+format is engine-dependent), the affected files are kept, confidence
+downgrades to `conservative`, and a `PARTITION_EVAL_GAP` note counts
+them. Opaque constructs — function calls, arithmetic, subqueries, whose
+semantics the tool does not model — always degrade by the rules above,
+partition columns or not.
 
 Malformed SQL is different: it is a user error and fails the run.
 

@@ -59,8 +59,13 @@ PREDICATES = [
     "country LIKE 'D%'",
     "country LIKE 'D%' AND age > 55",
     "country LIKE 'DE'",
-    # non-prefix LIKE degrades to keep-all, which the superset check allows
+    # non-prefix LIKE on a partition column evaluates exactly against the
+    # literal partition values; the survivor set must still cover Spark's
     "country LIKE '%E'",
+    "country NOT LIKE 'D%'",
+    "country LIKE '_E'",
+    # the exact fragment must also constrain the final scan (phase chaining)
+    "country LIKE '%E' AND age > 55",
 ]
 
 

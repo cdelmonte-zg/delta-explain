@@ -32,6 +32,7 @@ pub mod error;
 pub mod features;
 pub mod gates;
 pub mod kernel_bridge;
+pub mod partition_eval;
 pub mod predicate_analyzer;
 pub mod predicate_ast;
 pub mod render;

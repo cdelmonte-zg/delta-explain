@@ -1098,7 +1098,7 @@ fn run_json(args: &[&str]) -> serde_json::Value {
 #[test]
 fn json_carries_schema_and_tool_version() {
     let json = run_json(&[&test_table(), "--format", "json"]);
-    assert_eq!(json["schema_version"], "0.2.0");
+    assert_eq!(json["schema_version"], "0.3.0");
     assert_eq!(json["tool_version"], env!("CARGO_PKG_VERSION"));
 }
 
