@@ -11,7 +11,7 @@ with nothing to check in. A checked-in fixture is worth it only when the log
 shape cannot be synthesized trivially: checkpoint Parquet layouts, output of
 real writers, hand-broken edge cases.
 
-Regeneration: `fixtures/create_test_table.py` (deps in `requirements.txt`); the exotic checkpoint pair comes from `fixtures/create_exotic_checkpoints.py`, run inside the differential harness's Spark container (see its docstring);
+Regeneration: `fixtures/create_test_table.py` (deps in `requirements.txt`); `taxi-nyc` from `fixtures/create_taxi_table.py` (downloads a public NYC TLC file, or point `TAXI_SRC` at a local copy); the exotic checkpoint pair comes from `fixtures/create_exotic_checkpoints.py`, run inside the differential harness's Spark container (see its docstring);
 the script skips directories that already exist. The checkpoint-only
 variants were derived by hand from generated tables (JSON commits removed,
 in one case the checkpoint rewritten); the script cannot rebuild those.
@@ -30,4 +30,9 @@ in one case the checkpoint rewritten); the script cannot rebuild those.
 | `test-table-checkpointed-part` | checkpoint-only, partitioned | full | `checkpoint_partition_columns` |
 | `test-table-checkpoint-multipart` | classic checkpoint split in two parts (`delta.checkpoint.partSize=2`), 3 commits, Spark-written | full | `exotic_logs` |
 | `test-table-checkpoint-v2` | V2 checkpoint: UUID-named JSON manifest + parquet sidecars in `_sidecars/` (`delta.checkpointPolicy=v2`), Spark-written | full | `exotic_logs` |
+| `taxi-nyc` | real NYC TLC yellow-taxi data (deltalake-written), partitioned by `pickup_date`, 5 date partitions, 4000 rows | full (real writer) | `taxi` |
+
+`taxi-nyc` data source: NYC Taxi & Limousine Commission (TLC) trip record data
+([terms](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)); a small
+derived subset is redistributed here for testing.
 | `users` / `users-flat` | demo tables, same canonical data as `test-table` | full | README examples, not tests |
