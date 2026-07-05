@@ -13,6 +13,7 @@ mod cli;
 mod debug_ir;
 mod exotic_logs;
 mod json_contract;
+mod like_rewrite;
 mod nested_stats;
 mod partial_stats;
 mod partition_columns;

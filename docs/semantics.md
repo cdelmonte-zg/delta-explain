@@ -23,8 +23,11 @@ concurrency and no adaptive behavior:
    Parquet) enumerates the snapshot's files and their statistics.
 2. **Parse and normalize** — the `--where` predicate is parsed once into an
    owned AST, then normalized: negations push down to the leaves
-   (De Morgan), and conjuncts common to every `OR` branch factor out of the
-   `OR`. Both rewrites preserve SQL three-valued semantics, so they can
+   (De Morgan), a literal-prefix `LIKE` rewrites to a lexicographic range
+   (`country LIKE 'D%'` becomes `country >= 'D' AND country < 'E'`, in the
+   binary code-point order that partition values and min/max statistics
+   compare with), and conjuncts common to every `OR` branch factor out of
+   the `OR`. All rewrites preserve SQL three-valued semantics, so they can
    change attribution and confidence but never the survivor set.
 3. **Classify** — each top-level `AND` conjunct is routed to one bucket:
    `partition_safe` (references partition columns only), `stats_safe`
@@ -53,7 +56,8 @@ This is validated continuously by the differential harness
 (`examples/differential`): Spark computes, per predicate, the files that
 actually contain matching rows, and the harness asserts the survivor set
 covers them, on a matrix that includes rewritten forms (`NOT` over mixed
-`OR`, factored `OR`-of-`AND`s) and null-safe comparisons.
+`OR`, factored `OR`-of-`AND`s, prefix `LIKE` ranges) and null-safe
+comparisons.
 
 ## Confidence
 
@@ -75,7 +79,9 @@ The global `confidence` is the least informative label across fragments.
 ## Degradation rules
 
 Constructs outside the pruning language — function calls, arithmetic,
-`LIKE`, subqueries, column-to-column comparisons — do not abort the run:
+`LIKE` in any non-prefix shape (leading or embedded wildcards, `_`,
+`NOT LIKE`, `ESCAPE`), subqueries, column-to-column comparisons — do not
+abort the run:
 
 - under a top-level `AND`, the unsupported fragment is dropped from the
   scan predicate (keeping more files, never fewer) and the sibling

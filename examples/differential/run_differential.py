@@ -54,6 +54,13 @@ PREDICATES = [
     "(country = 'DE' AND age > 55) OR (country = 'DE' AND score > 95.5)",
     # null-safe comparison, evaluated over partition values
     "country IS DISTINCT FROM 'DE'",
+    # prefix LIKE rewrites to a lexicographic range during normalization;
+    # the survivor set must stay a superset of Spark's matching files
+    "country LIKE 'D%'",
+    "country LIKE 'D%' AND age > 55",
+    "country LIKE 'DE'",
+    # non-prefix LIKE degrades to keep-all, which the superset check allows
+    "country LIKE '%E'",
 ]
 
 

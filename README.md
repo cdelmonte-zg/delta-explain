@@ -336,7 +336,7 @@ age IS NULL
 payload.age > 30
 ```
 
-Also supported: `IS [NOT] DISTINCT FROM`, `DATE '...'` / `TIMESTAMP '...'` literal forms, and schema-driven coercion (a quoted `'2026-07-01'` against a `DATE` column just works, including `DECIMAL` and narrow integers). Subqueries, functions, and `LIKE` are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
+Also supported: `IS [NOT] DISTINCT FROM`, `DATE '...'` / `TIMESTAMP '...'` literal forms, schema-driven coercion (a quoted `'2026-07-01'` against a `DATE` column just works, including `DECIMAL` and narrow integers), and prefix `LIKE` (`country LIKE 'D%'`), which prunes on partition values and on string min/max statistics. Subqueries, functions, and non-prefix `LIKE` shapes are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
 
 ## Performance notes
 
@@ -362,7 +362,7 @@ Output is the dimension to manage on large tables: the compact JSON stays summar
 
 - **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts, after normalization: negations push down to the leaves (De Morgan) and conjuncts common to every OR branch factor out of the OR, so `NOT (country = 'DE' OR age > 30)` splits into two attributable phases and `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes `country = 'DE'` as partition-safe. What remains is the irreducibly mixed OR (`country = 'DE' OR age > 30`): it is flagged as `unsplittable` per the rule above, never silently downgraded.
 
-- **Computed expressions keep all files.** Function calls, arithmetic, `LIKE`, subqueries, and column-to-column comparisons are outside the pruning language; such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune. Most of these are file-level unskippable for any engine; the exception is prefix `LIKE 'abc%'`, which engines like delta-spark do skip on string min/max and delta-explain does not yet.
+- **Computed expressions keep all files.** Function calls, arithmetic, non-prefix `LIKE` (leading or embedded wildcards, `_`, `NOT LIKE`, `ESCAPE`), subqueries, and column-to-column comparisons are outside the pruning language; such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune. Most of these are file-level unskippable for any engine; on partition columns an engine can still evaluate them exactly against the literal partition values, which delta-explain does not yet do (tracked as #75).
 
 - **`IN` pruning strength varies by engine.** delta-explain expands `IN` lists into OR-of-equalities, the strongest sound form, with no size cap. Real engines differ: DataFusion-based engines (delta-rs) do the same expansion but stop skipping past 20 list items, and delta-spark evaluates an imprecise range test over the whole list (`min(values) <= col <= max(values)`), which keeps more files on sparse lists. On `IN`-heavy predicates a specific engine may therefore prune less than this report shows; the report reflects what the metadata makes possible, and it is always sound.
 

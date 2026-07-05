@@ -52,7 +52,7 @@ fn mixed_predicate_dumps_every_pipeline_section() {
 
 #[test]
 fn full_scan_predicate_is_stripped_of_unsupported_fragments() {
-    let dump = run_dump("test-table", Some("country LIKE 'D%' AND age > 40"));
+    let dump = run_dump("test-table", Some("name LIKE '%son' AND age > 40"));
     let full = section(&dump, "kernel predicate: full scan");
     assert!(
         full.contains("age"),

@@ -173,3 +173,30 @@ fn case_6_empty_table() {
     assert_eq!(phases[0]["input_files"], 0);
     assert_eq!(phases[0]["output_files"], 0);
 }
+
+// ── Case 7: prefix LIKE rewrites to a lexicographic range ───────────
+
+/// Issue #72: a literal-prefix `LIKE` is rewritten during normalization
+/// into a comparison range, so it classifies and prunes as an ordinary
+/// partition fragment with exact confidence instead of degrading with an
+/// `UNSUPPORTED_EXPRESSION` note.
+#[test]
+fn case_7_prefix_like_rewrites_to_a_range() {
+    let json = run_json(&fixture("test-table"), Some("country LIKE 'D%'"));
+
+    let analysis = &json["analysis"];
+    assert_eq!(
+        analysis["partition_safe"],
+        "country >= 'D' AND country < 'E'"
+    );
+    assert!(analysis["stats_safe"].is_null());
+    assert!(analysis["unsplittable"].is_null());
+    assert_eq!(analysis["confidence"], "exact");
+    assert!(analysis["notes"].as_array().unwrap().is_empty());
+
+    let phases = json["phases"].as_array().unwrap();
+    assert_eq!(phases.len(), 1, "partition-only predicate uses one phase");
+    assert_eq!(phases[0]["name"], "Partition pruning");
+
+    assert_eq!(json["final_files"], 2);
+}
