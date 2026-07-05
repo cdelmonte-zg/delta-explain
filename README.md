@@ -229,7 +229,7 @@ delta-explain \
 The repo doubles as a composite action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.4.0
+- uses: cdelmonte-zg/delta-explain@v0.5.0
   with:
     table: s3://warehouse/events
     where: "country = 'DE' AND age > 40"

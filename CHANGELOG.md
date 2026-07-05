@@ -9,6 +9,23 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] — 2026-07-05
+
+The LIKE release, and the release where the predicate pipeline became
+three interpreters over one owned AST. Prefix `LIKE` patterns rewrite to
+lexicographic ranges and prune on both axes; every other `LIKE` shape on
+partition columns is evaluated exactly, per file, against the literal
+partition values - a new interpreter (`partition_eval`) whose four-valued
+logic drops on SQL NULL as surely as on FALSE and keeps, loudly, on its
+own ignorance. The JSON contract grows additively (`analysis` gains
+`partition_exact`, `schema_version` 0.2.0 -> 0.3.0), degraded text phase
+lines stopped printing stripped fragments as if they contributed, and the
+architecture decisions behind all of it are now records in `docs/adr/`,
+including the one the implementation falsified and refined. The Spark
+differential matrix grew to twenty predicates and stayed green.
+
 ### Added
 
 - Prefix `LIKE` patterns now prune instead of degrading (#72):
