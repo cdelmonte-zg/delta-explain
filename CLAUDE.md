@@ -40,6 +40,11 @@ cargo test test_name_here
 
 # Format, lint, and run tests (pre-commit check)
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
+
+# Python wrapper tests (pytest comes from python/requirements-dev.txt; the
+# repo .venv has it. DX_BIN defaults to target/release - point it at the
+# debug build after a plain `cargo build`)
+DX_BIN=$PWD/target/debug/delta-explain .venv/bin/python -m pytest python/tests/
 ```
 
 No workspace, no nextest. One Cargo feature exists: `debug-ir`, an

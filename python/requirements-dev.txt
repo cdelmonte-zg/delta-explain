@@ -1,0 +1,4 @@
+# Local development of the Python wrapper. CI does not need this file:
+# python/tests/test_wrapper.py has a self-runner (python path/to/file), and
+# the CI matrix invokes it that way against the release binary.
+pytest>=8
