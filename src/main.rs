@@ -347,7 +347,7 @@ fn try_main() -> Result<()> {
                 &format!("rendered: {parsed}\n\n{parsed:#?}"),
             )?;
         }
-        let pred_ast = parsed.normalized();
+        let pred_ast = parsed.normalized_with(|col| kernel_bridge::column_is_string(col, &schema));
         if let Some(dump) = debug_dump.as_mut() {
             dump.section(
                 "owned AST (normalized)",
@@ -388,7 +388,7 @@ fn try_main() -> Result<()> {
         let exact_survivors = match &classified.partition_exact_pred {
             Some(exact_ast) => {
                 let mut survivors: HashSet<String> = HashSet::new();
-                let mut gap = false;
+                let mut gap_files = 0usize;
                 for file in &report.all_files {
                     match partition_eval::eval(exact_ast, &file.partition_values, &schema) {
                         partition_eval::Truth::True => {
@@ -396,20 +396,21 @@ fn try_main() -> Result<()> {
                         }
                         partition_eval::Truth::Unknown => {
                             survivors.insert(file.path.clone());
-                            gap = true;
+                            gap_files += 1;
                         }
                         partition_eval::Truth::False | partition_eval::Truth::Null => {}
                     }
                 }
-                if gap {
+                if gap_files > 0 {
                     if analysis.confidence == predicate_analyzer::Confidence::Exact {
                         analysis.confidence = predicate_analyzer::Confidence::Conservative;
                     }
                     analysis.notes.push(predicate_analyzer::AnalysisNote {
                         code: "PARTITION_EVAL_GAP".into(),
                         message: format!(
-                            "some partition values could not be evaluated against \
-                             '{exact_ast}'; the affected files are kept conservatively"
+                            "{gap_files} of {} files kept conservatively: their partition \
+                             values could not be evaluated against '{exact_ast}'",
+                            report.total_files
                         ),
                     });
                 }
@@ -417,10 +418,11 @@ fn try_main() -> Result<()> {
                     dump.section(
                         "partition-literal evaluation",
                         &format!(
-                            "fragment: {exact_ast}\nsurvivors: {} of {} files{}",
+                            "fragment: {exact_ast}\nsurvivors: {} of {} files ({} kept on \
+                             evaluation gaps)",
                             survivors.len(),
                             report.total_files,
-                            if gap { " (evaluation gaps, kept)" } else { "" }
+                            gap_files
                         ),
                     )?;
                 }

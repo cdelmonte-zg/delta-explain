@@ -129,7 +129,10 @@ pub fn eval(pred: &Pred, values: &HashMap<String, String>, schema: &SchemaRef) -
         } => {
             let t = match values.get(&col.dotted()) {
                 None => Truth::Null,
-                Some(text) => Truth::from_bool(like_match(text, pattern)),
+                Some(text) if like_matchable(col, schema) => {
+                    Truth::from_bool(like_match(text, pattern))
+                }
+                Some(_) => Truth::Unknown,
             };
             if *negated { t.not() } else { t }
         }
@@ -333,6 +336,30 @@ fn typed_literal(lit: &Literal, dt: &DataType) -> Option<Typed> {
     }
 }
 
+/// LIKE on a non-string column means "match the value cast to a string"
+/// (engine semantics). The serialized partition value *is* that cast for
+/// types whose textual form is canonical - strings, the integer family,
+/// dates, booleans - so matching it is exact. For the rest (timestamps,
+/// floats, decimals) engines format the cast differently from how the
+/// log serializes the value, so the evaluator abstains.
+fn like_matchable(col: &ColRef, schema: &SchemaRef) -> bool {
+    let Some(field) = schema.field(col.dotted()) else {
+        return false;
+    };
+    matches!(
+        field.data_type(),
+        DataType::Primitive(
+            PrimitiveType::String
+                | PrimitiveType::Integer
+                | PrimitiveType::Long
+                | PrimitiveType::Short
+                | PrimitiveType::Byte
+                | PrimitiveType::Date
+                | PrimitiveType::Boolean
+        )
+    )
+}
+
 // ── LIKE matching ───────────────────────────────────────────────────
 
 /// SQL LIKE over the full pattern language: `%` matches any run of
@@ -379,9 +406,18 @@ mod tests {
                 StructField::nullable("year", DataType::Primitive(PrimitiveType::Integer)),
                 StructField::nullable("active", DataType::Primitive(PrimitiveType::Boolean)),
                 StructField::nullable("day", DataType::Primitive(PrimitiveType::Date)),
+                StructField::nullable("ts", DataType::Primitive(PrimitiveType::Timestamp)),
             ])
             .unwrap(),
         )
+    }
+
+    /// Evaluate without the string-gated prefix rewrite, so structural
+    /// Like nodes on non-string columns reach the evaluator as the CLI
+    /// path delivers them.
+    fn ev_raw(input: &str, pairs: &[(&str, &str)]) -> Truth {
+        let pred = parse(input).unwrap().normalized_with(|_| false);
+        eval(&pred, &vals(pairs), &schema())
     }
 
     fn vals(pairs: &[(&str, &str)]) -> HashMap<String, String> {
@@ -454,6 +490,22 @@ mod tests {
         assert_eq!(ev("country IS NOT NULL", &[]), Truth::False);
         assert_eq!(ev("country IS DISTINCT FROM 'DE'", &[]), Truth::True);
         assert_eq!(ev("country IS NOT DISTINCT FROM 'DE'", &[]), Truth::False);
+    }
+
+    #[test]
+    fn like_on_non_string_columns_matches_canonical_serialized_forms_only() {
+        // integers and dates serialize as the engine's cast-to-string
+        assert_eq!(ev_raw("year LIKE '20%'", &[("year", "2020")]), Truth::True);
+        assert_eq!(ev_raw("year LIKE '20%'", &[("year", "1999")]), Truth::False);
+        assert_eq!(
+            ev_raw("day LIKE '2026%'", &[("day", "2026-02-01")]),
+            Truth::True
+        );
+        // timestamp formatting is engine-dependent: abstain, never guess
+        assert_eq!(
+            ev_raw("ts LIKE '2026%'", &[("ts", "2026-01-01 00:00:00")]),
+            Truth::Unknown
+        );
     }
 
     #[test]

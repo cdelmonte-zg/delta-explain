@@ -167,6 +167,17 @@ fn column_expr(col: &ColRef) -> Expression {
     Expression::column(col.0.clone())
 }
 
+/// True when the column resolves to a STRING leaf in the schema. Gates
+/// the prefix-LIKE range rewrite: the lexicographic equivalence holds on
+/// no other type. Unknown columns answer false, which safely leaves the
+/// Like unrewritten to degrade downstream.
+pub fn column_is_string(col: &ColRef, schema: &SchemaRef) -> bool {
+    matches!(
+        resolve_column_type(col, schema),
+        Some(DataType::Primitive(PrimitiveType::String))
+    )
+}
+
 /// Walk the dotted path (profile.geo.zip) through struct fields so the
 /// literal on the other side coerces to the leaf type. Without this, a
 /// nested double compared to an integer literal aborts the scan

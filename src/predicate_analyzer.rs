@@ -317,6 +317,55 @@ mod tests {
         assert_eq!(r.confidence, Confidence::Conservative);
     }
 
+    // ── Combinatorial classification: OR/NOT across the two axes ────
+
+    #[test]
+    fn all_partition_or_mixing_like_and_equality_routes_partition_exact_whole() {
+        let r = analyze("country LIKE '%E' OR country = 'IT'", &parts(&["country"])).unwrap();
+
+        assert_eq!(
+            r.partition_exact.as_deref(),
+            Some("country LIKE '%E' OR country = 'IT'")
+        );
+        assert_eq!(r.partition_safe, None);
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+    }
+
+    #[test]
+    fn mixed_axis_or_with_like_stays_unsplittable() {
+        let r = analyze("country LIKE '%E' OR age > 40", &parts(&["country"])).unwrap();
+
+        assert_eq!(r.partition_exact, None);
+        assert!(r.unsplittable.is_some());
+        assert_eq!(r.confidence, Confidence::Incomplete);
+    }
+
+    #[test]
+    fn not_over_mixed_and_becomes_the_unsplittable_or() {
+        let r = analyze("NOT (country LIKE '%E' AND age > 40)", &parts(&["country"])).unwrap();
+
+        assert_eq!(
+            r.unsplittable.as_deref(),
+            Some("country NOT LIKE '%E' OR age <= 40")
+        );
+        assert_eq!(r.confidence, Confidence::Incomplete);
+    }
+
+    #[test]
+    fn not_over_partition_only_junction_splits_across_both_partition_routes() {
+        let r = analyze(
+            "NOT (country LIKE '%E' OR country = 'IT')",
+            &parts(&["country"]),
+        )
+        .unwrap();
+
+        assert_eq!(r.partition_safe.as_deref(), Some("country <> 'IT'"));
+        assert_eq!(r.partition_exact.as_deref(), Some("country NOT LIKE '%E'"));
+        assert_eq!(r.unsplittable, None);
+        assert_eq!(r.confidence, Confidence::Exact);
+    }
+
     #[test]
     fn opaque_fragments_never_route_partition_exact() {
         let r = analyze("UPPER(country) = 'DE'", &parts(&["country"])).unwrap();

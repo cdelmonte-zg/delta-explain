@@ -262,8 +262,28 @@ impl Pred {
     /// OR. All three rewrites preserve SQL three-valued semantics, so the
     /// kernel's survivor set cannot change; what changes is how much of
     /// the predicate the classifier can attribute to a single phase.
+    ///
+    /// Assumes every LIKE column is string-typed; when a schema is in
+    /// hand, use [`Pred::normalized_with`] instead.
     pub fn normalized(self) -> Pred {
-        factor_or(rewrite_prefix_like(push_down_not(self, false)))
+        self.normalized_with(|_| true)
+    }
+
+    /// [`Pred::normalized`] with schema knowledge: `is_string_col` gates
+    /// the prefix-LIKE range rewrite. The lexicographic equivalence only
+    /// holds on string columns; on any other type SQL's LIKE matches the
+    /// value *cast to a string*, which a comparison range cannot express,
+    /// so the Like node passes through for the downstream interpreters
+    /// to handle (exactly, on partition literals; conservatively
+    /// otherwise).
+    pub fn normalized_with<F>(self, is_string_col: F) -> Pred
+    where
+        F: Fn(&ColRef) -> bool,
+    {
+        factor_or(rewrite_prefix_like(
+            push_down_not(self, false),
+            &is_string_col,
+        ))
     }
 
     /// The predicate with every `Unsupported` subtree removed
@@ -430,18 +450,31 @@ fn like_shape(pattern: &str) -> LikeShape {
 /// Both rewrites are exact under three-valued semantics (LIKE and the
 /// comparisons are all NULL exactly when the column is NULL) over binary
 /// code-point order, which is the order partition values and min/max
-/// string statistics compare with. Negated LIKE and every other pattern
-/// shape pass through untouched and degrade downstream.
-fn rewrite_prefix_like(pred: Pred) -> Pred {
+/// string statistics compare with - and only on string columns, which is
+/// why `is_string` gates the leaf. Negated LIKE, non-string columns, and
+/// every other pattern shape pass through untouched and degrade (or
+/// evaluate) downstream.
+fn rewrite_prefix_like<F>(pred: Pred, is_string: &F) -> Pred
+where
+    F: Fn(&ColRef) -> bool,
+{
     match pred {
-        Pred::And(v) => and_flat(v.into_iter().map(rewrite_prefix_like).collect()),
-        Pred::Or(v) => or_flat(v.into_iter().map(rewrite_prefix_like).collect()),
-        Pred::Not(inner) => Pred::Not(Box::new(rewrite_prefix_like(*inner))),
+        Pred::And(v) => and_flat(
+            v.into_iter()
+                .map(|p| rewrite_prefix_like(p, is_string))
+                .collect(),
+        ),
+        Pred::Or(v) => or_flat(
+            v.into_iter()
+                .map(|p| rewrite_prefix_like(p, is_string))
+                .collect(),
+        ),
+        Pred::Not(inner) => Pred::Not(Box::new(rewrite_prefix_like(*inner, is_string))),
         Pred::Like {
             col,
             pattern,
             negated: false,
-        } => match like_shape(&pattern) {
+        } if is_string(&col) => match like_shape(&pattern) {
             LikeShape::Exact(text) => Pred::Cmp {
                 col,
                 op: CmpOp::Eq,
@@ -1447,6 +1480,24 @@ mod tests {
         assert_eq!(
             norm(&format!("c LIKE '{}%'", '\u{D7FF}')),
             format!("c >= '{}' AND c < '{}'", '\u{D7FF}', '\u{E000}')
+        );
+    }
+
+    #[test]
+    fn prefix_rewrite_is_gated_on_string_columns() {
+        // The lexicographic range only means LIKE on strings; a non-string
+        // column keeps its structural Like for downstream interpreters.
+        assert_eq!(
+            p("year LIKE '20%'").normalized_with(|_| false).to_string(),
+            "year LIKE '20%'"
+        );
+        assert_eq!(
+            p("year LIKE '1999'").normalized_with(|_| false).to_string(),
+            "year LIKE '1999'"
+        );
+        assert_eq!(
+            p("year LIKE '20%'").normalized_with(|_| true).to_string(),
+            "year >= '20' AND year < '21'"
         );
     }
 

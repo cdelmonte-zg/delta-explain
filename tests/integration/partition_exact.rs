@@ -115,6 +115,97 @@ fn null_partition_value_is_dropped_exactly_not_kept() {
 }
 
 #[test]
+fn all_partition_or_mixing_like_and_equality_evaluates_whole() {
+    // No kernel scan can express the disjunction, but every column is a
+    // partition column: the evaluator ranks the whole OR exactly.
+    // '%E' matches DE (2 files), the equality adds IT (2 files).
+    cmd()
+        .args([
+            &fixture("test-table"),
+            "-w",
+            "country LIKE '%E' OR country = 'IT'",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("partition-exact: country LIKE '%E' OR country = 'IT'")
+                .and(predicate::str::contains("files remaining: 4"))
+                .and(predicate::str::contains("confidence:     exact"))
+                .and(predicate::str::contains("Warnings!").not()),
+        );
+}
+
+#[test]
+fn like_on_a_non_string_partition_column_matches_the_serialized_form() {
+    // The prefix rewrite is gated on string columns ('20%' on an integer
+    // would otherwise become a string range and abort the kernel scan);
+    // the Like reaches the evaluator instead, which matches the value's
+    // canonical serialized form - the engine's cast-to-string semantics.
+    let table = LogBuilder::new()
+        .column("v", "long")
+        .partition_column("year", "integer")
+        .add_file("a.parquet", &[("year", "2020")], None)
+        .add_file("b.parquet", &[("year", "1999")], None)
+        .build();
+
+    cmd()
+        .args([&table.path(), "-w", "year LIKE '20%'"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("partition-exact: year LIKE '20%'")
+                .and(predicate::str::contains("files remaining: 1"))
+                .and(predicate::str::contains("confidence:     exact")),
+        );
+}
+
+#[test]
+fn prefix_like_on_a_non_string_data_column_degrades_instead_of_aborting() {
+    let table = LogBuilder::new()
+        .column("v", "long")
+        .column("name", "string")
+        .add_file("a.parquet", &[], None)
+        .add_file("b.parquet", &[], None)
+        .build();
+
+    cmd()
+        .args([&table.path(), "-w", "v LIKE '20%'"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("files remaining: 2")
+                .and(predicate::str::contains("UNSUPPORTED_EXPRESSION"))
+                .and(predicate::str::contains("confidence:     incomplete")),
+        );
+}
+
+#[test]
+fn unevaluable_fragment_keeps_files_and_reports_the_gap() {
+    // Timestamp cast-to-string formatting is engine-dependent, so the
+    // evaluator abstains on LIKE over a timestamp partition column: files
+    // stay, confidence downgrades, and the note counts them. (A partition
+    // value that does not parse at its column type never gets this far:
+    // the kernel rejects the table during log replay.)
+    let table = LogBuilder::new()
+        .column("v", "long")
+        .partition_column("ts", "timestamp")
+        .add_file("a.parquet", &[("ts", "2026-01-01 00:00:00")], None)
+        .add_file("b.parquet", &[("ts", "1999-01-01 00:00:00")], None)
+        .build();
+
+    cmd()
+        .args([&table.path(), "-w", "ts LIKE '2026%'"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("files remaining: 2")
+                .and(predicate::str::contains("PARTITION_EVAL_GAP"))
+                .and(predicate::str::contains("2 of 2 files kept conservatively"))
+                .and(predicate::str::contains("confidence:     conservative")),
+        );
+}
+
+#[test]
 fn opaque_constructs_still_degrade_even_on_partition_columns() {
     cmd()
         .args([&fixture("test-table"), "-w", "UPPER(country) = 'DE'"])
