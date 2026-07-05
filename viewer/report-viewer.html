@@ -451,6 +451,7 @@
 
   // ── Rendering ────────────────────────────────────────────────
   let FILES = [];        // full files array
+  let HAY = [];          // lowercase search haystack per file, built once
   let PHASES = [];
   let filterText = "", filterOutcome = "all", filterPhase = "any";
 
@@ -669,6 +670,10 @@
       return;
     }
     FILES = doc.files;
+    // Precomputed search haystacks: building them per keystroke would
+    // re-allocate one string per file on every filter pass.
+    HAY = FILES.map((f) => (f.path + " " + Object.entries(f.partition_values || {})
+      .map(([k, v]) => k + "=" + v).join(" ")).toLowerCase());
 
     const filters = el("div", "filters");
     const search = el("input");
@@ -724,15 +729,11 @@
 
   let VISIBLE = [];
   function applyFilters() {
-    VISIBLE = FILES.filter((f) => {
+    VISIBLE = FILES.filter((f, i) => {
       if (filterOutcome === "kept" && !f.kept) return false;
       if (filterOutcome === "pruned" && f.kept) return false;
       if (filterPhase !== "any" && f.pruned_by !== filterPhase) return false;
-      if (filterText) {
-        const hay = (f.path + " " + Object.entries(f.partition_values || {})
-          .map(([k, v]) => k + "=" + v).join(" ")).toLowerCase();
-        if (!hay.includes(filterText)) return false;
-      }
+      if (filterText && !HAY[i].includes(filterText)) return false;
       return true;
     });
     $("files-count").textContent =
