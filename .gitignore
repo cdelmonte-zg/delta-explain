@@ -17,3 +17,4 @@ dist/
 .claude/settings.local.json*
 fixtures/.taxi-src.parquet
 examples/differential/work/taxi-src.parquet
+book/book/

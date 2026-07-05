@@ -77,6 +77,16 @@ not verify for you afterwards.
       them but fail silently. Open both repos and check the formula and
       manifest carry the new version *and real checksums*, not
       placeholders (this has happened before).
+- [ ] **Documentation site deployed and current.** Cutting the CHANGELOG
+      to the new version is a docs change, so `pages.yml` redeploys the
+      mdBook site on the merge to main. Open
+      <https://cdelmonte-zg.github.io/delta-explain/> and confirm: landing
+      and search work, the reference pages (symlinked `semantics` /
+      `json-schema` / `validation`) render, the JSON-schema link resolves,
+      and the Changelog/Roadmap pages show the release just cut.
+      One-time-only, before the first deploy: enable Pages in
+      **Settings -> Pages -> Source: GitHub Actions** (the workflow cannot
+      enable it, and without it the site never goes live).
 
 ## 4. Aftermath
 

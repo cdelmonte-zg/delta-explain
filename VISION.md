@@ -82,15 +82,18 @@ Every remaining professionalization item has landed: the "validated against" sto
 
 **After 0.4.0 the plan is deliberate: a stabilization period of bug fixing and validation only, no new surface.** The roadmap below resumes after that.
 
-## v0.5: Diagnostic layer (planned)
+## v0.5 - v0.6: Diagnostic layer and the report viewer (shipped July 2026)
 
-Goal: shift from "file counter" to "pruning advisor".
+Goal, delivered: shift from "file counter" to "pruning advisor", and make a report readable without a terminal.
 
-- **Diagnostic notes**: messages like "partition pruning unavailable because predicate does not reference partition columns" or "data skipping weak because string min/max ranges are wide"
-- **`--explain-why` mode**: synthesized output: what enabled pruning, what blocked it, what would improve it
+- **`--explain-why`**: a deterministic diagnostic engine (ADR 0007) that turns the report into advice - which fragment blocked pruning and what to change - with stable codes (`NO_PARTITION_FILTER`, `WEAK_DATA_SKIPPING`, `STATS_ABSENT`, `UNSUPPORTED_FRAGMENT`). No ML, nothing predicted: the *why* is as trustworthy as the numbers it explains, and gate-able in CI. JSON gains an additive `explain` array (`schema_version` 0.4.0).
+- **The report viewer** (`viewer/`): a self-contained HTML page that renders a `--format json --verbose` report - pruning funnel, predicate analysis, gates, diagnoses, and a filterable per-file table that stays usable at 200k files. A client of the JSON contract (no new analysis, no CLI change), air-gapped and CI-artifact safe.
+
+Still planned in this track:
+
 - **`--engine-profile`**: emulate a specific engine's pruning strength (`max` | `datafusion` | `spark` | `kernel`) so a CI gate asserts what *your* engine will do, not the metadata's theoretical best. The known divergences (IN-list strategies) are documented in the README today; this makes them selectable.
 
-## v0.6: Fidelity and coverage (planned)
+## Later: Fidelity and coverage (planned)
 
 Moving declared boundaries across the line, one release note at a time:
 

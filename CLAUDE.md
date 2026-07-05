@@ -130,14 +130,23 @@ CLI in `main.rs`:
   nested flattening to dotted leaf keys, plus the JSON `metaData.partitionColumns`
   reader (primary source; the scan fallback covers fully checkpointed logs).
 - **`attribution.rs`**: survivor sets → chained, labeled pruning phases. Pure.
+  Owns the phase-name constants (`DATA_SKIPPING_PHASE`, ...) that the
+  diagnostics engine matches against, so a rename is a compile-time change.
+- **`diagnostics.rs`**: `--explain-why` (ADR 0007). A deterministic rules
+  engine over the finished report (classification, stats coverage, partition
+  columns, per-phase pruning) producing `Diagnosis` records with stable codes;
+  no ML, nothing predicted. Pure.
 - **`gates.rs`**: `--min-pruning` / `--assert-stats` → assertion records, overall
   result, failure messages. Pure.
-- **`report.rs`**: the computed model (`PruningReport`, `PhaseResult`, `FileInfo`).
-- **`render.rs`**: all presentation, text and JSON (including `schema_version`).
+- **`report.rs`**: the computed model (`PruningReport`, `PhaseResult`, `FileInfo`,
+  the `explain` diagnoses, `StatsMode`). `stats_mode()` is the single source of
+  truth for stats coverage, shared by render and diagnostics.
+- **`render.rs`**: all presentation, text and JSON (including `schema_version`);
+  per-file detail behind `--verbose`, diagnoses behind `--explain-why`.
 - **`error.rs`**: the crate error enum (thiserror); kernel errors pass through
   transparently.
 - **`main.rs`**: CLI layer: parse args, build the kernel engine, baseline scan,
-  analyzer, per-phase scans, `build_phases`, gates, render, exit code.
+  analyzer, per-phase scans, `build_phases`, diagnostics, gates, render, exit code.
 
 Why the AST sits between sqlparser and everything else: one parse, three
 interpreters. `kernel_bridge` produces the type the kernel consumes; the
