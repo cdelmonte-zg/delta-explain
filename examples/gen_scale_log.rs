@@ -213,3 +213,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::build_stats;
+
+    // `build_stats` hand-builds the stats JSON with manual braces and
+    // escapes; one misplaced brace yields invalid stats that delta-explain
+    // silently treats as absent. Guard the shape directly. (Run with
+    // `cargo test --examples`.)
+    #[test]
+    fn wide_stats_are_valid_json_with_a_leaf_per_column() {
+        for wide in [0, 1, 4, 30] {
+            let raw = build_stats(123, 45, wide);
+            let v: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("wide={wide}: {e}\n{raw}"));
+            assert_eq!(v["numRecords"], 10000);
+            // age plus one leaf per wide column, on every stats map.
+            for key in ["minValues", "maxValues", "nullCount"] {
+                let n = v[key].as_object().unwrap().len();
+                assert_eq!(n, wide + 1, "wide={wide} {key} has {n} leaves");
+            }
+        }
+    }
+
+    #[test]
+    fn all_four_wide_types_render_their_leaf() {
+        // The rotation reaches every arm (string/long/double/timestamp) by
+        // wide=4; each leaf must be present in min and max.
+        let v: serde_json::Value = serde_json::from_str(&build_stats(7, 3, 4)).unwrap();
+        for c in 0..4 {
+            let name = format!("c{c:03}");
+            assert!(v["minValues"].get(&name).is_some(), "missing min {name}");
+            assert!(v["maxValues"].get(&name).is_some(), "missing max {name}");
+        }
+    }
+}
