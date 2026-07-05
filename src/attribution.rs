@@ -1,10 +1,12 @@
 //! Turn survivor sets into attributed pruning phases.
 //!
-//! Pure: the comparative scans happen in [`crate::scan`]; this module encodes
-//! the attribution arithmetic on their results. Phase 1 is the drop from the
-//! baseline to the partition-only scan (partition pruning), Phase 2 the drop
-//! from there to the full-predicate scan (data skipping). It is a
-//! decomposition, not an execution order.
+//! Pure: the comparative scans happen in [`crate::scan`] (and the
+//! partition-literal evaluation in [`crate::partition_eval`]); this module
+//! encodes the attribution arithmetic on their results. Phase 1 is the
+//! drop from the baseline to the partition survivors (the kernel's
+//! partition-only scan intersected with the evaluator's verdict), Phase 2
+//! the drop from there to the full-predicate scan (data skipping). It is
+//! a decomposition, not an execution order.
 
 use std::collections::HashSet;
 
@@ -12,9 +14,10 @@ use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
 use crate::report::PhaseResult;
 
 /// Build the attributed phases from the survivor sets of the comparative
-/// scans. Callers pass `None` for a scan they did not run: the partition-only
-/// scan exists only when the analysis produced a `partition_safe` fragment,
-/// the full scan only when a `stats_safe` or `unsplittable` fragment exists.
+/// scans. Callers pass `None` for a scan they did not run: the partition
+/// survivors exist only when the analysis produced a `partition_safe` or
+/// `partition_exact` fragment, the full scan only when a `stats_safe` or
+/// `unsplittable` fragment exists.
 pub fn build_phases(
     analysis: &PredicateAnalysis,
     total_files: usize,

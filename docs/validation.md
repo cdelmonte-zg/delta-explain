@@ -43,7 +43,9 @@ timestamps, unknown writer features, and the catalog-managed refusal path.
 each of twenty predicates, Spark computes which files actually contain
 matching rows, and the harness asserts delta-explain's survivor set covers
 them. The matrix includes normalized forms (De Morgan pushdown, factored
-ORs) and null-safe comparisons. It reruns on every change to predicate
+ORs), `LIKE` in both its rewritten shape (prefix ranges) and its
+partition-evaluated shapes (non-prefix, `NOT LIKE`, `_`), and null-safe
+comparisons. It reruns on every change to predicate
 semantics and weekly in CI (the Validation workflow); results to date:
 sound on all, exact on that layout.
 
