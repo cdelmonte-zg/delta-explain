@@ -16,8 +16,10 @@ follow SemVer relative to that field.
   already computes - no ML, no prediction, so the *why* is as trustworthy
   as the numbers and reproducible enough to gate on. v1 codes:
   `NO_PARTITION_FILTER` (predicate misses the partition column),
-  `WEAK_DATA_SKIPPING` (stats present but ranges overlap - the column is
-  unordered), `STATS_ABSENT`, `UNSUPPORTED_FRAGMENT`. Additive JSON change:
+  `WEAK_DATA_SKIPPING` (stats present but the min/max ranges overlap the
+  bound, so nothing is eliminated; the fix - sort/cluster by the column -
+  is a recommendation, not a proven-layout claim), `STATS_ABSENT`,
+  `UNSUPPORTED_FRAGMENT`. Additive JSON change:
   an `explain` array present only with the flag, `schema_version` 0.3.0 ->
   0.4.0, new `schemas/report-v0.4.schema.json`. The report viewer and the
   Python wrapper render the new field.

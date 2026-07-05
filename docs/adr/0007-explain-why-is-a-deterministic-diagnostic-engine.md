@@ -1,7 +1,7 @@
 # 0007. `--explain-why` is a deterministic diagnostic engine, not an ML model
 
 Date: 2026-07-05
-Status: proposed
+Status: accepted
 
 ## Context
 
@@ -56,8 +56,10 @@ stable once shipped; new codes are additive.
   on a partition column.
 - `WEAK_DATA_SKIPPING` - a stats-safe fragment reached data skipping but
   eliminated little or nothing because the per-file min/max ranges overlap
-  the bound (the column is not ordered/clustered). Suggest sorting or
-  clustering by it. (The taxi `PULocationID` case.)
+  the bound. The tool reports the observed overlap; the likely cause (the
+  column is not sorted/clustered) is a recommendation, not a proven layout
+  claim - the wording stays "may enable skipping". (The taxi `PULocationID`
+  case.)
 - `STATS_ABSENT` - a stats-safe fragment but the table carries no statistics
   for its column (none written, or past `dataSkippingNumIndexedCols`), so
   data skipping cannot act.

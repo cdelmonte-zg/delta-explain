@@ -107,12 +107,16 @@ pub fn diagnose(
                 "WEAK_DATA_SKIPPING",
                 Severity::Warning,
                 format!(
-                    "Data skipping eliminated no files for '{stats_frag}': every file's \
-                     min/max range overlaps the predicate's bound."
+                    "Data skipping eliminated no files for '{stats_frag}': the per-file \
+                     min/max ranges all overlap the predicate's bound."
                 ),
+                // The tool observes the overlap, not the physical layout: wide
+                // ranges usually mean the data is not ordered by the column,
+                // but that is a likely cause and a recommendation, not a proof.
                 Some(
-                    "The data is not ordered by that column. Sort or cluster the table \
-                     by it so each file covers a narrow range."
+                    "Ranges this wide usually mean the data is not sorted or clustered \
+                     by that column; ordering by it so each file covers a narrower range \
+                     may enable skipping."
                         .into(),
                 ),
             ));
