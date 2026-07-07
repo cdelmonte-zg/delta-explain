@@ -350,7 +350,7 @@ fn try_main() -> Result<()> {
         let parsed = predicate_ast::parse(pred_str)?;
         if let Some(dump) = debug_dump.as_mut() {
             dump.section(
-                "owned AST (parsed)",
+                "owned AST (before normalization)",
                 &format!("rendered: {parsed}\n\n{parsed:#?}"),
             )?;
         }
