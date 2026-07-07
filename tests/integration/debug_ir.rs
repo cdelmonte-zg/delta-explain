@@ -37,7 +37,7 @@ fn mixed_predicate_dumps_every_pipeline_section() {
     for title in [
         "invocation",
         "snapshot",
-        "owned AST (parsed)",
+        "owned AST (before normalization)",
         "owned AST (normalized)",
         "classification",
         "kernel predicate: partition-only scan",
