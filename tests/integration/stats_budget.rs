@@ -4,7 +4,7 @@
 //! columns (default 32); each nested struct leaf counts as one. The fixture
 //! sets the property to 4 and uses a 5-leaf struct `s` (a..e) followed by a
 //! root column `tail`. So `s.a..s.d` carry stats, while `s.e` and `tail` do
-//! not — a predicate on those cannot be skipped even though the values would
+//! not - a predicate on those cannot be skipped even though the values would
 //! allow it. This is the practical ceiling of nested data skipping: a deep or
 //! wide struct can starve later columns of statistics.
 

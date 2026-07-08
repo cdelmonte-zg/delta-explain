@@ -1,5 +1,5 @@
 # Minimal S3-compatible object store (MinIO) for trying delta-explain against
-# s3:// storage. No Spark, no Jupyter — just somewhere to put Delta tables.
+# s3:// storage. No Spark, no Jupyter - just somewhere to put Delta tables.
 #
 #   docker compose up -d           # or: docker-compose up -d
 #   pip install -r requirements.txt

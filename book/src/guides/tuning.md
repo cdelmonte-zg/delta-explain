@@ -1,7 +1,7 @@
 # Tuning a table layout
 
 A table layout is a bet on which queries matter. `delta-explain` makes the bet
-measurable — *before* you run a query — so you can iterate on partitioning and
+measurable - *before* you run a query - so you can iterate on partitioning and
 file layout with numbers instead of guesses.
 
 The repo ships an executable notebook,
@@ -23,18 +23,18 @@ fare filter, both):
 
 The lessons the tool surfaces at each step:
 
-1. **The baseline is hopeless** — every file spans the whole week, nothing
+1. **The baseline is hopeless** - every file spans the whole week, nothing
    prunes.
-2. **Partitioning by the wrong (high-cardinality) column makes it worse** — 240
+2. **Partitioning by the wrong (high-cardinality) column makes it worse** - 240
    tiny files, and the date query still does not prune.
 3. **The right partition column** wins the date axis, and the tool shows exactly
    which queries it does *not* help.
-4. **Partitioning plus ordering** prunes both axes — at a file-count cost the
+4. **Partitioning plus ordering** prunes both axes - at a file-count cost the
    tool makes explicit instead of leaving to guesswork.
 
 And the tool predicts step 4 from step 3: running `--explain-why` on the
-date-partitioned layout with a fare query returns `WEAK_DATA_SKIPPING` — "order
-by that column" — which is precisely the next move.
+date-partitioned layout with a fare query returns `WEAK_DATA_SKIPPING` - "order
+by that column" - which is precisely the next move.
 
 This is the shift from *file counter* to *pruning advisor*: for the queries you
 care about, how many files does this layout eliminate, and what would improve

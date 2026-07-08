@@ -95,7 +95,7 @@ fn empty_table_json_reports_zero() {
 // ── Partition columns must come from metadata, not file inference ───
 
 /// The empty table is partitioned by "region" according to its metadata.
-/// Even with zero files, partition columns should be known — so a predicate
+/// Even with zero files, partition columns should be known - so a predicate
 /// on "region" should trigger a partition pruning phase (with 0 files in/out).
 #[test]
 fn empty_table_knows_partition_columns_from_metadata() {

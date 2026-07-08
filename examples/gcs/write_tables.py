@@ -2,7 +2,7 @@
 """Write two Delta tables to a real Google Cloud Storage bucket so you can try
 delta-explain against gs:// storage.
 
-Same logical rows, two physical layouts (partitioned vs flat) — the partitioned
+Same logical rows, two physical layouts (partitioned vs flat) - the partitioned
 one prunes well, the flat one barely prunes at all.
 
 Auth: set GOOGLE_SERVICE_ACCOUNT to the path of a service-account JSON key with

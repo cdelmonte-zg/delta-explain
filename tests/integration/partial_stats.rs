@@ -67,7 +67,7 @@ fn json_assertion_stats_complete_reports_missing_count() {
 
 // ── Pruning behaviour with partial stats ────────────────────────────
 
-/// Partition pruning must work normally regardless of stats coverage —
+/// Partition pruning must work normally regardless of stats coverage -
 /// it operates on partition values, not on min/max statistics.
 #[rstest]
 #[case("country = 'DE'", 2)]

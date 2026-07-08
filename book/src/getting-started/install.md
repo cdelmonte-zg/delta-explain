@@ -24,7 +24,7 @@ pip install delta-explain
 ```
 
 The wheel ships the compiled binary (the `delta-explain` command works from the
-same environment) plus a thin Python API — see [From Python](../guides/python.md).
+same environment) plus a thin Python API - see [From Python](../guides/python.md).
 
 ## Cargo (crates.io)
 

@@ -47,7 +47,7 @@ def table(rs):
     })
 
 
-# s3://lake/users — partitioned by country; each file a narrow age band
+# s3://lake/users - partitioned by country; each file a narrow age band
 first = True
 for c in COUNTRIES:
     crows = sorted([r for r in rows if r["country"] == c], key=lambda r: r["age"])
@@ -60,7 +60,7 @@ for c in COUNTRIES:
         first = False
 print("wrote s3://lake/users        (partitioned, age-banded)")
 
-# s3://lake/users-flat — flat, shuffled into 6 files
+# s3://lake/users-flat - flat, shuffled into 6 files
 random.shuffle(rows)
 chunk = N // 6
 write_deltalake("s3://lake/users-flat", table(rows[:chunk]),

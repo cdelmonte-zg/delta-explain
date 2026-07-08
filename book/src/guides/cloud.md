@@ -11,7 +11,7 @@ come in by environment, by profile, or by explicit options.
   credentials live in environment variables instead.
 - **On a laptop (AWS)**: `--profile <name>` resolves static keys, session token,
   and region from `~/.aws/credentials` / `~/.aws/config`. Profiles that rely on
-  SSO, `credential_process`, or role assumption are not resolved — export them
+  SSO, `credential_process`, or role assumption are not resolved - export them
   first and use `--env-creds`:
   ```bash
   eval $(aws configure export-credentials --profile corp --format env)
