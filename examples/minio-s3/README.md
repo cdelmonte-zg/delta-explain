@@ -1,7 +1,7 @@
 # delta-explain against S3-compatible storage (MinIO)
 
 A self-contained example that runs `delta-explain` against an `s3://` table on a
-local [MinIO](https://min.io) server - no AWS account, no Spark. It also shows
+local [MinIO](https://min.io) server, no AWS account, no Spark. It also shows
 the tool's core point: the same logical data prunes very differently depending
 on physical layout.
 
@@ -30,8 +30,8 @@ python write_tables.py
 
 This writes the same rows under two layouts:
 
-- `s3://lake/users` - partitioned by `country`, files sorted into age bands
-- `s3://lake/users-flat` - no partitioning, rows shuffled across files
+- `s3://lake/users`: partitioned by `country`, files sorted into age bands
+- `s3://lake/users-flat`: no partitioning, rows shuffled across files
 
 ## 3. Explain the pruning
 

@@ -1,21 +1,21 @@
 # Architecture
 
-The pipeline is a thin, linear sequence - no hidden concurrency, no adaptive
+The pipeline is a thin, linear sequence, with no hidden concurrency and no adaptive
 behavior:
 
-1. **Baseline scan** - one kernel log replay (JSON commits + checkpoint Parquet)
+1. **Baseline scan**: one kernel log replay (JSON commits + checkpoint Parquet)
    enumerates the snapshot's files and their statistics.
-2. **Parse and normalize** - the `--where` predicate is parsed once into an
+2. **Parse and normalize**: the `--where` predicate is parsed once into an
    owned AST, then normalized (De Morgan pushdown, the string-column prefix-LIKE
    range rewrite, OR factoring). Every rewrite preserves SQL three-valued
    semantics, so it can change attribution but never the survivor set.
-3. **Classify** - each top-level `AND` conjunct is routed to `partition_safe`,
+3. **Classify**: each top-level `AND` conjunct is routed to `partition_safe`,
    `partition_exact`, `stats_safe`, or `unsplittable`.
-4. **Phase scans** - the partition fragments run as a kernel scan intersected
+4. **Phase scans**: the partition fragments run as a kernel scan intersected
    with the partition-literal evaluator; the full predicate, stripped of
    unsupported fragments, runs as the final scan.
-5. **Attribution** - the survivor-set differences become chained, labeled phases.
-6. **Diagnose, gate, render** - `--explain-why` diagnoses, gates evaluate, and
+5. **Attribution**: the survivor-set differences become chained, labeled phases.
+6. **Diagnose, gate, render**: `--explain-why` diagnoses, gates evaluate, and
    the report renders as text or JSON.
 
 ## One parse, three interpreters
@@ -30,7 +30,7 @@ there is one parse and three independent interpreters that can never disagree:
 
 Because all three read the same tree, "what the kernel sees", "what the user
 reads", and "what gets evaluated" cannot drift. Growing the pruning language
-means widening the AST, never adding a second parser - the decision recorded in
+means widening the AST, never adding a second parser, the decision recorded in
 [ADR 0005](decisions.md) and generalized in [ADR 0006](decisions.md).
 
 Diagnostics (`--explain-why`) are a separate advisor layer *over the finished

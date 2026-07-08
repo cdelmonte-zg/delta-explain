@@ -93,7 +93,7 @@ pub fn read_log_metadata(
 /// The `_delta_log` prefix inside the store, derived from the table URL's
 /// path alone. The store handed to the reader is already scoped exactly
 /// like the one the engine uses (both come from `store_from_url_opts`), so
-/// re-parsing the URL into a second store is unnecessary - and on `az://`
+/// re-parsing the URL into a second store is unnecessary, and on `az://`
 /// it is impossible without credentials in hand, which is how Azure tables
 /// used to fail here ("Account must be specified") before this derivation.
 fn log_prefix_for(table_url: &Url) -> Result<ObjectPath, Error> {

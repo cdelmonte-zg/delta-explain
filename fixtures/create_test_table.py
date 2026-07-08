@@ -10,25 +10,25 @@ Produces (next to this script):
 - ./users-flat              demo table: flat layout, copied from the committed
                              synthetic test-table-flat fixture; expect 33% pruned
 - ./test-table-nested       partitioned, with a `profile` struct column whose
-                             leaves (age, score, geo.zip - two levels deep) carry
-                             min/max stats - exercises data skipping on nested
+                             leaves (age, score, geo.zip, two levels deep) carry
+                             min/max stats; exercises data skipping on nested
                              (dotted) columns at arbitrary depth
 - ./test-table-stats-budget  dataSkippingNumIndexedCols=4: a 5-leaf struct eats
                              the stats budget, so the trailing root column `tail`
                              gets no stats and cannot be skipped
 - ./test-table-checkpointed  long-lived table after log cleanup: every `add`
                              action lives only inside the checkpoint Parquet,
-                             no JSON commits remain - per-file stats must come
+                             no JSON commits remain; per-file stats must come
                              from the kernel's log replay
 - ./test-table-temporal      partitioned by a DATE column, with per-file
                              ranges on TIMESTAMP, TIMESTAMP_NTZ, DECIMAL(9,2),
-                             INT16, INT8 - exercises literal coercion
+                             INT16, INT8; exercises literal coercion
 - ./test-table-checkpointed-part  the canonical partitioned layout with a
                              checkpoint-only log: partition columns must be
                              derived from the kernel-replayed partitionValues
 - ./test-table-checkpointed-struct  same shape, but the checkpoint carries
                              stats only as the structured `stats_parsed`
-                             column (add.stats JSON nulled out) - the
+                             column (add.stats JSON nulled out), the
                              delta.checkpoint.writeStatsAsJson=false layout.
                              Hand-crafted: deltalake always writes JSON stats,
                              so the checkpoint is rewritten post-hoc
@@ -41,7 +41,7 @@ Note on the flat layout: ./test-table-flat is a hand-crafted synthetic
 fixture. Its Delta-log statistics (interleaved `country` ranges that are NOT
 physically present in the parquet files) are what make data skipping
 ineffective and produce the 33% result. It therefore CANNOT be rebuilt from a
-dataframe via write_deltalake - that would recompute the stats and change the
+dataframe via write_deltalake: that would recompute the stats and change the
 number. It is committed to git as the source of truth, and ./users-flat is
 materialised by copying it verbatim.
 """
@@ -242,7 +242,7 @@ if not already_exists(USERS_PATH):
             mode="append",
         )
     print(f"Demo table created at {USERS_PATH}")
-    print(f"  Partitioned by country (DE, US, IT) - expect 83% pruned")
+    print(f"  Partitioned by country (DE, US, IT): expect 83% pruned")
 
 
 # === users-flat (demo: flat layout, expect 33% pruned) ===================
@@ -255,12 +255,12 @@ if not already_exists(USERS_FLAT_PATH):
     if not Path(FLAT_TABLE_PATH).exists():
         raise SystemExit(
             f"ERROR: {FLAT_TABLE_PATH} is missing. It is a committed synthetic "
-            f"fixture and cannot be regenerated here - restore it from git:\n"
+            f"fixture and cannot be regenerated here; restore it from git:\n"
             f"  git checkout -- fixtures/test-table-flat"
         )
     shutil.copytree(FLAT_TABLE_PATH, USERS_FLAT_PATH)
     print(f"Demo table created at {USERS_FLAT_PATH}")
-    print(f"  Flat copy of test-table-flat (no partitions) - expect 33% pruned")
+    print(f"  Flat copy of test-table-flat (no partitions): expect 33% pruned")
 
 
 # === test-table-nested (struct column, nested data skipping) =============
@@ -342,7 +342,7 @@ if not already_exists(BUDGET_TABLE_PATH):
 
 # === test-table-checkpointed (adds live only in checkpoint Parquet) =======
 # Simulates a long-lived production table after log cleanup: three appends,
-# a checkpoint at v2, then every JSON commit is deleted - the same shape
+# a checkpoint at v2, then every JSON commit is deleted: the same shape
 # `delta.logRetentionDuration` cleanup produces. All surviving `add` actions
 # (and their stats) live only inside the checkpoint Parquet, so per-file
 # statistics are only reachable through the kernel's log replay; reading the

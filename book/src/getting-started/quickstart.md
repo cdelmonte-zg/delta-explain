@@ -38,5 +38,5 @@ docker compose up -d
 
 ## Next
 
-- [Reading a report](../guides/reading-a-report.md) - what every line means.
-- [Gating pruning in CI](../guides/ci-gating.md) - turn it into a build check.
+- [Reading a report](../guides/reading-a-report.md): what every line means.
+- [Gating pruning in CI](../guides/ci-gating.md): turn it into a build check.

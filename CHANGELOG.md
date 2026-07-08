@@ -15,7 +15,7 @@ Nothing yet.
 
 The release that turns the explainer into an advisor, and makes a report
 readable without a terminal. `--explain-why` adds a deterministic diagnostic
-layer - *why* a fragment did not prune and what to change - built as a rules
+layer (*why* a fragment did not prune and what to change), built as a rules
 engine over data the tool already computes, never a model, so the answer stays
 as trustworthy as the numbers and gate-able in CI. A self-contained report
 viewer renders a JSON report as a navigable page (pruning funnel, analysis,
@@ -329,7 +329,7 @@ the production-readiness sprint. The JSON `schema_version` is unchanged
   unsplittable OR, IN, BETWEEN, NOT, float bounds, empty result), and on
   the reference layout exact: every kept file contains a match.
 - **`test-table-checkpointed` and `test-table-checkpointed-struct` fixtures**:
-  three appends, a checkpoint at v2, every JSON commit removed - the shape
+  three appends, a checkpoint at v2, every JSON commit removed: the shape
   `delta.logRetentionDuration` cleanup produces. The struct variant carries
   stats only as the `stats_parsed` column (hand-rewritten checkpoint, since
   deltalake always writes JSON stats). Integration tests lock in stats
@@ -381,7 +381,7 @@ statistics are surfaced only in verbose text output, so this is additive.
   flattened to dotted leaf keys (`profile.age: 25..35, profile.score: 75.3..92`)
   in `--verbose` output, instead of the raw struct object blob. Works at any
   nesting depth (`profile.geo.zip`). New `test-table-nested` fixture exercises
-  the path; `test-table-stats-budget` documents the ceiling - each nested leaf
+  the path; `test-table-stats-budget` documents the ceiling: each nested leaf
   counts toward `dataSkippingNumIndexedCols`, so a wide struct can starve later
   columns of statistics.
 - **Runnable cloud examples.** `examples/minio-s3/` and `examples/gcs/` provide
@@ -471,7 +471,7 @@ previous JSON shape.
   (`"0.1.0"`), `tool_version`, `elapsed_ms`, an `analysis` block, a `stats`
   block (with categorical `mode` ∈ {exact, partial, absent}), an
   `assertions` array, and a `result` field (`pass` / `fail` / `null`).
-- `stats_coverage` is gone - replaced by `stats`, which includes the new
+- `stats_coverage` is gone, replaced by `stats`, which includes the new
   `mode` field.
 - `phases[].files[]` (the per-file detail array) has been removed from the
   JSON output. Per-file information remains available in the text output
@@ -492,7 +492,7 @@ previous JSON shape.
   section listing analyzer notes by code.
 - **`test-table-partial-stats` fixture** for exercising the
   `stats.mode = "partial"` code path (4 files; 2 with stats, 2 without).
-- **Semantic regression suite** (`tests/semantic_regression.rs`) - six
+- **Semantic regression suite** (`tests/semantic_regression.rs`): six
   canonical tests, one per minimum case in the roadmap.
 - `CLAUDE.md` documenting project conventions for contributors and AI
   assistants.
