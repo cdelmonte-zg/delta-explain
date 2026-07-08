@@ -11,11 +11,11 @@ follow SemVer relative to that field.
 
 Nothing yet.
 
-## [0.6.0] — 2026-07-05
+## [0.6.0] - 2026-07-05
 
 The release that turns the explainer into an advisor, and makes a report
 readable without a terminal. `--explain-why` adds a deterministic diagnostic
-layer — *why* a fragment did not prune and what to change — built as a rules
+layer - *why* a fragment did not prune and what to change - built as a rules
 engine over data the tool already computes, never a model, so the answer stays
 as trustworthy as the numbers and gate-able in CI. A self-contained report
 viewer renders a JSON report as a navigable page (pruning funnel, analysis,
@@ -60,7 +60,7 @@ in `docs/adr/0007`.
   layout optimization. The differential harness gained a taxi table so the
   Spark survivor-set oracle runs on real data too.
 
-## [0.5.0] — 2026-07-05
+## [0.5.0] - 2026-07-05
 
 The LIKE release, and the release where the predicate pipeline became
 three interpreters over one owned AST. Prefix `LIKE` patterns rewrite to
@@ -122,7 +122,7 @@ differential matrix grew to twenty predicates and stayed green.
   verdict. Text rendering moved to fallible writes and JSON rendering is
   now separated from printing along the way.
 
-## [0.4.0] — 2026-07-03
+## [0.4.0] - 2026-07-03
 
 This cycle added no single big feature; it gave the tool a public contract,
 and then verified it. The predicate pipeline was rebuilt on an owned AST
@@ -285,7 +285,7 @@ observability product.
   down). Behavior parity was validated against the differential harness:
   survivor sets are identical to v0.3.0 on the full predicate matrix.
 
-## [0.3.0] — 2026-07-02
+## [0.3.0] - 2026-07-02
 
 One release for the whole cycle: the kernel-backed statistics pipeline plus
 the production-readiness sprint. The JSON `schema_version` is unchanged
@@ -329,7 +329,7 @@ the production-readiness sprint. The JSON `schema_version` is unchanged
   unsplittable OR, IN, BETWEEN, NOT, float bounds, empty result), and on
   the reference layout exact: every kept file contains a match.
 - **`test-table-checkpointed` and `test-table-checkpointed-struct` fixtures**:
-  three appends, a checkpoint at v2, every JSON commit removed — the shape
+  three appends, a checkpoint at v2, every JSON commit removed - the shape
   `delta.logRetentionDuration` cleanup produces. The struct variant carries
   stats only as the `stats_parsed` column (hand-rewritten checkpoint, since
   deltalake always writes JSON stats). Integration tests lock in stats
@@ -369,7 +369,7 @@ the production-readiness sprint. The JSON `schema_version` is unchanged
   New `test-table-checkpointed-part` fixture locks the two-phase attribution
   in on a checkpoint-only partitioned log.
 
-## [0.2.3] — 2026-06-20
+## [0.2.3] - 2026-06-20
 
 Data skipping on nested (struct) columns addressed by dotted paths
 (`profile.age`). The JSON `schema_version` is unchanged (`0.1.0`): per-column
@@ -381,7 +381,7 @@ statistics are surfaced only in verbose text output, so this is additive.
   flattened to dotted leaf keys (`profile.age: 25..35, profile.score: 75.3..92`)
   in `--verbose` output, instead of the raw struct object blob. Works at any
   nesting depth (`profile.geo.zip`). New `test-table-nested` fixture exercises
-  the path; `test-table-stats-budget` documents the ceiling — each nested leaf
+  the path; `test-table-stats-budget` documents the ceiling - each nested leaf
   counts toward `dataSkippingNumIndexedCols`, so a wide struct can starve later
   columns of statistics.
 - **Runnable cloud examples.** `examples/minio-s3/` and `examples/gcs/` provide
@@ -399,7 +399,7 @@ statistics are surfaced only in verbose text output, so this is additive.
   located under a prefix (e.g. `s3://my-bucket/warehouse/sales/`) were never
   resolved and the tool exited with a storage error. Fixes #3.
 
-## [0.2.2] — 2026-05-09
+## [0.2.2] - 2026-05-09
 
 This release adds binary distribution channels and aligns the README with
 the companion deep-dive article. The binary itself is unchanged from v0.2.1;
@@ -448,7 +448,7 @@ the JSON `schema_version` remains `0.1.0`.
     `AWS_PROFILE` on a developer laptop. On EC2/ECS/EKS/GKE/AKS the
     default credential chain works as expected.
 
-## [0.2.1] — 2026-05-08
+## [0.2.1] - 2026-05-08
 
 ### Documentation
 
@@ -459,7 +459,7 @@ the JSON `schema_version` remains `0.1.0`.
   is rephrased to reflect that those predicates are now explicitly
   classified as `unsplittable` rather than silently downgraded.
 
-## [0.2.0] — 2026-05-08
+## [0.2.0] - 2026-05-08
 
 This release closes the FASE 0 / FASE 1 set in the roadmap and freezes the
 JSON output as a stable contract. It is **breaking** for anyone parsing the
@@ -471,7 +471,7 @@ previous JSON shape.
   (`"0.1.0"`), `tool_version`, `elapsed_ms`, an `analysis` block, a `stats`
   block (with categorical `mode` ∈ {exact, partial, absent}), an
   `assertions` array, and a `result` field (`pass` / `fail` / `null`).
-- `stats_coverage` is gone — replaced by `stats`, which includes the new
+- `stats_coverage` is gone - replaced by `stats`, which includes the new
   `mode` field.
 - `phases[].files[]` (the per-file detail array) has been removed from the
   JSON output. Per-file information remains available in the text output
@@ -492,7 +492,7 @@ previous JSON shape.
   section listing analyzer notes by code.
 - **`test-table-partial-stats` fixture** for exercising the
   `stats.mode = "partial"` code path (4 files; 2 with stats, 2 without).
-- **Semantic regression suite** (`tests/semantic_regression.rs`) — six
+- **Semantic regression suite** (`tests/semantic_regression.rs`) - six
   canonical tests, one per minimum case in the roadmap.
 - `CLAUDE.md` documenting project conventions for contributors and AI
   assistants.
@@ -504,7 +504,7 @@ previous JSON shape.
   `stats_coverage` reported every file as having stats. Files without
   log-level stats are now skipped at read time.
 
-## [0.1.1] — 2026-04-13
+## [0.1.1] - 2026-04-13
 
 ### Fixed
 

@@ -1,5 +1,5 @@
 # Jupyter + Spark for writing Delta tables to a real GCS bucket.
-# (No MinIO here — GCS is remote cloud storage, not a local container.)
+# (No MinIO here - GCS is remote cloud storage, not a local container.)
 #
 #   cp .env.example .env        # set GCS_BUCKET and GOOGLE_SERVICE_ACCOUNT (host path to key.json)
 #   docker compose up -d        # or: docker-compose up -d

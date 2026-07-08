@@ -28,14 +28,14 @@ Total reduction: 6 -> 1 files (83% pruned)
 Each top-level `AND` conjunct is routed to the mechanism that can eliminate
 files on it:
 
-- **partition-safe** — references partition columns only; prunes at the
+- **partition-safe** - references partition columns only; prunes at the
   directory level, exactly.
-- **partition-exact** — outside the kernel's language (an any-shape `LIKE`) but
+- **partition-exact** - outside the kernel's language (an any-shape `LIKE`) but
   all its columns are partition columns, so it is evaluated directly against the
   literal partition values.
-- **stats-safe** — references non-partition columns; prunes on per-file min/max
+- **stats-safe** - references non-partition columns; prunes on per-file min/max
   statistics.
-- **unsplittable** — mixes both axes, or contains a construct the tool cannot
+- **unsplittable** - mixes both axes, or contains a construct the tool cannot
   reason about; applied conservatively (keeps all files) with a diagnostic.
 
 ## Confidence
@@ -43,17 +43,17 @@ files on it:
 Labels how precisely the elimination can be *explained*, never whether it is
 correct (it always is, conservatively):
 
-- **exact** — partition values compared directly; every dropped file provably
+- **exact** - partition values compared directly; every dropped file provably
   has no match.
-- **conservative** — min/max ranges can overlap a bound without a match, so
+- **conservative** - min/max ranges can overlap a bound without a match, so
   files may be kept in excess, never dropped in excess.
-- **incomplete** — part of the predicate could not be attributed to one phase;
+- **incomplete** - part of the predicate could not be attributed to one phase;
   the totals stay sound, the attribution does not.
 
 ## Phases
 
-The pruning is decomposed into chained phases — partition pruning first, then
-data skipping — each showing the predicate fragment it honored and the files
+The pruning is decomposed into chained phases - partition pruning first, then
+data skipping - each showing the predicate fragment it honored and the files
 remaining. It is a decomposition of *what the metadata makes possible*, not an
 execution trace.
 

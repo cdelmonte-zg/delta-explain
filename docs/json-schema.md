@@ -66,11 +66,11 @@ vectors), `has_stats`, **`kept`**, **`pruned_by`**.
 Appears globally (`analysis.confidence`) and per phase. It labels how
 precisely the elimination can be explained, never whether it is correct:
 
-- `exact` — provably precise elimination (partition values compared
+- `exact` - provably precise elimination (partition values compared
   directly);
-- `conservative` — sound but possibly loose (min/max ranges can overlap a
+- `conservative` - sound but possibly loose (min/max ranges can overlap a
   bound without the file containing a match);
-- `incomplete` — part of the predicate could not be attributed (mixed OR,
+- `incomplete` - part of the predicate could not be attributed (mixed OR,
   unsupported construct); totals remain sound, a note says why.
 
 ## Stable note codes

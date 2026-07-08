@@ -1,4 +1,4 @@
-//! Semantic regression suite — Step 1.5.
+//! Semantic regression suite - Step 1.5.
 //!
 //! One test per "minimum case" listed in DELTA-EXPLAIN-ROADMAP.md (Step 1.5).
 //! Each test is the canonical, end-to-end check for that scenario: input
@@ -6,7 +6,7 @@
 //! pipeline and break the contract for one of these cases, this file is the
 //! single place that should fail.
 //!
-//! All assertions are made against the stable JSON schema — text
+//! All assertions are made against the stable JSON schema - text
 //! output is the *human* surface, JSON is the *machine* surface, and that's
 //! what we lock down here.
 
