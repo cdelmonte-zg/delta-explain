@@ -20,12 +20,12 @@ Why:
 
 ## Deterministic, not a model
 
-Each diagnosis is a **function of the report the tool already computed** - the
+Each diagnosis is a **function of the report the tool already computed**: the
 classification, the stats coverage, the partition columns, the per-phase
 pruning. Nothing is predicted. That is deliberate: the *why* must be as
 trustworthy as the numbers it explains, and reproducible enough to gate on in
 CI. (An LLM, if you want prose, is a consumer of the JSON *outside* the tool,
-never bundled - see [ADR 0007](../concepts/decisions.md).)
+never bundled; see [ADR 0007](../concepts/decisions.md).)
 
 ## The diagnosis codes
 
@@ -33,9 +33,9 @@ Stable identifiers; new codes are additive.
 
 | Code | Means | Honest limit |
 |---|---|---|
-| `NO_PARTITION_FILTER` | The table is partitioned but the predicate filters on no partition column. | - |
+| `NO_PARTITION_FILTER` | The table is partitioned but the predicate filters on no partition column. | None |
 | `WEAK_DATA_SKIPPING` | Stats are present on every file, but the min/max ranges all overlap the bound, so nothing is eliminated. | The overlap is observed; "sort or cluster" is a recommendation, not a proven layout claim. |
-| `STATS_ABSENT` | A stats-safe fragment, but the table carries no statistics for its column, so data skipping cannot act. | - |
+| `STATS_ABSENT` | A stats-safe fragment, but the table carries no statistics for its column, so data skipping cannot act. | None |
 | `UNSUPPORTED_FRAGMENT` | A fragment outside the pruning language kept all files. | Reframes the classification note as advice. |
 
 `WEAK_DATA_SKIPPING` fires only when *every* file has statistics: on a

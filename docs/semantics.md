@@ -19,9 +19,9 @@ these statements.
 Every invocation follows the same linear sequence; there is no hidden
 concurrency and no adaptive behavior:
 
-1. **Baseline scan** - one kernel log replay (JSON commits + checkpoint
+1. **Baseline scan**: one kernel log replay (JSON commits + checkpoint
    Parquet) enumerates the snapshot's files and their statistics.
-2. **Parse and normalize** - the `--where` predicate is parsed once into an
+2. **Parse and normalize**: the `--where` predicate is parsed once into an
    owned AST, then normalized: negations push down to the leaves
    (De Morgan), a literal-prefix `LIKE` on a string column rewrites to a
    lexicographic range (`country LIKE 'D%'` becomes
@@ -32,21 +32,21 @@ concurrency and no adaptive behavior:
    degrades), and conjuncts common to every `OR` branch factor out of
    the `OR`. All rewrites preserve SQL three-valued semantics, so they
    can change attribution and confidence but never the survivor set.
-3. **Classify** - each top-level `AND` conjunct is routed to one bucket:
+3. **Classify**: each top-level `AND` conjunct is routed to one bucket:
    `partition_safe` (references partition columns only), `partition_exact`
-   (outside the kernel's predicate language - any-shape `LIKE` - but with
+   (outside the kernel's predicate language, any-shape `LIKE`, but with
    fully known semantics and every column a partition column), `stats_safe`
    (references no partition column), or `unsplittable` (mixes both, or
    contains an opaque construct).
-4. **Phase scans** - the partition-safe fragment runs as its own kernel
+4. **Phase scans**: the partition-safe fragment runs as its own kernel
    scan, and the partition-exact fragment is evaluated per file against
    the literal partition values; their intersection is Phase 1. The full
    predicate, conservatively stripped of unsupported fragments and
    intersected with the partition-exact verdict, runs as the final scan.
-5. **Attribution** - the survivor-set difference between phases is
+5. **Attribution**: the survivor-set difference between phases is
    attributed: directory-level partition pruning first, min/max data
    skipping second.
-6. **Gates and rendering** - `--min-pruning` / `--assert-stats` evaluate,
+6. **Gates and rendering**: `--min-pruning` / `--assert-stats` evaluate,
    and the report renders as text or JSON.
 
 ## Soundness
@@ -72,12 +72,12 @@ comparisons.
 Confidence labels how precisely the elimination can be *explained*, never
 whether it is correct (it always is, in the conservative direction):
 
-- **exact** - the phase's elimination is precise: partition values are
+- **exact**. The phase's elimination is precise: partition values are
   compared directly, every dropped file provably contains no match.
-- **conservative** - sound but possibly loose: min/max ranges can overlap a
+- **conservative**. Sound but possibly loose: min/max ranges can overlap a
   predicate's bound without the file containing a matching row. Files may
   be kept in excess, never dropped in excess.
-- **incomplete** - part of the predicate could not be attributed to a
+- **incomplete**. Part of the predicate could not be attributed to a
   single phase (mixed `OR`, or an unsupported construct). The totals are
   still sound; what is lost is the clean attribution, and a diagnostic note
   says why.
@@ -100,9 +100,9 @@ consumer of that JSON (an LLM the user brings), never bundled in the tool.
 
 ## Degradation rules
 
-Constructs outside the pruning language - function calls, arithmetic,
-`LIKE` in any non-prefix shape (leading or embedded wildcards, `_`,
-`NOT LIKE`, `ESCAPE`), subqueries, column-to-column comparisons - do not
+Constructs outside the pruning language (function calls, arithmetic,
+`LIKE` in any non-prefix shape [leading or embedded wildcards, `_`,
+`NOT LIKE`, `ESCAPE`], subqueries, column-to-column comparisons) do not
 abort the run:
 
 - under a top-level `AND`, the unsupported fragment is dropped from the
@@ -124,8 +124,8 @@ NULL* is dropped exactly. When the evaluator must abstain instead of
 deciding (e.g. `LIKE` over a timestamp column, whose cast-to-string
 format is engine-dependent), the affected files are kept, confidence
 downgrades to `conservative`, and a `PARTITION_EVAL_GAP` note counts
-them. Opaque constructs - function calls, arithmetic, subqueries, whose
-semantics the tool does not model - always degrade by the rules above,
+them. Opaque constructs (function calls, arithmetic, subqueries, whose
+semantics the tool does not model) always degrade by the rules above,
 partition columns or not.
 
 Malformed SQL is different: it is a user error and fails the run.
@@ -136,13 +136,13 @@ Protocol features that distort or reframe the numbers are detected and
 declared in `table_features`, with warnings, but the numbers are not
 adjusted:
 
-- **Deletion vectors** - record counts include soft-deleted rows on files
+- **Deletion vectors**: record counts include soft-deleted rows on files
   that carry a vector (`DELETION_VECTORS` warns with the file count;
   enabled-but-unused stays silent because the numbers are correct).
-- **Column mapping** - the log stores physical column names; verbose
+- **Column mapping**: the log stores physical column names; verbose
   statistics may display them (`COLUMN_MAPPING`). Kernel pruning itself
   resolves the mapping.
-- **Liquid clustering** - declared with the clustering columns
+- **Liquid clustering**: declared with the clustering columns
   (`LIQUID_CLUSTERING`); layout is managed by clustering, not directory
   partitions, and data skipping still applies. Undetectable on fully
   checkpointed logs (no public kernel accessor for system metadata
@@ -154,7 +154,7 @@ The report reflects what the metadata makes possible, computed with the
 strongest sound techniques in production use. Engines make different
 choices; the known divergences are documented in the README's *Current
 limitations* (notably `IN`-list strategies). The report never overstates
-correctness - only, potentially, the pruning a specific engine will
+correctness: only, potentially, the pruning a specific engine will
 realize.
 
 ## Exit codes and the error contract

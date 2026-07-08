@@ -265,7 +265,7 @@ fn min_pruning_fails_when_below_threshold() {
 
 #[test]
 fn min_pruning_exact_boundary() {
-    // 83.33% pruning - threshold 83 should pass, 84 should fail
+    // 83.33% pruning: threshold 83 should pass, 84 should fail
     cmd()
         .args([
             &test_table(),
@@ -822,7 +822,7 @@ fn flat_combined_predicate_keeps_4_files() {
 
 #[test]
 fn flat_vs_partitioned_pruning_contrast() {
-    // Same predicate, same number of files - partitioned table prunes 83%,
+    // Same predicate, same number of files: partitioned table prunes 83%,
     // flat table only 33%.
     let flat_out = cmd()
         .args([
@@ -944,7 +944,7 @@ fn flat_json_stats_block() {
 
 #[test]
 fn flat_min_pruning_fails_at_90() {
-    // Flat table achieves only 33% pruning - a 90% threshold must fail
+    // Flat table achieves only 33% pruning: a 90% threshold must fail
     cmd()
         .args([
             &test_table_flat(),

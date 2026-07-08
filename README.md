@@ -4,7 +4,7 @@
 
 A CLI that shows how partition pruning and data skipping reduce the set of candidate files in a Delta table.
 
-Production-usable as a conservative Delta metadata diagnostic and CI guardrail - not yet a fully production-grade general-purpose Delta observability product. That line is meant literally: what the tool guarantees, and what it deliberately does not, is written down in [docs/semantics.md](docs/semantics.md).
+Production-usable as a conservative Delta metadata diagnostic and CI guardrail, not yet a fully production-grade general-purpose Delta observability product. That line is meant literally: what the tool guarantees, and what it deliberately does not, is written down in [docs/semantics.md](docs/semantics.md).
 
 
 **Documentation**: the full [documentation site](https://cdelmonte-zg.github.io/delta-explain/) (guides, reference, architecture) - or jump to the [three-minute quickstart](examples/quickstart/), [what delta-explain guarantees (and what it does not)](docs/semantics.md), [the JSON report, field by field](docs/json-schema.md), [what it is validated against](docs/validation.md), or [current limitations](#current-limitations).
@@ -131,7 +131,7 @@ report.total_pruning_pct
 report["analysis"]["confidence"]
 ```
 
-Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message - the same exit-code contract as the command line, in Python types.
+Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message: the same exit-code contract as the command line, in Python types.
 
 ### From crates.io (requires Rust 1.88+)
 

@@ -1,6 +1,6 @@
 # delta-explain against a real Google Cloud Storage bucket
 
-Run `delta-explain` against `gs://` tables on an actual GCS bucket - a real
+Run `delta-explain` against `gs://` tables on an actual GCS bucket, a real
 remote example, no emulator. Like the [MinIO example](../minio-s3), it also
 shows that the same data prunes very differently depending on physical layout.
 
@@ -25,7 +25,7 @@ SA="delta-explain-demo@${PROJECT}.iam.gserviceaccount.com"
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
 
-# download a key (keep it out of git - this dir's .gitignore already excludes *.json)
+# download a key (keep it out of git; this dir's .gitignore already excludes *.json)
 gcloud iam service-accounts keys create key.json --iam-account="$SA"
 ```
 
@@ -43,8 +43,8 @@ pip install -r requirements.txt
 python write_tables.py
 ```
 
-- `gs://$GCS_BUCKET/lake/users` - partitioned by `country`, files sorted into age bands
-- `gs://$GCS_BUCKET/lake/users-flat` - no partitioning, rows shuffled across files
+- `gs://$GCS_BUCKET/lake/users`: partitioned by `country`, files sorted into age bands
+- `gs://$GCS_BUCKET/lake/users-flat`: no partitioning, rows shuffled across files
 
 ## 4. Explain the pruning
 
@@ -94,10 +94,10 @@ docker compose up -d          # or: docker-compose up -d
 # open http://localhost:8888/?token=delta  and run gcs-spark.ipynb
 ```
 
-The `.env` file is **required** - both variables must be set to real values:
+The `.env` file is **required**; both variables must be set to real values:
 
-- `GCS_BUCKET` - your bucket name
-- `GOOGLE_SERVICE_ACCOUNT` - absolute **host** path to `key.json` (mounted
+- `GCS_BUCKET`: your bucket name
+- `GOOGLE_SERVICE_ACCOUNT`: absolute **host** path to `key.json` (mounted
   read-only into the container at `/home/jovyan/key.json`)
 
 If either is missing or blank, `docker compose up` aborts immediately with a
@@ -109,7 +109,7 @@ the **GCS connector** replaces `hadoop-aws`, and auth is a service-account
 keyfile mounted at `/home/jovyan/key.json`. delta-explain still reads from the
 host exactly as in step 4.
 
-**Version matrix - the connector must match Spark's bundled Hadoop:**
+**Version matrix.** The connector must match Spark's bundled Hadoop:
 
 | Spark image | bundled Hadoop | delta-spark | gcs-connector | auth keys |
 |---|---|---|---|---|
@@ -132,7 +132,7 @@ staleness that can make a `spark.jars` entry silently ignored in a notebook.
   (key file path), `service_account_key` (inline JSON), or the `google_*` spellings.
   On GCE/GKE with a default service account you can rely on the metadata server and
   omit the option entirely.
-- Tables live under a bucket sub-prefix (`lake/users`) - supported.
+- Tables live under a bucket sub-prefix (`lake/users`): supported.
 
 ## Teardown
 

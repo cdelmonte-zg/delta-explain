@@ -1,7 +1,7 @@
 # GCP setup for the GCS example
 
 Step-by-step to go from "I have a GCP account" to running this example against a
-real bucket. Plain `gcloud` - no Terraform needed for a throwaway demo.
+real bucket. Plain `gcloud`, no Terraform needed for a throwaway demo.
 
 Interactive steps (browser) must run in **your own terminal**; the rest can run
 anywhere `gcloud` is authenticated.
@@ -27,7 +27,7 @@ gcloud projects create delta-explain-demo --name="delta-explain demo"
 gcloud config set project delta-explain-demo
 ```
 
-> ⚠️ **Billing must be enabled** - GCS needs it (even on the free trial a billing
+> ⚠️ **Billing must be enabled**: GCS needs it (even on the free trial a billing
 > account must be linked). Check:
 > ```bash
 > gcloud billing projects describe "$(gcloud config get-value project)"
@@ -58,7 +58,7 @@ SA="delta-explain-demo@${PROJECT}.iam.gserviceaccount.com"
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
 
-# download the key - keep it out of git (this dir's .gitignore already excludes *.json)
+# download the key; keep it out of git (this dir's .gitignore already excludes *.json)
 gcloud iam service-accounts keys create key.json --iam-account="$SA"
 ```
 

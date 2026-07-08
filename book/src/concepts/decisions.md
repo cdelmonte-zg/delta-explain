@@ -23,7 +23,7 @@ The full records live under
 | [0007](https://github.com/cdelmonte-zg/delta-explain/blob/main/docs/adr/0007-explain-why-is-a-deterministic-diagnostic-engine.md) | `--explain-why` is a deterministic diagnostic engine, not an ML model | accepted |
 
 The recurring theme: the value is a *sound, explainable* answer, so every
-decision protects that - one parse so interpreters cannot drift (0001),
+decision protects that: one parse so interpreters cannot drift (0001),
 loud degradation over silent guessing (0002), compile-time gaps over runtime
 surprises (0003), a versioned contract as the only stable surface (0004), and a
 diagnostic layer that is deterministic rather than predictive (0007).

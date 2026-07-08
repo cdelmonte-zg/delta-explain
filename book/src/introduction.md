@@ -3,7 +3,7 @@
 **Make Delta Lake file pruning visible.**
 
 You run a query with a filter. The engine reads some files. But *how many* were
-actually eliminated, and *why*? `delta-explain` answers that - from metadata
+actually eliminated, and *why*? `delta-explain` answers that, from metadata
 alone, without running a query engine.
 
 Given a Delta table and a `WHERE` predicate, it reads the transaction log
@@ -30,7 +30,7 @@ Total reduction: 6 -> 1 files (83% pruned)
 ## What it is for
 
 - **Understand pruning.** See how a predicate splits across the two elimination
-  mechanisms, and - with [`--explain-why`](guides/explain-why.md) - get told
+  mechanisms, and, with [`--explain-why`](guides/explain-why.md), get told
   *why* a fragment did not prune and what to change.
 - **Guard it in CI.** `--min-pruning` and `--assert-stats` turn a silent layout
   regression (a rewrite that drops partitioning, a query that scans everything)
@@ -44,8 +44,8 @@ Total reduction: 6 -> 1 files (83% pruned)
 `delta-explain` is not a query engine and not an optimizer. It never reads
 data files, never predicts runtime, and never overstates: **a file any engine
 needs is never reported as pruned.** When it cannot reason about a fragment it
-keeps files and says so, rather than guessing. The full contract - guarantees,
-degradation rules, exit codes - is in
+keeps files and says so, rather than guessing. The full contract (guarantees,
+degradation rules, exit codes) is in
 [What delta-explain guarantees](reference/semantics.md).
 
 ## Positioning, meant literally
