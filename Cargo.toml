@@ -36,7 +36,7 @@ debug-ir = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dev-dependencies]
 assert_cmd = "2"
-jsonschema = { version = "0.46.9", default-features = false }
+jsonschema = { version = "0.47.0", default-features = false }
 predicates = "3"
 rstest = "0.26"
 serde_json = "1"
