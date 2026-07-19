@@ -46,4 +46,4 @@ deletes data files that are already absent from the current snapshot, so it does
 not affect what the tool reports.
 
 The module-by-module map and the working conventions live in the repo's
-[`CLAUDE.md`](https://github.com/cdelmonte-zg/delta-explain/blob/main/CLAUDE.md).
+[`DEVELOPMENT.md`](https://github.com/cdelmonte-zg/delta-explain/blob/main/DEVELOPMENT.md).

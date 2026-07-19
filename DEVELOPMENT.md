@@ -1,6 +1,10 @@
-# CLAUDE.md
+# Development guide
 
-## Project Overview
+This document is the contributor-facing map of the codebase: how to build and
+test, how the modules fit together, and the conventions changes are expected to
+follow.
+
+## Project overview
 
 `delta-explain` is a CLI that makes Delta Lake file pruning visible. Given a Delta
 table and a `WHERE` predicate, it shows which files would be eliminated by partition
@@ -15,7 +19,7 @@ designed to be both human-readable (text) and CI-friendly (JSON, exit codes,
 
 Design references live alongside the code:
 
-- `VISION.md`: public-facing roadmap (v0.1 → v0.5)
+- `VISION.md`: the public roadmap
 - `docs/semantics.md`: the public contract (guarantees, degradation rules,
   exit codes); `schemas/report-v0.4.schema.json` is the formal JSON contract,
   enforced by `tests/integration/json_contract.rs`
@@ -24,9 +28,8 @@ Design references live alongside the code:
   to earn one (crosses module boundaries or constrains future work, AND
   rejected a plausible alternative); architectural changes that meet it
   should land with their ADR
-- `DELTA-EXPLAIN-ROADMAP.md` (in the parent directory): internal P0/P1 step list
 
-## Build & Test Commands
+## Build & test commands
 
 ```bash
 # Build
@@ -47,19 +50,11 @@ cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
 DX_BIN=$PWD/target/debug/delta-explain .venv/bin/python -m pytest python/tests/
 ```
 
-No workspace, no nextest. One Cargo feature exists: `debug-ir`, an
-internal developer diagnostic, off by default and never in release
-artifacts, deliberately absent from the public help, CHANGELOG, and
-docs/semantics.md. It compiles the `--debug-ir <FILE>` flag (dump of the
-run's intermediate representations: predicate AST before/after
-normalization, classification, lowered kernel predicates, partition-literal
-evaluation, survivor counts, captured delta_kernel trace; filter
-overridable via DELTA_EXPLAIN_DEBUG_FILTER) plus its tracing dependencies:
-
-```bash
-cargo run --features debug-ir -- ./table -w "age > 30" --debug-ir ir.txt
-cargo test --features debug-ir   # includes the debug_ir test module
-```
+No workspace, no nextest. One Cargo feature exists: `debug-ir`, an internal
+developer diagnostic. It is off by default, never in release artifacts, and
+not part of the public CLI surface; its output format is unstable by design.
+`cargo test --features debug-ir` includes its test module, and CI runs one
+leg with the feature enabled.
 
 One package, two targets: the
 `delta_explain` library (analysis machinery) and the `delta-explain` binary
@@ -80,24 +75,19 @@ dispatch - the Spark differential harness over MinIO plus an Azurite
 end-to-end smoke of the az:// path. Releases publish wheels to PyPI via
 trusted publishing (environment `pypi`).
 
-Process rules learned the hard way: background watchers must never merge
-PRs or touch the worktree (a `gh pr merge --delete-branch` on the
-checked-out branch silently switches it to main); always check
-`git branch --show-current` before pushing.
-
 ## Architecture
 
 The pipeline is a thin sequence of pure-ish library modules consumed by the
 CLI in `main.rs`:
 
-- **`predicate_ast.rs`**: SQL string → owned `Pred` AST, via a converter from
+- **`predicate_ast.rs`**: SQL string -> owned `Pred` AST, via a converter from
   sqlparser (the only module coupled to sqlparser types). The AST vocabulary is
   the language of pruning: column-op-literal comparisons, junctions, null checks,
   `IN`/`BETWEEN` sugar, structural `LIKE`. Anything outside it becomes an
   `Unsupported` leaf carrying the raw fragment and a reason; the converter is
   total, consumers decide severity. Normalization (De Morgan, the string-gated
   prefix-LIKE range rewrite, OR factoring) also lives here.
-- **`predicate_analyzer.rs`**: `Pred` → `PredicateAnalysis` (top-level AND split,
+- **`predicate_analyzer.rs`**: `Pred` -> `PredicateAnalysis` (top-level AND split,
   classification of each fragment as `partition_safe` / `partition_exact` /
   `stats_safe` / `unsplittable`, `Confidence` derivation, encoded notes like
   `UNSPLITTABLE_OR`). `classify` also returns the partition-safe and
@@ -129,14 +119,14 @@ CLI in `main.rs`:
 - **`stats.rs`**: the statistics domain. `FileStats` types, stats-JSON parsing and
   nested flattening to dotted leaf keys, plus the JSON `metaData.partitionColumns`
   reader (primary source; the scan fallback covers fully checkpointed logs).
-- **`attribution.rs`**: survivor sets → chained, labeled pruning phases. Pure.
+- **`attribution.rs`**: survivor sets -> chained, labeled pruning phases. Pure.
   Owns the phase-name constants (`DATA_SKIPPING_PHASE`, ...) that the
   diagnostics engine matches against, so a rename is a compile-time change.
 - **`diagnostics.rs`**: `--explain-why` (ADR 0007). A deterministic rules
   engine over the finished report (classification, stats coverage, partition
   columns, per-phase pruning) producing `Diagnosis` records with stable codes;
   no ML, nothing predicted. Pure.
-- **`gates.rs`**: `--min-pruning` / `--assert-stats` → assertion records, overall
+- **`gates.rs`**: `--min-pruning` / `--assert-stats` -> assertion records, overall
   result, failure messages. Pure.
 - **`report.rs`**: the computed model (`PruningReport`, `PhaseResult`, `FileInfo`,
   the `explain` diagnoses, `StatsMode`). `stats_mode()` is the single source of
@@ -211,7 +201,7 @@ rewrites them (Python deps pinned in `fixtures/requirements.txt`; the script ski
 any directory that already exists). See README's *Development* section for the
 exact venv + invocation sequence.
 
-## Code Style
+## Code style
 
 - `cargo fmt` is the source of truth (Rust 2024 edition, default 100-column width).
 - **No `unwrap()` / `expect()` / `panic!()` / `unreachable!()` in production code.**
@@ -225,7 +215,7 @@ exact venv + invocation sequence.
 - Comments explain *why*, not *what*. If a comment restates the code, delete it.
 - No `// removed`, `// kept for backwards compat`, `// added in PR #X` style comments.
 
-## Pull Requests / Commit Messages
+## Pull requests / commit messages
 
 Conventional commits, lowercase after the prefix, no period:
 
@@ -242,25 +232,18 @@ Breaking changes carry `!` (e.g. `feat!: change JSON schema`).
 The body, when needed, focuses on the *why*, context, motivation, trade-offs, not
 the diff (the diff is right there).
 
-## Output Schema Stability
+## Output schema stability
 
 The JSON output is a **stable contract** from v0.2.0 onwards. It carries an
-explicit `schema_version` (currently `"0.1.0"`) and changes follow SemVer
-relative to that field, additive changes bump the minor, breaking changes
-bump the major.
+explicit `schema_version` and changes follow SemVer relative to that field:
+additive changes bump the minor, breaking changes bump the major.
 
 When introducing a JSON change, decide first whether it is additive (new
 optional field) or breaking (rename/remove/restructure). Breaking changes
 require a `schema_version` bump and a CHANGELOG entry under "Breaking".
 
-## Roadmap & Milestones
+## Roadmap
 
-- **FASE 0 (soft launch)**: shipped in v0.2.0 (May 2026), tied to a MERGE
-  article that cites `delta-explain` as a "companion tool to make file
-  elimination visible from metadata".
-- **FASE 1 (MVP)**: confidence model, stable JSON schema, full e2e test
-  matrix. Shipped together with FASE 0 as v0.2.0.
-- Later phases (2–5) cover checkpoint Parquet support, real stats coverage,
-  type coercions, finer CI assertions, predicate analysis improvements,
-  diagnostics, and compare mode. See `DELTA-EXPLAIN-ROADMAP.md` for the
-  canonical list and current status.
+`VISION.md` is the public roadmap; `docs/semantics.md` states what is
+guaranteed today. When a milestone ships, both move together with the
+CHANGELOG entry.
