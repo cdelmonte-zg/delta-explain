@@ -280,7 +280,10 @@ fn number_literal(s: &str, type_hint: Option<&DataType>) -> Result<Expression, S
             | PrimitiveType::Binary
             | PrimitiveType::Date
             | PrimitiveType::Timestamp
-            | PrimitiveType::TimestampNtz => {}
+            | PrimitiveType::TimestampNtz
+            | PrimitiveType::Void
+            | PrimitiveType::IntervalYearMonth
+            | PrimitiveType::IntervalDayTime => {}
         }
     }
     // Default: try i32, then i64, then f64
@@ -321,7 +324,10 @@ fn coerce_string_literal(text: &str, hint: &DataType) -> Result<Option<Expressio
         | PrimitiveType::Double
         | PrimitiveType::Boolean
         | PrimitiveType::Binary
-        | PrimitiveType::Decimal(_) => Ok(None),
+        | PrimitiveType::Decimal(_)
+        | PrimitiveType::Void
+        | PrimitiveType::IntervalYearMonth
+        | PrimitiveType::IntervalDayTime => Ok(None),
     }
 }
 

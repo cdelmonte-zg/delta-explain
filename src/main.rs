@@ -16,9 +16,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use delta_kernel::engine::default::DefaultEngineBuilder;
-use delta_kernel::engine::default::storage::store_from_url_opts;
 use delta_kernel::{Engine, Snapshot};
+use delta_kernel_default_engine::DefaultEngineBuilder;
+use delta_kernel_default_engine::storage::store_from_url_opts;
 use object_store::DynObjectStore;
 use url::Url;
 

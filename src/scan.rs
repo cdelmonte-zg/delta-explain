@@ -10,8 +10,8 @@ use std::sync::{Arc, LazyLock};
 
 use delta_kernel::engine_data::{FilteredRowVisitor, GetData, RowIndexIterator, TypedGetData};
 use delta_kernel::expressions::{ColumnName, Predicate};
-use delta_kernel::scan::ScanBuilder;
 use delta_kernel::scan::state::ScanFile;
+use delta_kernel::scan::{ScanBuilder, StatsOptions};
 use delta_kernel::schema::DataType;
 use delta_kernel::{DeltaResult, Engine, Snapshot};
 
@@ -55,13 +55,16 @@ pub fn partition_columns_from_files(files: &[FileInfo]) -> Vec<String> {
 /// carries on each scan row. Files whose Add action carries no `stats`
 /// payload get no entry; the report layer treats their absence as "no stats".
 pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<BaselineScan> {
-    // include_all_stats_columns() requests the parsed stats schema, which is
-    // what makes the kernel populate the scan row's `stats` field via
-    // COALESCE(add.stats, ToJson(add.stats_parsed)). Without it, a checkpoint
-    // written with delta.checkpoint.writeStatsAsJson=false (structured
-    // stats_parsed only, no JSON stats) would come back with no stats at all.
+    // StatsOptions::all() requests the full struct stats schema, which is
+    // what makes the kernel read stats_parsed from checkpoint Parquet and
+    // populate the scan row's `stats` field via COALESCE(add.stats,
+    // ToJson(add.stats_parsed)). The predicate-less baseline reads no stats
+    // columns otherwise (json_only trims the stats schema to predicate
+    // references), so a checkpoint written with
+    // delta.checkpoint.writeStatsAsJson=false (structured stats_parsed only,
+    // no JSON stats) would come back with no stats at all.
     let scan = ScanBuilder::new(snapshot)
-        .include_all_stats_columns()
+        .with_stats(StatsOptions::all())
         .build()?;
     let mut files = Vec::new();
     let mut visitor = StatsVisitor {
