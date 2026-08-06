@@ -189,9 +189,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if args.checkpoint {
-        use delta_kernel::engine::default::DefaultEngineBuilder;
-        use delta_kernel::engine::default::executor::tokio::TokioMultiThreadExecutor;
-        use delta_kernel::engine::default::storage::store_from_url_opts;
+        use delta_kernel_default_engine::DefaultEngineBuilder;
+        use delta_kernel_default_engine::executor::tokio::TokioMultiThreadExecutor;
+        use delta_kernel_default_engine::storage::store_from_url_opts;
 
         // Snapshot::checkpoint requires the default engine to run on a
         // multi-threaded executor; the builder's default deadlocks here.

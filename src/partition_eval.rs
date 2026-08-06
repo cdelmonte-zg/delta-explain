@@ -293,7 +293,13 @@ fn typed_partition_value(raw: &str, dt: &DataType) -> Option<Typed> {
             Ok(Scalar::Decimal(v)) => Some(Typed::Decimal(v.bits())),
             _ => None,
         },
-        PrimitiveType::Binary => None,
+        // Binary has no comparable literal form; Void and the interval types
+        // cannot appear as partition values. All fall back to evaluator
+        // ignorance (Unknown), which keeps the file conservatively.
+        PrimitiveType::Binary
+        | PrimitiveType::Void
+        | PrimitiveType::IntervalYearMonth
+        | PrimitiveType::IntervalDayTime => None,
     }
 }
 
