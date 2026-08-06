@@ -33,7 +33,7 @@ jobs:
         # build_stats JSON guard), not just lib/bin/integration.
         run: cargo test --all-targets
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
