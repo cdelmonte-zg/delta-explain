@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: taiki-e/install-action@v2.86.5
+      - uses: taiki-e/install-action@v2.86.8
         with:
           tool: cargo-audit
       # RUSTSEC-2026-0194 / -0195: quick-xml DoS, patched in 0.41 which
