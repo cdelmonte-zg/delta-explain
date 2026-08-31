@@ -1,4 +1,5 @@
 mod attribution;
+mod confidence;
 mod kernel;
 pub mod model;
 mod partition_eval;
@@ -13,7 +14,7 @@ use delta_kernel::{Engine, schema::SchemaRef};
 use crate::v2::error::Result;
 use crate::v2::table::TableState;
 
-use self::model::{AnalysisResult, PredicateClassification};
+use self::model::{AnalysisResult, Confidence, PredicateClassification};
 
 /// Run predicate analysis against an opened Delta table.
 ///
@@ -69,6 +70,10 @@ fn classify_predicate(
         predicate::parse(input)?.normalized_with(|col| kernel::column_is_string(col, schema));
 
     Ok(predicate_analyzer::classify(&predicate, partition_columns))
+}
+
+pub fn confidence(result: &AnalysisResult) -> Confidence {
+    confidence::overall(result)
 }
 
 #[cfg(test)]

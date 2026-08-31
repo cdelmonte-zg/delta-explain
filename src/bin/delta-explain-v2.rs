@@ -52,10 +52,7 @@ fn try_main() -> Result<()> {
     if let Some(predicate) = cli.predicate.as_deref() {
         let result = analysis::analyze(predicate, &table, &engine)?;
 
-        println!(
-            "confidence: {:?}",
-            result.classification.confidence_ceiling()
-        );
+        println!("confidence: {:?}", analysis::confidence(&result));
 
         println!("partition-safe:");
         for pred in &result.classification.partition_safe {
