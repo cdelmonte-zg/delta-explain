@@ -1,3 +1,4 @@
+mod attribution;
 mod kernel;
 pub mod model;
 mod partition_eval;

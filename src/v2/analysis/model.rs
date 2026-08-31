@@ -2,6 +2,13 @@ use std::collections::HashSet;
 
 use super::predicate::Pred;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalysisResult {
+    pub classification: PredicateClassification,
+    pub partition: PartitionAnalysis,
+    pub scan: ScanAnalysis,
+}
+
 /// Maximum confidence allowed by static predicate classification.
 ///
 /// Runtime evidence may later lower this confidence, for example when
@@ -13,26 +20,32 @@ pub enum Confidence {
     Incomplete,
 }
 
-/// What happens to an unsplittable fragment.
-///
-/// A mixed partition/data expression may still be understood by the kernel
-/// and therefore participate in the final scan, even though its pruning
-/// cannot be attributed to a single phase.
-///
-/// An unsupported expression cannot safely participate in pruning and is
-/// therefore stripped from the scan predicate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnsplittableHandling {
-    Scanned,
-    Stripped,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionAnalysis {
+    /// Files surviving all partition pruning strategies.
+    ///
+    /// `None` means that the predicate contained no partition-only fragment,
+    /// so the partition phase was not executed.
+    pub survivors: Option<HashSet<String>>,
+
+    /// Files kept conservatively because an exact partition fragment could
+    /// not be evaluated against their serialized partition values.
+    pub evaluation_gaps: usize,
 }
 
-/// A predicate fragment that cannot be attributed exclusively to either
-/// partition pruning or statistics pruning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhaseKind {
+    PartitionPruning,
+    DataSkipping,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnsplittableFragment {
-    pub predicate: Pred,
-    pub handling: UnsplittableHandling,
+pub struct PhaseAnalysis {
+    pub kind: PhaseKind,
+    pub confidence: Confidence,
+    pub input_count: usize,
+    pub output_count: usize,
+    pub surviving_paths: HashSet<String>,
 }
 
 /// Static classification of a normalized predicate.
@@ -63,32 +76,34 @@ pub struct PredicateClassification {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PartitionAnalysis {
-    /// Files surviving all partition pruning strategies.
-    ///
-    /// `None` means that the predicate contained no partition-only fragment,
-    /// so the partition phase was not executed.
-    pub survivors: Option<HashSet<String>>,
-
-    /// Files kept conservatively because an exact partition fragment could
-    /// not be evaluated against their serialized partition values.
-    pub evaluation_gaps: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AnalysisResult {
-    pub classification: PredicateClassification,
-    pub partition: PartitionAnalysis,
-    pub scan: ScanAnalysis,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanAnalysis {
     /// Files surviving the general kernel pruning phase.
     ///
     /// `None` means that the predicate was completely handled by the
     /// partition phase and no general scan phase was required.
     pub survivors: Option<HashSet<String>>,
+}
+
+/// What happens to an unsplittable fragment.
+///
+/// A mixed partition/data expression may still be understood by the kernel
+/// and therefore participate in the final scan, even though its pruning
+/// cannot be attributed to a single phase.
+///
+/// An unsupported expression cannot safely participate in pruning and is
+/// therefore stripped from the scan predicate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsplittableHandling {
+    Scanned,
+    Stripped,
+}
+
+/// A predicate fragment that cannot be attributed exclusively to either
+/// partition pruning or statistics pruning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsplittableFragment {
+    pub predicate: Pred,
+    pub handling: UnsplittableHandling,
 }
 
 impl PredicateClassification {
