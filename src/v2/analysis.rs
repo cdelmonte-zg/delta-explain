@@ -14,7 +14,7 @@ use delta_kernel::{Engine, schema::SchemaRef};
 use crate::v2::error::Result;
 use crate::v2::table::TableState;
 
-use self::model::{AnalysisResult, Confidence, PredicateClassification};
+use self::model::{AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification};
 
 /// Run predicate analysis against an opened Delta table.
 ///
@@ -74,6 +74,10 @@ fn classify_predicate(
 
 pub fn confidence(result: &AnalysisResult) -> Confidence {
     confidence::overall(result)
+}
+
+pub fn phases(result: &AnalysisResult, total_files: usize) -> Vec<PhaseAnalysis> {
+    attribution::build(result, total_files)
 }
 
 #[cfg(test)]
