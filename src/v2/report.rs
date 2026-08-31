@@ -12,6 +12,7 @@ pub struct Report {
 
 #[derive(Debug, Clone)]
 pub struct TableReport {
+    pub path: String,
     pub version: u64,
     pub total_files: usize,
     pub files_with_stats: usize,
@@ -28,11 +29,13 @@ pub struct PredicateReport {
 }
 
 pub fn build(
+    table_path: &str,
     predicate: Option<&str>,
     table: &TableState,
     result: Option<&AnalysisResult>,
 ) -> Report {
     let table_report = TableReport {
+        path: table_path.to_string(),
         version: table.snapshot.version(),
         total_files: table.metadata.baseline.files.len(),
         files_with_stats: table.metadata.baseline.stats.len(),
@@ -62,9 +65,13 @@ fn build_predicate_report(
 ) -> PredicateReport {
     PredicateReport {
         input: input.to_string(),
+
         confidence: analysis::confidence(result),
+
         classification: result.classification.clone(),
+
         phases: analysis::phases(result, total_files),
+
         partition_evaluation_gaps: result.partition.evaluation_gaps,
     }
 }

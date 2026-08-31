@@ -7,6 +7,7 @@ use delta_kernel_default_engine::storage::store_from_url_opts;
 
 use delta_explain::v2::analysis;
 use delta_explain::v2::error::Result;
+use delta_explain::v2::render;
 use delta_explain::v2::report;
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
@@ -49,57 +50,14 @@ fn try_main() -> Result<()> {
         None => None,
     };
 
-    let report = report::build(cli.predicate.as_deref(), &table, analysis_result.as_ref());
+    let report = report::build(
+        &cli.path,
+        cli.predicate.as_deref(),
+        &table,
+        analysis_result.as_ref(),
+    );
 
-    println!("version: {}", report.table.version);
-
-    println!("files: {}", report.table.total_files);
-
-    println!("files with stats: {}", report.table.files_with_stats);
-
-    println!("partition columns: {:?}", report.table.partition_columns);
-
-    if let Some(predicate) = &report.predicate {
-        println!("confidence: {:?}", predicate.confidence);
-
-        println!("partition-safe:");
-
-        for pred in &predicate.classification.partition_safe {
-            println!("  {pred}");
-        }
-
-        println!("partition-exact:");
-
-        for pred in &predicate.classification.partition_exact {
-            println!("  {pred}");
-        }
-
-        println!("stats-safe:");
-
-        for pred in &predicate.classification.stats_safe {
-            println!("  {pred}");
-        }
-
-        println!("unsplittable:");
-
-        for fragment in &predicate.classification.unsplittable {
-            println!("  {:?}: {}", fragment.handling, fragment.predicate);
-        }
-
-        println!(
-            "partition evaluation gaps: {}",
-            predicate.partition_evaluation_gaps
-        );
-
-        println!("phases:");
-
-        for phase in &predicate.phases {
-            println!(
-                "  {:?}: {} -> {} [{:?}]",
-                phase.kind, phase.input_count, phase.output_count, phase.confidence
-            );
-        }
-    }
+    print!("{}", render::text(&report));
 
     Ok(())
 }
