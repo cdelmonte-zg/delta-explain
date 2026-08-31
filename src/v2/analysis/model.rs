@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::predicate::Pred;
 
 /// Maximum confidence allowed by static predicate classification.
@@ -58,6 +60,25 @@ pub struct PredicateClassification {
 
     /// Fragments that cannot be cleanly attributed to one pruning axis.
     pub unsplittable: Vec<UnsplittableFragment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionAnalysis {
+    /// Files surviving all partition pruning strategies.
+    ///
+    /// `None` means that the predicate contained no partition-only fragment,
+    /// so the partition phase was not executed.
+    pub survivors: Option<HashSet<String>>,
+
+    /// Files kept conservatively because an exact partition fragment could
+    /// not be evaluated against their serialized partition values.
+    pub evaluation_gaps: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalysisResult {
+    pub classification: PredicateClassification,
+    pub partition: PartitionAnalysis,
 }
 
 impl PredicateClassification {
