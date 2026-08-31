@@ -2,12 +2,14 @@ use crate::v2::analysis;
 use crate::v2::analysis::model::{
     AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification,
 };
+use crate::v2::diagnostics::{self, Diagnostic};
 use crate::v2::table::TableState;
 
 #[derive(Debug, Clone)]
 pub struct Report {
     pub table: TableReport,
     pub predicate: Option<PredicateReport>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,9 +54,12 @@ pub fn build(
         _ => None,
     };
 
+    let diagnostics = result.map(diagnostics::derive).unwrap_or_default();
+
     Report {
         table: table_report,
         predicate: predicate_report,
+        diagnostics,
     }
 }
 

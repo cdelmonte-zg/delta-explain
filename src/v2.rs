@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod diagnostics;
 pub mod error;
 pub mod metadata;
 pub mod render;

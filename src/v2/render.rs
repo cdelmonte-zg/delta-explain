@@ -3,6 +3,7 @@ use std::fmt::Write;
 use crate::v2::analysis::model::{
     Confidence, PhaseKind, PredicateClassification, UnsplittableHandling,
 };
+use crate::v2::diagnostics::Diagnostic;
 use crate::v2::report::{PredicateReport, Report};
 
 pub fn text(report: &Report) -> String {
@@ -24,7 +25,66 @@ pub fn text(report: &Report) -> String {
         writeln!(out, "Files in snapshot: {}", report.table.total_files).unwrap();
     }
 
+    write_diagnostics(&mut out, report);
+
     out
+}
+
+fn write_diagnostics(out: &mut String, report: &Report) {
+    if report.diagnostics.is_empty() {
+        return;
+    }
+
+    writeln!(out).unwrap();
+    writeln!(out, "Warnings!").unwrap();
+
+    for diagnostic in &report.diagnostics {
+        writeln!(
+            out,
+            "[{}]: {}",
+            diagnostic.code(),
+            diagnostic_message(diagnostic),
+        )
+        .unwrap();
+    }
+}
+
+fn diagnostic_message(diagnostic: &Diagnostic) -> String {
+    match diagnostic {
+        Diagnostic::UnsupportedExpression { predicate, reasons } => {
+            let reason = if reasons.is_empty() {
+                "Unsupported expression".to_string()
+            } else {
+                reasons.join("; ")
+            };
+
+            format!(
+                "{reason}; the fragment '{predicate}' \
+                 cannot contribute to pruning and is \
+                 applied conservatively (keeps all files)"
+            )
+        }
+
+        Diagnostic::UnsplittableOr { .. } => "Mixed expression across partition and \
+             non-partition columns; cannot separate \
+             safely, routed as unsplittable"
+            .to_string(),
+
+        Diagnostic::PartitionEvaluationGap { count } => {
+            if *count == 1 {
+                "A partition value could not be \
+                 evaluated exactly; the file was \
+                 kept conservatively"
+                    .to_string()
+            } else {
+                format!(
+                    "{count} partition values could \
+                     not be evaluated exactly; those \
+                     files were kept conservatively"
+                )
+            }
+        }
+    }
 }
 
 fn write_predicate_analysis(out: &mut String, predicate: &PredicateReport) {
