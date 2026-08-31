@@ -95,6 +95,20 @@ fn try_main() -> Result<()> {
             "partition evaluation gaps: {}",
             result.partition.evaluation_gaps
         );
+
+        match &result.scan.survivors {
+            Some(files) => {
+                println!(
+                    "scan survivors: {} / {}",
+                    files.len(),
+                    table.metadata.baseline.files.len()
+                );
+            }
+
+            None => {
+                println!("scan survivors: n/a");
+            }
+        }
     }
 
     Ok(())

@@ -79,6 +79,16 @@ pub struct PartitionAnalysis {
 pub struct AnalysisResult {
     pub classification: PredicateClassification,
     pub partition: PartitionAnalysis,
+    pub scan: ScanAnalysis,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanAnalysis {
+    /// Files surviving the general kernel pruning phase.
+    ///
+    /// `None` means that the predicate was completely handled by the
+    /// partition phase and no general scan phase was required.
+    pub survivors: Option<HashSet<String>>,
 }
 
 impl PredicateClassification {
@@ -106,6 +116,38 @@ impl PredicateClassification {
     /// is needed.
     pub fn partition_safe_predicate(&self) -> Option<Pred> {
         conjunction(&self.partition_safe)
+    }
+
+    /// Whether analysis needs the general kernel pruning phase.
+    ///
+    /// Pure partition predicates are completely handled by partition pruning.
+    /// Stats predicates and unsplittable fragments require a second phase.
+    pub fn requires_scan_phase(&self) -> bool {
+        !self.stats_safe.is_empty() || !self.unsplittable.is_empty()
+    }
+
+    /// Compose the fragments that can participate in the general kernel scan.
+    ///
+    /// Partition-exact fragments are intentionally excluded because they cannot
+    /// be lowered to the kernel predicate language.
+    ///
+    /// Stripped unsplittable fragments are excluded because their semantics
+    /// cannot be represented safely.
+    pub fn scan_predicate(&self) -> Option<Pred> {
+        let predicates = self
+            .partition_safe
+            .iter()
+            .chain(self.stats_safe.iter())
+            .chain(
+                self.unsplittable
+                    .iter()
+                    .filter(|fragment| fragment.handling == UnsplittableHandling::Scanned)
+                    .map(|fragment| &fragment.predicate),
+            )
+            .cloned()
+            .collect::<Vec<_>>();
+
+        conjunction(&predicates)
     }
 
     /// Number of fragments removed from pruning because their semantics
@@ -166,5 +208,47 @@ mod tests {
                 .to_string(),
             "country >= 'DE' AND country < 'DF'"
         );
+    }
+
+    #[test]
+    fn scan_predicate_contains_kernel_lowerable_fragments() {
+        let partition = predicate::parse("country = 'DE'").unwrap();
+
+        let stats = predicate::parse("age > 20").unwrap();
+
+        let scanned = predicate::parse("country = 'DE' OR age > 30").unwrap();
+
+        let stripped = predicate::parse("UPPER(name) = 'X'").unwrap();
+
+        let classification = PredicateClassification {
+            partition_safe: vec![partition],
+            stats_safe: vec![stats],
+            unsplittable: vec![
+                UnsplittableFragment {
+                    predicate: scanned,
+                    handling: UnsplittableHandling::Scanned,
+                },
+                UnsplittableFragment {
+                    predicate: stripped,
+                    handling: UnsplittableHandling::Stripped,
+                },
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            classification.scan_predicate().unwrap().to_string(),
+            "country = 'DE' AND age > 20 AND (country = 'DE' OR age > 30)"
+        );
+    }
+
+    #[test]
+    fn pure_partition_predicate_does_not_require_scan_phase() {
+        let classification = PredicateClassification {
+            partition_safe: vec![predicate::parse("country = 'DE'").unwrap()],
+            ..Default::default()
+        };
+
+        assert!(!classification.requires_scan_phase());
     }
 }

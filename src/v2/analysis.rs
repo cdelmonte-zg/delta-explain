@@ -4,6 +4,7 @@ mod partition_eval;
 mod partition_pruning;
 pub mod predicate;
 pub mod predicate_analyzer;
+mod scan_pruning;
 mod value_coercion;
 
 use delta_kernel::{Engine, schema::SchemaRef};
@@ -38,9 +39,19 @@ pub fn analyze(input: &str, table: &TableState, engine: &dyn Engine) -> Result<A
         &schema,
     )?;
 
+    let scan = scan_pruning::prune(
+        &classification,
+        &partition,
+        &table.metadata.baseline.files,
+        table.snapshot.clone(),
+        engine,
+        &schema,
+    )?;
+
     Ok(AnalysisResult {
         classification,
         partition,
+        scan,
     })
 }
 
