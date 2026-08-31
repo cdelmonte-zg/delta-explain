@@ -40,3 +40,4 @@ pub mod render;
 pub mod report;
 pub mod scan;
 pub mod stats;
+pub mod v2;
