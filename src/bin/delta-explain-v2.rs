@@ -2,13 +2,11 @@ use std::collections::HashMap;
 use std::process::ExitCode;
 
 use clap::Parser;
-use delta_kernel::{Snapshot};
+use delta_explain::v2::error::Result;
+use delta_explain::v2::table;
+use delta_explain::v2::table_uri;
 use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
-use url::Url;
-
-use delta_explain::v2::error::{Error, Result};
-use delta_explain::v2::metadata::scan::scan_baseline;
 
 #[derive(Parser)]
 struct Cli {
@@ -28,39 +26,17 @@ fn main() -> ExitCode {
 fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
-    let url = parse_table_uri(&cli.path)?;
-
+    let table_url = table_uri::parse(&cli.path)?;
     let options = HashMap::<String, String>::new();
-    let store = store_from_url_opts(&url, options)?;
-    let engine = DefaultEngineBuilder::new(store).build();
+    let store = store_from_url_opts(&table_url, options)?;
+    let engine = DefaultEngineBuilder::new(store.clone()).build();
 
-    let snapshot = Snapshot::builder_for(url).build(&engine)?;
+    let table = table::open(&table_url, &store, &engine)?;
 
-    let baseline = scan_baseline(snapshot.clone(), &engine)?;
-
-    println!("version: {}", snapshot.version());
-    println!("files: {}", baseline.files.len());
-    println!("files with stats: {}", baseline.stats.len());
+    println!("version: {}", table.snapshot.version());
+    println!("files: {}", table.metadata.baseline.files.len());
+    println!("files with stats: {}", table.metadata.baseline.stats.len());
+    println!("partition columns: {:?}", table.metadata.partition_columns);
 
     Ok(())
-}
-
-fn parse_table_uri(path: &str) -> Result<Url> {
-    if let Ok(mut url) = Url::parse(path)
-        && url.scheme() != "file"
-        && url.has_host()
-    {
-        if !url.path().ends_with('/') {
-            let with_slash = format!("{}/", url.path());
-            url.set_path(&with_slash);
-        }
-
-        return Ok(url);
-    }
-
-    let absolute = std::fs::canonicalize(path)
-        .map_err(|e| Error::TableUri(format!("Invalid path '{path}': {e}")))?;
-
-    Url::from_directory_path(&absolute)
-        .map_err(|_| Error::TableUri(format!("Cannot convert path to URL: {absolute:?}")))
 }

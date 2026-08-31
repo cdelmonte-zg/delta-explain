@@ -1,9 +1,12 @@
-use std::{collections::HashMap, sync::{Arc, LazyLock}};
-use delta_kernel::{DeltaResult, GetData, Engine, Snapshot, RowIndexIterator};
 use delta_kernel::engine_data::{FilteredRowVisitor, TypedGetData};
-use delta_kernel::expressions::{ColumnName};
+use delta_kernel::expressions::ColumnName;
 use delta_kernel::scan::{ScanBuilder, StatsOptions, state::ScanFile};
 use delta_kernel::schema::DataType;
+use delta_kernel::{DeltaResult, Engine, GetData, RowIndexIterator, Snapshot};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use crate::v2::error::Result;
 use crate::v2::metadata::stats::{FileStats, parse_stats_json};
@@ -105,5 +108,3 @@ impl FilteredRowVisitor for StatsVisitor {
         Ok(())
     }
 }
-
-

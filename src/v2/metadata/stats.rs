@@ -1,6 +1,5 @@
-
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct FileStats {
@@ -15,13 +14,12 @@ pub struct ColumnStats {
     pub null_count: Option<u64>,
 }
 
-
 /// Parse a `stats` JSON payload into [`FileStats`]. Returns `None` when the
 /// payload is not valid JSON or not a JSON object, so a malformed stats
 /// string counts as missing statistics (`[no stats]` in the verbose view,
 /// flagged by `--assert-stats`) rather than silently passing as an empty
 /// entry.
-pub(crate) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
+pub(in crate::v2::metadata) fn parse_stats_json(stats_str: &str) -> Option<FileStats> {
     let stats = serde_json::from_str::<Value>(stats_str).ok()?;
     if !stats.is_object() {
         return None;
