@@ -5,23 +5,22 @@ mod stats_complete;
 
 use crate::v2::analysis::model::AnalysisResult;
 use crate::v2::table::TableState;
+
 use model::GateContext;
 
 pub use model::{AssertionResult, GateConfig, GateOutcome, GateStatus};
 
-pub fn context(table: &TableState, analysis: Option<&AnalysisResult>) -> GateContext {
+pub(crate) fn context(table: &TableState, analysis: Option<&AnalysisResult>) -> GateContext {
     context::build(table, analysis)
 }
 
-pub fn evaluate(context: GateContext, config: GateConfig) -> GateOutcome {
+pub(crate) fn evaluate(context: GateContext, config: GateConfig) -> GateOutcome {
     let mut assertions = Vec::new();
 
     if let Some(threshold) = config.min_pruning {
         assertions.push(min_pruning::evaluate(min_pruning::Input {
             total_files: context.total_files,
-
             final_files: context.final_files,
-
             threshold,
         }));
     }
@@ -84,7 +83,6 @@ mod tests {
             },
             GateConfig {
                 min_pruning: Some(60.0),
-
                 assert_stats: true,
             },
         );
@@ -106,7 +104,6 @@ mod tests {
             },
             GateConfig {
                 min_pruning: Some(60.0),
-
                 assert_stats: true,
             },
         );

@@ -6,10 +6,8 @@ use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
 
 use delta_explain::v2::error::Result;
-
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
-
 use delta_explain::v2::render;
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
@@ -35,7 +33,7 @@ struct Cli {
 
 fn main() -> ExitCode {
     match try_main() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(exit_code) => exit_code,
 
         Err(err) => {
             eprintln!("Error: {err:#}");
@@ -44,7 +42,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn try_main() -> Result<()> {
+fn try_main() -> Result<ExitCode> {
     let cli = Cli::parse();
 
     let table_url = table_uri::parse(&cli.path)?;
@@ -60,12 +58,10 @@ fn try_main() -> Result<()> {
     let result = execution::execute(
         ExecutionInput {
             table_path: &cli.path,
-
             predicate: cli.predicate.as_deref(),
 
             gate_config: GateConfig {
                 min_pruning: cli.min_pruning,
-
                 assert_stats: cli.assert_stats,
             },
         },
@@ -73,6 +69,17 @@ fn try_main() -> Result<()> {
         &engine,
     )?;
 
+    for failure in render::gate_failures(&result.gates) {
+        eprintln!("{failure}");
+    }
+
     print!("{}", render::text(&result.report, cli.explain_why,));
-    Ok(())
+
+    let exit_code = if result.gates.failed() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    };
+
+    Ok(exit_code)
 }

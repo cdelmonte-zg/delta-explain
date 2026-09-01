@@ -55,7 +55,7 @@ pub struct GateConfig {
 /// Individual gates do not receive this whole context. The facade extracts
 /// only the fields required by each gate-specific evaluator.
 #[derive(Debug, Clone)]
-pub struct GateContext {
+pub(crate) struct GateContext {
     pub(crate) total_files: usize,
     pub(crate) final_files: usize,
     pub(crate) missing_stats_files: Vec<String>,

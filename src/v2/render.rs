@@ -4,7 +4,46 @@ use crate::v2::analysis::model::{
     Confidence, PhaseKind, PredicateClassification, UnsplittableHandling,
 };
 use crate::v2::diagnostics::{Explanation, Warning};
+use crate::v2::gates::{AssertionResult, GateOutcome, GateStatus};
+
 use crate::v2::report::{PredicateReport, Report};
+
+pub fn gate_failures(outcome: &GateOutcome) -> Vec<String> {
+    outcome
+        .assertions
+        .iter()
+        .filter_map(assertion_failure)
+        .collect()
+}
+
+fn assertion_failure(assertion: &AssertionResult) -> Option<String> {
+    if assertion.status() != GateStatus::Fail {
+        return None;
+    }
+
+    match assertion {
+        AssertionResult::MinPruning {
+            threshold, actual, ..
+        } => Some(format!(
+            "ASSERTION FAILED: total pruning \
+             {actual:.1}% is below threshold \
+             {threshold:.1}%"
+        )),
+
+        AssertionResult::StatsComplete { missing_files, .. } => {
+            let mut message = format!(
+                "ASSERTION FAILED: {} file(s) missing statistics:",
+                missing_files.len()
+            );
+
+            for path in missing_files {
+                message.push_str(&format!("\n  {path}"));
+            }
+
+            Some(message)
+        }
+    }
+}
 
 pub fn text(report: &Report, explain_why: bool) -> String {
     let mut out = String::new();
