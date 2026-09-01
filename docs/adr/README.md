@@ -32,8 +32,9 @@ old one, never an edit that rewrites history. Statuses: `proposed`,
 |---|---|---|
 | [0001](0001-owned-predicate-ast.md) | An owned predicate AST between sqlparser and every consumer | accepted |
 | [0002](0002-conservative-degradation.md) | Degrade conservatively instead of failing or guessing | accepted |
-| [0003](0003-kernel-capability-sentinel.md) | Exhaustive capability matches over the kernel vocabulary, no catch-all | accepted |
+| [0003](0003-kernel-capability-sentinel.md) | Exhaustive capability matches over the kernel vocabulary, no catch-all | superseded by 0008 |
 | [0004](0004-cli-and-json-schema-as-the-stable-contract.md) | The stable contracts are the CLI surface and the versioned JSON schema | accepted |
 | [0005](0005-like-as-a-structural-node-with-a-normalization-rewrite.md) | LIKE enters the AST as a structural node with a normalization rewrite | accepted |
 | [0006](0006-partition-literal-evaluator-as-a-third-interpreter.md) | A partition-literal evaluator as a third interpreter over the same AST | accepted |
 | [0007](0007-explain-why-is-a-deterministic-diagnostic-engine.md) | `--explain-why` is a deterministic diagnostic engine, not an ML model | accepted |
+| [0008](0008-owned-predicate-vocabulary-as-capability-boundary.md) | Owned predicate vocabulary is the pruning capability boundary | accepted |
