@@ -5,10 +5,12 @@ use clap::Parser;
 use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
 
-use delta_explain::v2::analysis;
 use delta_explain::v2::error::Result;
+
+use delta_explain::v2::execution::{self, ExecutionInput};
+use delta_explain::v2::gates::GateConfig;
+
 use delta_explain::v2::render;
-use delta_explain::v2::report;
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
 
@@ -21,6 +23,14 @@ struct Cli {
 
     #[arg(long = "explain-why")]
     explain_why: bool,
+
+    /// Fail if total pruning is below this percentage.
+    #[arg(long, value_name = "PERCENT", requires = "predicate")]
+    min_pruning: Option<f64>,
+
+    /// Fail if any file in the snapshot is missing statistics.
+    #[arg(long)]
+    assert_stats: bool,
 }
 
 fn main() -> ExitCode {
@@ -47,20 +57,22 @@ fn try_main() -> Result<()> {
 
     let table = table::open(&table_url, &store, &engine)?;
 
-    let analysis_result = match cli.predicate.as_deref() {
-        Some(predicate) => Some(analysis::analyze(predicate, &table, &engine)?),
+    let result = execution::execute(
+        ExecutionInput {
+            table_path: &cli.path,
 
-        None => None,
-    };
+            predicate: cli.predicate.as_deref(),
 
-    let report = report::build(
-        &cli.path,
-        cli.predicate.as_deref(),
+            gate_config: GateConfig {
+                min_pruning: cli.min_pruning,
+
+                assert_stats: cli.assert_stats,
+            },
+        },
         &table,
-        analysis_result.as_ref(),
-    );
+        &engine,
+    )?;
 
-    print!("{}", render::text(&report, cli.explain_why,));
-
+    print!("{}", render::text(&result.report, cli.explain_why,));
     Ok(())
 }
