@@ -6,5 +6,6 @@ pub mod gates;
 pub mod metadata;
 pub mod presentation;
 pub mod report;
+pub mod storage;
 pub mod table;
 pub mod table_uri;

@@ -1,14 +1,12 @@
-use std::collections::HashMap;
 use std::process::ExitCode;
 
 use clap::Parser;
-use delta_kernel_default_engine::DefaultEngineBuilder;
-use delta_kernel_default_engine::storage::store_from_url_opts;
 
 use delta_explain::v2::error::Result;
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
 use delta_explain::v2::presentation::{self, OutputFormat, PresentationOptions};
+use delta_explain::v2::storage::{self, StorageConfig, StorageOption};
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
 
@@ -47,6 +45,27 @@ struct Cli {
     /// Analyze this table version instead of the latest.
     #[arg(long, value_name = "N")]
     at_version: Option<u64>,
+
+    /// AWS region (S3 only).
+    #[arg(long)]
+    region: Option<String>,
+
+    /// Key=value options for the object-store backend.
+    /// Can be repeated.
+    #[arg(long = "option", value_name = "KEY=VALUE")]
+    options: Vec<String>,
+
+    /// Get cloud credentials from environment variables.
+    #[arg(long)]
+    env_creds: bool,
+
+    /// Resolve static AWS credentials from this profile.
+    #[arg(long, value_name = "NAME")]
+    profile: Option<String>,
+
+    /// Access a public bucket.
+    #[arg(long)]
+    public: bool,
 }
 
 fn main() -> ExitCode {
@@ -68,16 +87,31 @@ fn try_main() -> Result<ExitCode> {
 
     let table_url = table_uri::parse(&cli.path)?;
 
-    let options = HashMap::<String, String>::new();
+    let custom_options = cli
+        .options
+        .iter()
+        .map(|raw| raw.parse::<StorageOption>())
+        .collect::<Result<Vec<_>>>()?;
 
-    let store = store_from_url_opts(&table_url, options)?;
+    let runtime = storage::open(
+        &table_url,
+        &StorageConfig {
+            env_credentials: cli.env_creds,
 
-    let engine = DefaultEngineBuilder::new(store.clone()).build();
+            profile: cli.profile.clone(),
+
+            region: cli.region.clone(),
+
+            public: cli.public,
+
+            options: custom_options,
+        },
+    )?;
 
     let table = table::open(
         &table_url,
-        &store,
-        &engine,
+        &runtime.store,
+        runtime.engine.as_ref(),
         table::OpenOptions {
             version: cli.at_version,
         },
@@ -96,7 +130,7 @@ fn try_main() -> Result<ExitCode> {
             },
         },
         &table,
-        &engine,
+        runtime.engine.as_ref(),
     )?;
 
     let elapsed_ms = start.elapsed().as_millis();
