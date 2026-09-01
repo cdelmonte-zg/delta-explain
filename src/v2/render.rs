@@ -178,6 +178,46 @@ fn warning_message(warning: &Warning) -> String {
                 )
             }
         }
+        Warning::DeletionVectors {
+            files_with_deletion_vectors,
+            total_files,
+        } => {
+            format!(
+                "{files_with_deletion_vectors} of {total_files} files carry \
+         deletion vectors: record counts include soft-deleted rows, \
+         so they overcount the live data"
+            )
+        }
+
+        Warning::ColumnMapping { mode } => {
+            format!(
+                "column mapping mode '{mode}': the log stores physical column \
+         names, so verbose statistics may display physical instead of \
+         logical names; kernel pruning itself resolves the mapping"
+            )
+        }
+
+        Warning::LiquidClustering { columns } => {
+            let on = if columns.is_empty() {
+                "unknown columns".to_string()
+            } else {
+                columns.join(", ")
+            };
+
+            format!(
+                "table is liquid-clustered on {on}: file layout is managed by \
+         clustering, not directory partitions; data skipping on min/max \
+         statistics still applies"
+            )
+        }
+
+        Warning::UnrecognizedTableFeature { features } => {
+            format!(
+                "writer feature(s) this tool does not know: {}; the numbers \
+         reported here do not account for whatever they imply",
+                features.join(", ")
+            )
+        }
     }
 }
 
@@ -242,6 +282,25 @@ fn explanation_message(explanation: &Explanation) -> String {
                  overlap the predicate's bound."
             )
         }
+        Explanation::UnsupportedFragment {
+            predicate,
+            handling,
+        } => match handling {
+            UnsplittableHandling::Scanned => {
+                format!(
+                    "The fragment '{predicate}' cannot be split safely into \
+                 independent pruning fragments, so it was evaluated as a \
+                 whole by the pruning backend."
+                )
+            }
+
+            UnsplittableHandling::Stripped => {
+                format!(
+                    "The fragment '{predicate}' is outside the pruning language \
+                 and was applied conservatively, keeping all files."
+                )
+            }
+        },
     }
 }
 
@@ -267,6 +326,21 @@ fn explanation_suggestion(explanation: &Explanation) -> Option<String> {
                  enable skipping."
                 .to_string(),
         ),
+        Explanation::UnsupportedFragment { handling, .. } => Some(match handling {
+            UnsplittableHandling::Scanned => {
+                "Rewrite mixed partition/data OR expressions as independent \
+                 conjuncts when equivalent; this may allow partition pruning \
+                 and data skipping to operate separately."
+                    .to_string()
+            }
+
+            UnsplittableHandling::Stripped => {
+                "Function calls, arithmetic and subqueries cannot currently \
+                 contribute to pruning; rewrite the predicate using supported \
+                 column/literal comparisons when possible."
+                    .to_string()
+            }
+        }),
     }
 }
 

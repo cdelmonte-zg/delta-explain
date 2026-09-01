@@ -3,4 +3,4 @@ pub mod warnings;
 
 pub use explain::{ExplainContext, Explanation};
 
-pub use warnings::Warning;
+pub use warnings::{Warning, WarningContext};

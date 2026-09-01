@@ -2,7 +2,7 @@ use crate::v2::analysis;
 use crate::v2::analysis::model::{
     AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification,
 };
-use crate::v2::diagnostics::{self, ExplainContext, Explanation, Warning};
+use crate::v2::diagnostics::{self, ExplainContext, Explanation, Warning, WarningContext};
 use crate::v2::table::TableState;
 
 #[derive(Debug, Clone)]
@@ -66,9 +66,13 @@ pub fn build(
         _ => None,
     };
 
-    let warnings = result
-        .map(diagnostics::warnings::derive)
-        .unwrap_or_default();
+    let warnings = diagnostics::warnings::derive(WarningContext {
+        analysis: result,
+
+        features: &table.metadata.features,
+
+        total_files: table_report.total_files,
+    });
 
     let explanations = match (result, predicate_report.as_ref()) {
         (Some(result), Some(predicate_report)) => diagnostics::explain::derive(ExplainContext {

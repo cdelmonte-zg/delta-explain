@@ -1,15 +1,28 @@
 use std::collections::HashSet;
 
-use crate::v2::analysis::model::{PhaseAnalysis, PhaseKind, PredicateClassification};
+use crate::v2::analysis::model::{
+    PhaseAnalysis, PhaseKind, PredicateClassification, UnsplittableHandling,
+};
 use crate::v2::analysis::predicate::Pred;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Explanation {
-    NoPartitionFilter { partition_columns: Vec<String> },
+    NoPartitionFilter {
+        partition_columns: Vec<String>,
+    },
 
-    StatsAbsent { predicate: Pred },
+    StatsAbsent {
+        predicate: Pred,
+    },
 
-    WeakDataSkipping { predicate: Pred },
+    WeakDataSkipping {
+        predicate: Pred,
+    },
+
+    UnsupportedFragment {
+        predicate: Pred,
+        handling: UnsplittableHandling,
+    },
 }
 
 impl Explanation {
@@ -20,6 +33,8 @@ impl Explanation {
             Explanation::StatsAbsent { .. } => "STATS_ABSENT",
 
             Explanation::WeakDataSkipping { .. } => "WEAK_DATA_SKIPPING",
+
+            Explanation::UnsupportedFragment { .. } => "UNSUPPORTED_FRAGMENT",
         }
     }
 }
@@ -42,6 +57,8 @@ pub fn derive(context: ExplainContext<'_>) -> Vec<Explanation> {
     derive_partition_filter(&context, &mut explanations);
 
     derive_stats_explanations(&context, &mut explanations);
+
+    derive_unsupported_fragments(&context, &mut explanations);
 
     explanations
 }
@@ -109,6 +126,15 @@ fn derive_stats_explanations(context: &ExplainContext<'_>, explanations: &mut Ve
     if phase.input_count > 0 && phase.input_count == phase.output_count {
         explanations.push(Explanation::WeakDataSkipping {
             predicate: stats_predicate,
+        });
+    }
+}
+
+fn derive_unsupported_fragments(context: &ExplainContext<'_>, explanations: &mut Vec<Explanation>) {
+    for fragment in &context.classification.unsplittable {
+        explanations.push(Explanation::UnsupportedFragment {
+            predicate: fragment.predicate.clone(),
+            handling: fragment.handling,
         });
     }
 }
@@ -319,5 +345,34 @@ mod tests {
         assert!(explanations.iter().all(|explanation| {
             explanation.code() != "STATS_ABSENT" && explanation.code() != "WEAK_DATA_SKIPPING"
         }));
+    }
+
+    #[test]
+    fn unsplittable_fragment_gets_explanation() {
+        use crate::v2::analysis::model::{UnsplittableFragment, UnsplittableHandling};
+
+        let classification = PredicateClassification {
+            unsplittable: vec![UnsplittableFragment {
+                predicate: predicate::parse("country = 'DE' OR age > 30").unwrap(),
+
+                handling: UnsplittableHandling::Scanned,
+            }],
+
+            ..Default::default()
+        };
+
+        let explanations = derive(ExplainContext {
+            classification: &classification,
+            phases: &[],
+            partition_columns: &["country".to_string()],
+            total_files: 6,
+            files_with_stats: 6,
+        });
+
+        assert!(
+            explanations
+                .iter()
+                .any(|explanation| { explanation.code() == "UNSUPPORTED_FRAGMENT" })
+        );
     }
 }
