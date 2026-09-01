@@ -15,6 +15,8 @@ pub enum Warning {
 
     PartitionEvaluationGap {
         count: usize,
+        total_files: usize,
+        fragment: Pred,
     },
 
     DeletionVectors {
@@ -42,7 +44,7 @@ impl Warning {
 
             Warning::UnsplittableOr { .. } => "UNSPLITTABLE_OR",
 
-            Warning::PartitionEvaluationGap { .. } => "PARTITION_EVALUATION_GAP",
+            Warning::PartitionEvaluationGap { .. } => "PARTITION_EVAL_GAP",
 
             Warning::DeletionVectors { .. } => "DELETION_VECTORS",
 
@@ -65,7 +67,7 @@ pub fn derive(context: WarningContext<'_>) -> Vec<Warning> {
     let mut warnings = Vec::new();
 
     if let Some(analysis) = context.analysis {
-        derive_analysis_warnings(analysis, &mut warnings);
+        derive_analysis_warnings(analysis, context.total_files, &mut warnings);
     }
 
     derive_table_warnings(context.features, context.total_files, &mut warnings);
@@ -73,7 +75,11 @@ pub fn derive(context: WarningContext<'_>) -> Vec<Warning> {
     warnings
 }
 
-fn derive_analysis_warnings(analysis: &AnalysisResult, warnings: &mut Vec<Warning>) {
+fn derive_analysis_warnings(
+    analysis: &AnalysisResult,
+    total_files: usize,
+    warnings: &mut Vec<Warning>,
+) {
     for fragment in &analysis.classification.unsplittable {
         match fragment.handling {
             UnsplittableHandling::Stripped => {
@@ -97,9 +103,13 @@ fn derive_analysis_warnings(analysis: &AnalysisResult, warnings: &mut Vec<Warnin
         }
     }
 
-    if analysis.partition.evaluation_gaps > 0 {
+    if analysis.partition.evaluation_gaps > 0
+        && let Some(fragment) = analysis.classification.partition_exact_predicate()
+    {
         warnings.push(Warning::PartitionEvaluationGap {
             count: analysis.partition.evaluation_gaps,
+            total_files,
+            fragment,
         });
     }
 }

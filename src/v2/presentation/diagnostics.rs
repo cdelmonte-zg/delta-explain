@@ -8,14 +8,6 @@ pub(super) fn explanation_severity(explanation: &Explanation) -> &'static str {
     }
 }
 
-pub(super) fn warning_schema_code(warning: &Warning) -> &'static str {
-    match warning {
-        Warning::PartitionEvaluationGap { .. } => "PARTITION_EVAL_GAP",
-
-        _ => warning.code(),
-    }
-}
-
 pub(super) fn warning_message(warning: &Warning) -> String {
     match warning {
         Warning::UnsupportedExpression { predicate, reasons } => {
@@ -37,19 +29,15 @@ pub(super) fn warning_message(warning: &Warning) -> String {
              safely, routed as unsplittable"
             .to_string(),
 
-        Warning::PartitionEvaluationGap { count } => {
-            if *count == 1 {
-                "A partition value could not be \
-                 evaluated exactly; the file was \
-                 kept conservatively"
-                    .to_string()
-            } else {
-                format!(
-                    "{count} partition values could \
-                     not be evaluated exactly; those \
-                     files were kept conservatively"
-                )
-            }
+        Warning::PartitionEvaluationGap {
+            count,
+            total_files,
+            fragment,
+        } => {
+            format!(
+                "{count} of {total_files} files kept conservatively: their partition \
+                 values could not be evaluated against '{fragment}'"
+            )
         }
 
         Warning::DeletionVectors {

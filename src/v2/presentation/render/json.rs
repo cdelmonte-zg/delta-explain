@@ -13,7 +13,7 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
         .map(|warning| {
             json!({
                 "code":
-                    warning.schema_code,
+                    warning.code,
 
                 "message":
                     warning.message,
@@ -28,7 +28,7 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
         .map(|warning| {
             json!({
                 "code":
-                    warning.schema_code,
+                    warning.code,
 
                 "message":
                     warning.message,

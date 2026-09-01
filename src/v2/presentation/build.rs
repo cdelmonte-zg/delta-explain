@@ -1,6 +1,5 @@
 use super::diagnostics::{
     explanation_message, explanation_severity, explanation_suggestion, warning_message,
-    warning_schema_code,
 };
 use super::files;
 use super::labels::{confidence_label, phase_name};
@@ -247,8 +246,6 @@ fn build_phase(
 fn build_warning(warning: &Warning) -> WarningView {
     WarningView {
         code: warning.code(),
-
-        schema_code: warning_schema_code(warning),
 
         message: warning_message(warning),
 

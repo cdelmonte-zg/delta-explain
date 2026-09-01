@@ -167,11 +167,7 @@ pub enum DiagnosticScope {
 
 #[derive(Debug, Clone)]
 pub struct WarningView {
-    /// Human-readable/text code.
     pub code: &'static str,
-
-    /// Stable JSON 0.4.0 code.
-    pub schema_code: &'static str,
 
     pub message: String,
 
