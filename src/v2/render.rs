@@ -3,10 +3,10 @@ use std::fmt::Write;
 use crate::v2::analysis::model::{
     Confidence, PhaseKind, PredicateClassification, UnsplittableHandling,
 };
-use crate::v2::diagnostics::Diagnostic;
+use crate::v2::diagnostics::{Explanation, Warning};
 use crate::v2::report::{PredicateReport, Report};
 
-pub fn text(report: &Report) -> String {
+pub fn text(report: &Report, explain_why: bool) -> String {
     let mut out = String::new();
 
     writeln!(out, "Delta table: {}", report.table.path).unwrap();
@@ -25,70 +25,18 @@ pub fn text(report: &Report) -> String {
         writeln!(out, "Files in snapshot: {}", report.table.total_files).unwrap();
     }
 
-    write_diagnostics(&mut out, report);
+    write_warnings(&mut out, report);
+
+    if explain_why {
+        write_explanations(&mut out, report);
+    }
 
     out
 }
 
-fn write_diagnostics(out: &mut String, report: &Report) {
-    if report.diagnostics.is_empty() {
-        return;
-    }
-
-    writeln!(out).unwrap();
-    writeln!(out, "Warnings!").unwrap();
-
-    for diagnostic in &report.diagnostics {
-        writeln!(
-            out,
-            "[{}]: {}",
-            diagnostic.code(),
-            diagnostic_message(diagnostic),
-        )
-        .unwrap();
-    }
-}
-
-fn diagnostic_message(diagnostic: &Diagnostic) -> String {
-    match diagnostic {
-        Diagnostic::UnsupportedExpression { predicate, reasons } => {
-            let reason = if reasons.is_empty() {
-                "Unsupported expression".to_string()
-            } else {
-                reasons.join("; ")
-            };
-
-            format!(
-                "{reason}; the fragment '{predicate}' \
-                 cannot contribute to pruning and is \
-                 applied conservatively (keeps all files)"
-            )
-        }
-
-        Diagnostic::UnsplittableOr { .. } => "Mixed expression across partition and \
-             non-partition columns; cannot separate \
-             safely, routed as unsplittable"
-            .to_string(),
-
-        Diagnostic::PartitionEvaluationGap { count } => {
-            if *count == 1 {
-                "A partition value could not be \
-                 evaluated exactly; the file was \
-                 kept conservatively"
-                    .to_string()
-            } else {
-                format!(
-                    "{count} partition values could \
-                     not be evaluated exactly; those \
-                     files were kept conservatively"
-                )
-            }
-        }
-    }
-}
-
 fn write_predicate_analysis(out: &mut String, predicate: &PredicateReport) {
     writeln!(out).unwrap();
+
     writeln!(out, "Predicate Analysis:").unwrap();
 
     writeln!(
@@ -181,6 +129,147 @@ fn write_phases(out: &mut String, report: &Report, predicate: &PredicateReport) 
     }
 }
 
+fn write_warnings(out: &mut String, report: &Report) {
+    if report.warnings.is_empty() {
+        return;
+    }
+
+    writeln!(out).unwrap();
+
+    writeln!(out, "Warnings!").unwrap();
+
+    for warning in &report.warnings {
+        writeln!(out, "[{}]: {}", warning.code(), warning_message(warning),).unwrap();
+    }
+}
+
+fn warning_message(warning: &Warning) -> String {
+    match warning {
+        Warning::UnsupportedExpression { predicate, reasons } => {
+            let reason = if reasons.is_empty() {
+                "Unsupported expression".to_string()
+            } else {
+                reasons.join("; ")
+            };
+
+            format!(
+                "{reason}; the fragment '{predicate}' \
+                 cannot contribute to pruning and is \
+                 applied conservatively (keeps all files)"
+            )
+        }
+
+        Warning::UnsplittableOr { .. } => "Mixed expression across partition and \
+             non-partition columns; cannot separate \
+             safely, routed as unsplittable"
+            .to_string(),
+
+        Warning::PartitionEvaluationGap { count } => {
+            if *count == 1 {
+                "A partition value could not be \
+                 evaluated exactly; the file was \
+                 kept conservatively"
+                    .to_string()
+            } else {
+                format!(
+                    "{count} partition values could \
+                     not be evaluated exactly; those \
+                     files were kept conservatively"
+                )
+            }
+        }
+    }
+}
+
+fn write_explanations(out: &mut String, report: &Report) {
+    writeln!(out).unwrap();
+
+    writeln!(out, "Why:").unwrap();
+
+    if report.predicate.is_none() {
+        writeln!(
+            out,
+            "  No predicate given (pass --where to diagnose pruning)."
+        )
+        .unwrap();
+
+        return;
+    }
+
+    if report.explanations.is_empty() {
+        writeln!(out, "  No pruning issues found.").unwrap();
+
+        return;
+    }
+
+    for explanation in &report.explanations {
+        writeln!(
+            out,
+            "  [{}] {}",
+            explanation.code(),
+            explanation_message(explanation),
+        )
+        .unwrap();
+
+        if let Some(suggestion) = explanation_suggestion(explanation) {
+            writeln!(out, "    -> {suggestion}").unwrap();
+        }
+    }
+}
+
+fn explanation_message(explanation: &Explanation) -> String {
+    match explanation {
+        Explanation::NoPartitionFilter { partition_columns } => {
+            format!(
+                "The table is partitioned by {}, but the predicate \
+                 filters on none of those columns, so partition \
+                 pruning cannot run.",
+                partition_columns.join(", ")
+            )
+        }
+
+        Explanation::StatsAbsent { predicate } => {
+            format!(
+                "The table carries no file statistics, so data \
+                 skipping cannot prune on '{predicate}'."
+            )
+        }
+
+        Explanation::WeakDataSkipping { predicate } => {
+            format!(
+                "Data skipping eliminated no files for \
+                 '{predicate}': the per-file min/max ranges all \
+                 overlap the predicate's bound."
+            )
+        }
+    }
+}
+
+fn explanation_suggestion(explanation: &Explanation) -> Option<String> {
+    match explanation {
+        Explanation::NoPartitionFilter { partition_columns } => Some(format!(
+            "Filter on a partition column ({}) to eliminate \
+                     whole directories before data skipping.",
+            partition_columns.join(", ")
+        )),
+
+        Explanation::StatsAbsent { .. } => Some(
+            "Have the writer record statistics \
+                 (delta.dataSkippingNumIndexedCols covers the \
+                 columns you filter on)."
+                .to_string(),
+        ),
+
+        Explanation::WeakDataSkipping { .. } => Some(
+            "Ranges this wide usually mean the data is not \
+                 sorted or clustered by that column; ordering by \
+                 it so each file covers a narrower range may \
+                 enable skipping."
+                .to_string(),
+        ),
+    }
+}
+
 fn phase_predicate(kind: PhaseKind, classification: &PredicateClassification) -> String {
     match kind {
         PhaseKind::PartitionPruning => {
@@ -221,11 +310,17 @@ fn data_skipping_predicate(classification: &PredicateClassification) -> String {
 
         (1, "-") => "(1 unsupported fragment, keeps all files)".to_string(),
 
-        (n, "-") => format!("({n} unsupported fragments, keep all files)"),
+        (n, "-") => {
+            format!("({n} unsupported fragments, keep all files)")
+        }
 
-        (1, scanned) => format!("{scanned}  (+1 unsupported fragment, keeps all files)"),
+        (1, scanned) => {
+            format!("{scanned}  (+1 unsupported fragment, keeps all files)")
+        }
 
-        (n, scanned) => format!("{scanned}  (+{n} unsupported fragments, keep all files)"),
+        (n, scanned) => {
+            format!("{scanned}  (+{n} unsupported fragments, keep all files)")
+        }
     }
 }
 

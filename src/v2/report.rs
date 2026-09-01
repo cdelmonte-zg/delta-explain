@@ -2,14 +2,22 @@ use crate::v2::analysis;
 use crate::v2::analysis::model::{
     AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification,
 };
-use crate::v2::diagnostics::{self, Diagnostic};
+use crate::v2::diagnostics::{self, ExplainContext, Explanation, Warning};
 use crate::v2::table::TableState;
 
 #[derive(Debug, Clone)]
 pub struct Report {
     pub table: TableReport,
     pub predicate: Option<PredicateReport>,
-    pub diagnostics: Vec<Diagnostic>,
+
+    /// Limitations or anomalies of the analysis itself.
+    /// These are rendered unconditionally.
+    pub warnings: Vec<Warning>,
+
+    /// Interpretation of pruning effectiveness.
+    /// Rendering decides whether to expose these,
+    /// e.g. only under `--explain-why`.
+    pub explanations: Vec<Explanation>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,9 +46,13 @@ pub fn build(
 ) -> Report {
     let table_report = TableReport {
         path: table_path.to_string(),
+
         version: table.snapshot.version(),
+
         total_files: table.metadata.baseline.files.len(),
+
         files_with_stats: table.metadata.baseline.stats.len(),
+
         partition_columns: table.metadata.partition_columns.clone(),
     };
 
@@ -54,12 +66,31 @@ pub fn build(
         _ => None,
     };
 
-    let diagnostics = result.map(diagnostics::derive).unwrap_or_default();
+    let warnings = result
+        .map(diagnostics::warnings::derive)
+        .unwrap_or_default();
+
+    let explanations = match (result, predicate_report.as_ref()) {
+        (Some(result), Some(predicate_report)) => diagnostics::explain::derive(ExplainContext {
+            classification: &result.classification,
+
+            phases: &predicate_report.phases,
+
+            partition_columns: &table_report.partition_columns,
+
+            total_files: table_report.total_files,
+
+            files_with_stats: table_report.files_with_stats,
+        }),
+
+        _ => Vec::new(),
+    };
 
     Report {
         table: table_report,
         predicate: predicate_report,
-        diagnostics,
+        warnings,
+        explanations,
     }
 }
 

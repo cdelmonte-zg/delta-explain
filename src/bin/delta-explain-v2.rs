@@ -18,6 +18,9 @@ struct Cli {
 
     #[arg(short = 'w', long = "where")]
     predicate: Option<String>,
+
+    #[arg(long = "explain-why")]
+    explain_why: bool,
 }
 
 fn main() -> ExitCode {
@@ -57,7 +60,7 @@ fn try_main() -> Result<()> {
         analysis_result.as_ref(),
     );
 
-    print!("{}", render::text(&report));
+    print!("{}", render::text(&report, cli.explain_why,));
 
     Ok(())
 }
