@@ -107,28 +107,40 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
             SCHEMA_VERSION,
 
         "tool_version":
-            env!("CARGO_PKG_VERSION"),
+            env!(
+                "CARGO_PKG_VERSION"
+            ),
 
         "elapsed_ms":
-            presentation.elapsed_ms,
+            presentation
+                .elapsed_ms,
 
         "table":
-            presentation.table.path,
+            presentation
+                .table
+                .path,
 
         "version":
-            presentation.table.version,
+            presentation
+                .table
+                .version,
 
         "predicate":
-            presentation.predicate,
+            presentation
+                .predicate,
 
         "total_files":
-            presentation.table.total_files,
+            presentation
+                .table
+                .total_files,
 
         "final_files":
-            presentation.final_files,
+            presentation
+                .final_files,
 
         "total_pruning_pct":
-            presentation.total_pruning_pct,
+            presentation
+                .total_pruning_pct,
 
         "analysis":
             analysis,
@@ -169,10 +181,12 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
                 stats.mode,
 
             "files_with_stats":
-                stats.files_with_stats,
+                stats
+                    .files_with_stats,
 
             "total_files":
-                stats.total_files,
+                stats
+                    .total_files,
 
             "pct":
                 stats.pct,
@@ -191,6 +205,44 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
                     status.as_str()
                 }),
     });
+
+    if let Some(files) = &presentation.files {
+        let cap = files.limit.unwrap_or(usize::MAX);
+
+        let rendered_files = files
+            .entries
+            .iter()
+            .take(cap)
+            .map(|file| {
+                json!({
+                    "path":
+                        file.path,
+
+                    "size_bytes":
+                        file.size_bytes,
+
+                    "partition_values":
+                        file.partition_values,
+
+                    "num_records":
+                        file.num_records,
+
+                    "has_stats":
+                        file.has_stats,
+
+                    "kept":
+                        file.kept,
+
+                    "pruned_by":
+                        file.pruned_by,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        output["files_truncated"] = json!(files.entries.len() > rendered_files.len());
+
+        output["files"] = json!(rendered_files);
+    }
 
     if let Some(explanations) = &presentation.explanations {
         output["explain"] = json!(explanations.iter().map(explanation).collect::<Vec<_>>());

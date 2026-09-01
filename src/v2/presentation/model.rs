@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub struct Presentation {
     pub elapsed_ms: u128,
@@ -14,6 +16,11 @@ pub struct Presentation {
 
     pub total_pruning_pct: f64,
 
+    /// Per-file detail requested through --verbose.
+    ///
+    /// None means verbose output was not requested.
+    pub files: Option<FilesView>,
+
     pub warnings: Vec<WarningView>,
 
     /// `None` means --explain-why was not requested.
@@ -27,6 +34,8 @@ pub struct Presentation {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PresentationOptions {
+    pub verbose: bool,
+    pub limit: Option<usize>,
     pub explain_why: bool,
 }
 
@@ -91,6 +100,63 @@ pub struct PhaseView {
     pub output_files: usize,
     pub pruned_files: usize,
     pub pruning_pct: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct FilesView {
+    /// All files in baseline scan order.
+    ///
+    /// The render strategy applies `limit`, because the existing text
+    /// and JSON contracts use it differently:
+    ///
+    /// - text: limit per phase candidate set
+    /// - JSON: limit the global files array
+    pub entries: Vec<FileView>,
+
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileView {
+    pub path: String,
+    pub size_bytes: i64,
+
+    pub partition_values: HashMap<String, String>,
+
+    pub num_records: Option<u64>,
+
+    pub has_stats: bool,
+
+    /// Sorted by column name for deterministic presentation.
+    pub stats: Vec<ColumnStatsView>,
+
+    /// Whether the file survives the complete pruning pipeline.
+    pub kept: bool,
+
+    /// Presentation label of the first phase that dropped this file.
+    pub pruned_by: Option<&'static str>,
+
+    /// State of this file for every phase in `Presentation::phases`.
+    pub phase_states: Vec<FilePhaseState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ColumnStatsView {
+    pub column: String,
+    pub min: Option<String>,
+    pub max: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilePhaseState {
+    /// The file had already been dropped by an earlier phase.
+    NotCandidate,
+
+    /// The file was a candidate for this phase and survived it.
+    Kept,
+
+    /// The file was a candidate for this phase and was dropped by it.
+    Dropped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

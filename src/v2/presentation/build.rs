@@ -2,21 +2,26 @@ use super::diagnostics::{
     explanation_message, explanation_severity, explanation_suggestion, warning_message,
     warning_schema_code,
 };
+use super::files;
+use super::labels::{confidence_label, phase_name};
 use super::model::{
     AnalysisView, AssertionView, DiagnosticScope, ExplanationView, PhaseView, Presentation,
     PresentationOptions, StatsView, StatusView, TableFeaturesView, TableView, WarningView,
 };
+
 use crate::v2::analysis::model::{
     Confidence, PhaseKind, PredicateClassification, UnsplittableHandling,
 };
 use crate::v2::analysis::predicate::Pred;
 use crate::v2::diagnostics::{Explanation, Warning};
 use crate::v2::gates::{AssertionResult, GateOutcome, GateStatus};
+use crate::v2::metadata::scan::BaselineScan;
 use crate::v2::report::Report;
 
 pub fn build(
     report: &Report,
     gates: &GateOutcome,
+    baseline: &BaselineScan,
     elapsed_ms: u128,
     options: PresentationOptions,
 ) -> Presentation {
@@ -92,6 +97,8 @@ pub fn build(
         },
     };
 
+    let files = files::build(report, baseline, options);
+
     let warnings = report.warnings.iter().map(build_warning).collect();
 
     let explanations = options
@@ -117,6 +124,8 @@ pub fn build(
         final_files,
 
         total_pruning_pct: pruning_pct(total_files, final_files),
+
+        files,
 
         warnings,
 
@@ -325,24 +334,6 @@ fn unsplittable_conjunction(classification: &PredicateClassification) -> Option<
                 .collect::<Vec<_>>()
                 .join(" AND "),
         )
-    }
-}
-
-fn phase_name(kind: PhaseKind) -> &'static str {
-    match kind {
-        PhaseKind::PartitionPruning => "Partition pruning",
-
-        PhaseKind::DataSkipping => "Data skipping (min/max statistics)",
-    }
-}
-
-fn confidence_label(confidence: Confidence) -> &'static str {
-    match confidence {
-        Confidence::Exact => "exact",
-
-        Confidence::Conservative => "conservative",
-
-        Confidence::Incomplete => "incomplete",
     }
 }
 

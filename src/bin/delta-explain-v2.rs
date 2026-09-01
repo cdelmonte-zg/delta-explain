@@ -19,6 +19,12 @@ struct Cli {
     #[arg(short = 'w', long = "where")]
     predicate: Option<String>,
 
+    #[arg(short, long)]
+    verbose: bool,
+
+    #[arg(long, value_name = "N")]
+    limit: Option<usize>,
+
     #[arg(long = "explain-why")]
     explain_why: bool,
 
@@ -87,8 +93,13 @@ fn try_main() -> Result<ExitCode> {
     let presentation = presentation::build(
         &result.report,
         &result.gates,
+        &table.metadata.baseline,
         elapsed_ms,
         PresentationOptions {
+            verbose: cli.verbose,
+
+            limit: cli.limit,
+
             explain_why: cli.explain_why,
         },
     );
