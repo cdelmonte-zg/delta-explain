@@ -16,63 +16,94 @@ use delta_explain::table_uri;
 use delta_explain::instrumentation::DebugIrObserver;
 
 #[derive(Parser)]
+#[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
+#[command(after_help = "\
+Examples:
+  Diagnostic (local):
+    delta-explain ./my-table -w \"country = 'DE'\"
+    delta-explain ./my-table -w \"age > 30\" --verbose
+
+  CI assertion:
+    delta-explain ./my-table -w \"country = 'DE'\" --min-pruning 60
+    delta-explain ./my-table --assert-stats
+    delta-explain ./my-table -w \"age > 30\" --format json
+
+  Cloud:
+    delta-explain --env-creds s3://bucket/table -w \"age > 30\"
+    delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
+
+  Time travel:
+    delta-explain ./my-table -w \"age > 30\" --at-version 3
+")]
 struct Cli {
+    /// Path to the Delta table (local path, s3://, az://, gs://)
     path: String,
 
+    /// Predicate expression (e.g. "age > 30 AND country = 'DE'")
     #[arg(short = 'w', long = "where")]
     predicate: Option<String>,
 
+    /// Show per-file details (kept/dropped with reason); in JSON, adds
+    /// the "files" array
     #[arg(short, long)]
     verbose: bool,
 
+    /// Cap per-file listings at N entries (text phases and JSON "files").
+    /// Only meaningful together with --verbose.
     #[arg(long, value_name = "N")]
     limit: Option<usize>,
 
+    /// Diagnose why the predicate pruned as it did, with suggestions; in
+    /// JSON, adds the "explain" array
     #[arg(long = "explain-why")]
     explain_why: bool,
 
+    /// Write this run's intermediate representations (predicate AST before
+    /// and after normalization, classification, lowered kernel predicates,
+    /// partition-literal evaluation, survivor counts, kernel trace) to
+    /// FILE. Diagnostic output: the format is unstable and outside the
+    /// CLI/JSON contract.
     #[cfg(feature = "debug-ir")]
     #[arg(long = "debug-ir", value_name = "FILE")]
     debug_ir: Option<String>,
 
-    /// Output format.
-    #[arg(
-        long,
-        default_value = "text",
-        value_parser = ["text", "json"]
-    )]
+    // ── CI / assertion flags ────────────────────────────────────────
+    /// Output format
+    #[arg(long, default_value = "text", value_parser = ["text", "json"])]
     format: String,
 
-    /// Fail if total pruning is below this percentage.
+    /// Fail (exit 1) if total pruning percentage is below this threshold.
+    /// Requires --where.
     #[arg(long, value_name = "PERCENT", requires = "predicate")]
     min_pruning: Option<f64>,
 
-    /// Fail if any file in the snapshot is missing statistics.
+    /// Fail (exit 1) if any file in the snapshot is missing statistics.
     #[arg(long)]
     assert_stats: bool,
 
-    /// Analyze this table version instead of the latest.
+    /// Analyze the table at this version instead of the latest (time travel).
     #[arg(long, value_name = "N")]
     at_version: Option<u64>,
 
-    /// AWS region (S3 only).
+    // ── Cloud storage flags ─────────────────────────────────────────
+    /// AWS region (S3 only)
     #[arg(long)]
     region: Option<String>,
 
-    /// Key=value options for the object-store backend.
-    /// Can be repeated.
+    /// Key=value options for the object store backend. Can be repeated.
     #[arg(long = "option", value_name = "KEY=VALUE")]
     options: Vec<String>,
 
-    /// Get cloud credentials from environment variables.
+    /// Get cloud credentials from environment variables
     #[arg(long)]
     env_creds: bool,
 
-    /// Resolve static AWS credentials from this profile.
+    /// Resolve static AWS credentials from this profile in
+    /// ~/.aws/credentials and ~/.aws/config (S3 only)
     #[arg(long, value_name = "NAME")]
     profile: Option<String>,
 
-    /// Access a public bucket.
+    /// Access a public bucket (S3: skip signature)
     #[arg(long)]
     public: bool,
 }
