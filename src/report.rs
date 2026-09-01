@@ -1,136 +1,142 @@
-//! The computed pruning model: what the analysis produced, independent of
-//! how it is shown. Rendering (text and JSON) lives in [`crate::render`].
+use crate::analysis;
+use crate::analysis::model::{AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification};
+use crate::diagnostics::{self, ExplainContext, Explanation, Warning, WarningContext};
+use crate::table::TableState;
 
-use std::collections::{HashMap, HashSet};
+#[derive(Debug, Clone)]
+pub struct Report {
+    pub table: TableReport,
+    pub predicate: Option<PredicateReport>,
 
-use crate::diagnostics::Diagnosis;
-use crate::features::TableFeatures;
-use crate::predicate_analyzer::{Confidence, PredicateAnalysis};
-use crate::stats::FileStats;
+    /// Limitations or anomalies of the analysis itself.
+    /// These are rendered unconditionally.
+    pub warnings: Vec<Warning>,
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OverallResult {
-    Pass,
-    Fail,
+    /// Interpretation of pruning effectiveness.
+    /// Rendering decides whether to expose these,
+    /// e.g. only under `--explain-why`.
+    pub explanations: Vec<Explanation>,
 }
 
-impl std::fmt::Display for OverallResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            OverallResult::Pass => "pass",
-            OverallResult::Fail => "fail",
-        })
-    }
-}
-
-pub struct FileInfo {
+#[derive(Debug, Clone)]
+pub struct TableReport {
     pub path: String,
-    pub size: i64,
-    pub partition_values: HashMap<String, String>,
-    pub num_records: Option<u64>,
-    pub has_deletion_vector: bool,
-}
-
-pub struct PhaseResult {
-    pub confidence: Confidence,
-    pub name: String,
-    /// The full predicate this phase honored, stripped fragments included
-    /// (they are applied conservatively). This is the JSON contract's
-    /// `phases[].predicate`.
-    pub predicate_display: String,
-    /// Top-level fragments this phase applied conservatively instead of
-    /// scanning with; 0 when everything in `predicate_display` reached
-    /// the kernel. Text rendering annotates the phase line with it.
-    pub conservative_fragments: usize,
-    /// What actually reached the kernel scan when
-    /// `conservative_fragments > 0`; `None` there means the scan ran
-    /// without a predicate.
-    pub scan_predicate_display: Option<String>,
-    pub input_count: usize,
-    pub output_count: usize,
-    pub surviving_paths: HashSet<String>,
-}
-
-pub struct PruningReport {
-    pub analysis: Option<PredicateAnalysis>,
-    pub table_features: TableFeatures,
-    pub table_path: String,
     pub version: u64,
     pub total_files: usize,
-    pub all_files: Vec<FileInfo>,
-    pub file_stats: HashMap<String, FileStats>,
-    pub phases: Vec<PhaseResult>,
-    /// Diagnoses of why the predicate pruned as it did (ADR 0007). Populated
-    /// unconditionally (it is cheap); rendered only under `--explain-why`.
-    pub explain: Vec<Diagnosis>,
-    pub elapsed_ms: u128,
-    pub assertions: Vec<serde_json::Value>,
-    pub overall_result: Option<OverallResult>,
+    pub files_with_stats: usize,
+    pub partition_columns: Vec<String>,
+    pub features: TableFeatureReport,
 }
 
-impl PruningReport {
-    pub fn total_pruning_pct(&self) -> f64 {
-        let final_count = self
-            .phases
-            .last()
-            .map(|p| p.output_count)
-            .unwrap_or(self.total_files);
-        if self.total_files == 0 {
-            return 0.0;
-        }
-        let dropped = self.total_files.saturating_sub(final_count);
-        (dropped as f64 / self.total_files as f64) * 100.0
-    }
+#[derive(Debug, Clone)]
+pub struct TableFeatureReport {
+    pub deletion_vectors_enabled: bool,
+    pub files_with_deletion_vectors: usize,
+    pub column_mapping_mode: Option<String>,
+    pub clustering_columns: Option<Vec<String>>,
+    pub in_commit_timestamps: bool,
+    pub unrecognized_writer_features: Vec<String>,
+}
 
-    /// The first phase that dropped this file, or None if it survives the
-    /// whole chain. Phases are chained (each one's survivors feed the next),
-    /// so the first phase whose survivor set misses the path is the one
-    /// that eliminated it.
-    pub fn pruned_by(&self, path: &str) -> Option<&PhaseResult> {
-        self.phases
-            .iter()
-            .find(|phase| !phase.surviving_paths.contains(path))
-    }
+#[derive(Debug, Clone)]
+pub struct PredicateReport {
+    pub input: String,
+    pub confidence: Confidence,
+    pub classification: PredicateClassification,
+    pub phases: Vec<PhaseAnalysis>,
+    pub partition_evaluation_gaps: usize,
+}
 
-    pub fn stats_coverage(&self) -> (usize, usize) {
-        let with_stats = self
-            .all_files
-            .iter()
-            .filter(|f| self.file_stats.contains_key(&f.path))
-            .count();
-        (with_stats, self.total_files)
-    }
+pub fn build(
+    table_path: &str,
+    predicate: Option<&str>,
+    table: &TableState,
+    result: Option<&AnalysisResult>,
+) -> Report {
+    let features = &table.metadata.features;
 
-    /// Statistics coverage as a single classification, the source of truth
-    /// for both the JSON `stats.mode` field and the diagnostics that reason
-    /// about stats. `Absent` means the table has files but none carry stats;
-    /// an empty table (no files) is `Absent` too, but callers that care about
-    /// the distinction check `total_files` first.
-    pub fn stats_mode(&self) -> StatsMode {
-        let (present, total) = self.stats_coverage();
-        if total == 0 || present == 0 {
-            StatsMode::Absent
-        } else if present == total {
-            StatsMode::Exact
-        } else {
-            StatsMode::Partial
-        }
+    let table_report = TableReport {
+        path: table_path.to_string(),
+
+        version: table.snapshot.version(),
+
+        total_files: table.metadata.baseline.files.len(),
+
+        files_with_stats: table.metadata.baseline.stats.len(),
+
+        partition_columns: table.metadata.partition_columns.clone(),
+
+        features: TableFeatureReport {
+            deletion_vectors_enabled: features.deletion_vectors_enabled,
+
+            files_with_deletion_vectors: features.files_with_deletion_vectors,
+
+            column_mapping_mode: features.column_mapping_mode.clone(),
+
+            clustering_columns: features.clustering_columns.clone(),
+
+            in_commit_timestamps: features.in_commit_timestamps,
+
+            unrecognized_writer_features: features.unrecognized_writer_features.clone(),
+        },
+    };
+
+    let predicate_report = match (predicate, result) {
+        (Some(input), Some(result)) => Some(build_predicate_report(
+            input,
+            result,
+            table_report.total_files,
+        )),
+
+        _ => None,
+    };
+
+    let warnings = diagnostics::warnings::derive(WarningContext {
+        analysis: result,
+
+        features: &table.metadata.features,
+
+        total_files: table_report.total_files,
+    });
+
+    let explanations = match (result, predicate_report.as_ref()) {
+        (Some(result), Some(predicate_report)) => diagnostics::explain::derive(ExplainContext {
+            classification: &result.classification,
+
+            phases: &predicate_report.phases,
+
+            partition_columns: &table_report.partition_columns,
+
+            total_files: table_report.total_files,
+
+            files_with_stats: table_report.files_with_stats,
+        }),
+
+        _ => Vec::new(),
+    };
+
+    Report {
+        table: table_report,
+        predicate: predicate_report,
+        warnings,
+        explanations,
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StatsMode {
-    Exact,
-    Partial,
-    Absent,
-}
+fn build_predicate_report(
+    input: &str,
+    result: &AnalysisResult,
+    total_files: usize,
+) -> PredicateReport {
+    PredicateReport {
+        input: input.to_string(),
 
-impl StatsMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            StatsMode::Exact => "exact",
-            StatsMode::Partial => "partial",
-            StatsMode::Absent => "absent",
-        }
+        confidence: analysis::confidence(result),
+
+        classification: result.classification.clone(),
+
+        phases: analysis::phases(result, total_files),
+
+        partition_evaluation_gaps: result.partition.evaluation_gaps,
     }
 }

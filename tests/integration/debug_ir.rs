@@ -59,11 +59,13 @@ fn full_scan_predicate_is_stripped_of_unsupported_fragments() {
         "stripped predicate lost the supported fragment:\n{full}"
     );
     assert!(
-        !full.contains("LIKE"),
+        !full.contains("name"),
         "unsupported fragment leaked into the scan predicate:\n{full}"
     );
     // The fragment is still visible upstream, where it belongs.
-    assert!(section(&dump, "classification").contains("LIKE"));
+    let classification = section(&dump, "classification");
+    assert!(classification.contains("Like"));
+    assert!(classification.contains("Stripped"));
 }
 
 #[test]

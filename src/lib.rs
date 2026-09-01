@@ -24,20 +24,15 @@
     )
 )]
 
-pub mod attribution;
-pub mod credentials;
-#[cfg(feature = "debug-ir")]
-pub mod debug_dump;
+pub mod analysis;
 pub mod diagnostics;
 pub mod error;
-pub mod features;
+pub mod execution;
 pub mod gates;
-pub mod kernel_bridge;
-pub mod partition_eval;
-pub mod predicate_analyzer;
-pub mod predicate_ast;
-pub mod render;
+pub mod instrumentation;
+pub mod metadata;
+pub mod presentation;
 pub mod report;
-pub mod scan;
-pub mod stats;
-pub mod v2;
+pub mod storage;
+pub mod table;
+pub mod table_uri;

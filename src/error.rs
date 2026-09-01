@@ -1,11 +1,3 @@
-//! delta-explain's error type.
-//!
-//! Kernel errors pass through transparently (log replay, scanning, and cloud
-//! storage all surface as [`delta_kernel::Error`]); the other variants name
-//! the failure domains delta-explain owns itself. Before this enum existed,
-//! everything was funneled through `delta_kernel::Error::Generic(String)`.
-
-/// Errors produced by delta-explain.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Errors surfaced by delta-kernel-rs: log replay, metadata scans,
