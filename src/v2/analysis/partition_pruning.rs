@@ -5,6 +5,7 @@ use delta_kernel::schema::SchemaRef;
 use delta_kernel::{Engine, Snapshot};
 
 use crate::v2::error::Result;
+use crate::v2::instrumentation::Instrumentation;
 use crate::v2::metadata::scan::FileInfo;
 
 use super::kernel;
@@ -17,11 +18,13 @@ pub(super) fn prune(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
     schema: &SchemaRef,
+    instrumentation: &mut dyn Instrumentation,
 ) -> Result<PartitionAnalysis> {
-    let kernel_survivors = scan_partition_safe(classification, snapshot, engine, schema)?;
+    let kernel_survivors =
+        scan_partition_safe(classification, snapshot, engine, schema, instrumentation)?;
 
     let (exact_survivors, evaluation_gaps) =
-        evaluate_partition_exact(classification, files, schema);
+        evaluate_partition_exact(classification, files, schema, instrumentation)?;
 
     let survivors = combine_survivors(kernel_survivors, exact_survivors);
 
@@ -36,12 +39,15 @@ fn scan_partition_safe(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
     schema: &SchemaRef,
+    instrumentation: &mut dyn Instrumentation,
 ) -> Result<Option<HashSet<String>>> {
     let Some(predicate) = classification.partition_safe_predicate() else {
         return Ok(None);
     };
 
     let kernel_predicate = kernel::lower(&predicate, schema)?;
+
+    instrumentation.partition_kernel_predicate_lowered(&predicate, &kernel_predicate)?;
 
     let survivors = kernel::surviving_files(snapshot, engine, &kernel_predicate)?;
 
@@ -52,9 +58,10 @@ fn evaluate_partition_exact(
     classification: &PredicateClassification,
     files: &[FileInfo],
     schema: &SchemaRef,
-) -> (Option<HashSet<String>>, usize) {
+    instrumentation: &mut dyn Instrumentation,
+) -> Result<(Option<HashSet<String>>, usize)> {
     let Some(predicate) = classification.partition_exact_predicate() else {
-        return (None, 0);
+        return Ok((None, 0));
     };
 
     let mut survivors = HashSet::new();
@@ -68,7 +75,9 @@ fn evaluate_partition_exact(
             }
 
             Truth::Unknown => {
-                // Unknown is evaluator ignorance, not SQL NULL.
+                // Unknown is evaluator ignorance,
+                // not SQL NULL.
+                //
                 // Keep the file conservatively.
                 survivors.insert(file.path.clone());
 
@@ -79,7 +88,14 @@ fn evaluate_partition_exact(
         }
     }
 
-    (Some(survivors), evaluation_gaps)
+    instrumentation.partition_evaluated(
+        &predicate,
+        survivors.len(),
+        files.len(),
+        evaluation_gaps,
+    )?;
+
+    Ok((Some(survivors), evaluation_gaps))
 }
 
 fn combine_survivors(

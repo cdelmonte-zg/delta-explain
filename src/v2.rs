@@ -3,6 +3,7 @@ pub mod diagnostics;
 pub mod error;
 pub mod execution;
 pub mod gates;
+pub mod instrumentation;
 pub mod metadata;
 pub mod presentation;
 pub mod report;

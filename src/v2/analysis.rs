@@ -12,9 +12,11 @@ mod value_coercion;
 use delta_kernel::{Engine, schema::SchemaRef};
 
 use crate::v2::error::Result;
+use crate::v2::instrumentation::Instrumentation;
 use crate::v2::table::TableState;
 
-use self::model::{AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification};
+use self::model::{AnalysisResult, Confidence, PhaseAnalysis};
+use self::predicate::Pred;
 
 /// Run predicate analysis against an opened Delta table.
 ///
@@ -24,14 +26,30 @@ use self::model::{AnalysisResult, Confidence, PhaseAnalysis, PredicateClassifica
 ///   -> parse
 ///   -> schema-aware normalization
 ///   -> static classification
-///   -> partition-safe kernel pruning
+///   -> partition pruning
+///   -> general data-skipping scan
 ///
-/// Additional analysis phases can be added here without exposing their
-/// sequencing to the CLI.
-pub fn analyze(input: &str, table: &TableState, engine: &dyn Engine) -> Result<AnalysisResult> {
+/// Instrumentation is emitted only at semantic phase boundaries. Parsing,
+/// normalization, classification, and pruning helpers remain independent
+/// from any concrete diagnostic output.
+pub fn analyze(
+    input: &str,
+    table: &TableState,
+    engine: &dyn Engine,
+    instrumentation: &mut dyn Instrumentation,
+) -> Result<AnalysisResult> {
     let schema = table.snapshot.schema();
 
-    let classification = classify_predicate(input, &table.metadata.partition_columns, &schema)?;
+    let (parsed, predicate) = parse_and_normalize(input, &schema)?;
+
+    instrumentation.predicate_parsed(&parsed, &parsed)?;
+
+    instrumentation.predicate_normalized(&predicate, &predicate)?;
+
+    let classification =
+        predicate_analyzer::classify(&predicate, &table.metadata.partition_columns);
+
+    instrumentation.classification_completed(&classification)?;
 
     let partition = partition_pruning::prune(
         &classification,
@@ -39,6 +57,7 @@ pub fn analyze(input: &str, table: &TableState, engine: &dyn Engine) -> Result<A
         table.snapshot.clone(),
         engine,
         &schema,
+        instrumentation,
     )?;
 
     let scan = scan_pruning::prune(
@@ -48,6 +67,13 @@ pub fn analyze(input: &str, table: &TableState, engine: &dyn Engine) -> Result<A
         table.snapshot.clone(),
         engine,
         &schema,
+        instrumentation,
+    )?;
+
+    instrumentation.survivor_sets_computed(
+        table.metadata.baseline.files.len(),
+        partition.survivors.as_ref().map(|files| files.len()),
+        scan.survivors.as_ref().map(|files| files.len()),
     )?;
 
     Ok(AnalysisResult {
@@ -57,19 +83,19 @@ pub fn analyze(input: &str, table: &TableState, engine: &dyn Engine) -> Result<A
     })
 }
 
-/// Parse, normalize, and classify a predicate without executing any scans.
+/// Parse and schema-normalize the predicate while retaining both forms.
 ///
-/// Kept private because callers should normally use `analyze`; this helper
-/// exists to keep the static phase independently testable.
-fn classify_predicate(
-    input: &str,
-    partition_columns: &[String],
-    schema: &SchemaRef,
-) -> Result<PredicateClassification> {
-    let predicate =
-        predicate::parse(input)?.normalized_with(|col| kernel::column_is_string(col, schema));
+/// Keeping this as a separate pure helper lets the orchestration layer emit
+/// instrumentation for both representations without making the parser or
+/// normalization code aware of instrumentation.
+fn parse_and_normalize(input: &str, schema: &SchemaRef) -> Result<(Pred, Pred)> {
+    let parsed = predicate::parse(input)?;
 
-    Ok(predicate_analyzer::classify(&predicate, partition_columns))
+    let normalized = parsed
+        .clone()
+        .normalized_with(|column| kernel::column_is_string(column, schema));
+
+    Ok((parsed, normalized))
 }
 
 pub fn confidence(result: &AnalysisResult) -> Confidence {
@@ -86,8 +112,19 @@ mod tests {
 
     use delta_kernel::schema::{DataType, SchemaRef, StructField, StructType};
 
+    use self::model::PredicateClassification;
     use super::*;
     use crate::v2::analysis::model::Confidence;
+
+    fn classify_predicate(
+        input: &str,
+        partition_columns: &[String],
+        schema: &SchemaRef,
+    ) -> Result<PredicateClassification> {
+        let (_, predicate) = parse_and_normalize(input, schema)?;
+
+        Ok(predicate_analyzer::classify(&predicate, partition_columns))
+    }
 
     fn partitions(cols: &[&str]) -> Vec<String> {
         cols.iter().map(|s| s.to_string()).collect()

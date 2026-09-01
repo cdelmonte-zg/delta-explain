@@ -5,6 +5,7 @@ use object_store::DynObjectStore;
 use url::Url;
 
 use super::error::{Error, Result};
+use super::instrumentation::Instrumentation;
 use super::metadata;
 
 pub struct TableState {
@@ -22,6 +23,7 @@ pub fn open(
     store: &Arc<DynObjectStore>,
     engine: &dyn Engine,
     options: OpenOptions,
+    instrumentation: &mut dyn Instrumentation,
 ) -> Result<TableState> {
     let log = metadata::log::read_log_metadata(table_url, store, options.version)?;
 
@@ -49,6 +51,12 @@ pub fn open(
     let baseline = metadata::scan::scan_baseline(snapshot.clone(), engine)?;
 
     let partition_columns = metadata::resolve_partition_columns(&log, &baseline);
+
+    instrumentation.snapshot_opened(
+        snapshot.version(),
+        baseline.files.len(),
+        &partition_columns,
+    )?;
 
     let features = metadata::features::detect(
         &snapshot,

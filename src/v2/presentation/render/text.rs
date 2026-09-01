@@ -10,12 +10,12 @@ use crate::v2::presentation::{
 pub(super) fn render(presentation: &Presentation) -> String {
     let mut out = String::new();
 
-    writeln!(out, "Delta table: {}", presentation.table.path).unwrap();
+    let _ = writeln!(out, "Delta table: {}", presentation.table.path);
 
-    writeln!(out, "Version:     {}", presentation.table.version).unwrap();
+    let _ = writeln!(out, "Version:     {}", presentation.table.version);
 
     if let Some(predicate) = &presentation.predicate {
-        writeln!(out, "Predicate:   {predicate}").unwrap();
+        let _ = writeln!(out, "Predicate:   {predicate}");
 
         if let Some(analysis) = &presentation.analysis {
             write_analysis(&mut out, analysis);
@@ -23,14 +23,13 @@ pub(super) fn render(presentation: &Presentation) -> String {
 
         write_phases(&mut out, presentation);
     } else {
-        writeln!(out).unwrap();
+        let _ = writeln!(out);
 
-        writeln!(
+        let _ = writeln!(
             out,
             "Files in snapshot: {}",
             fmt(presentation.table.total_files)
-        )
-        .unwrap();
+        );
     }
 
     write_warnings(&mut out, presentation);
@@ -60,8 +59,8 @@ fn assertion_failure(assertion: &AssertionView) -> Option<String> {
             threshold, actual, ..
         } => Some(format!(
             "ASSERTION FAILED: total pruning \
-             {actual:.1}% is below threshold \
-             {threshold:.1}%"
+                     {actual:.1}% is below threshold \
+                     {threshold:.1}%"
         )),
 
         AssertionView::StatsComplete { missing_files, .. } => {
@@ -80,70 +79,64 @@ fn assertion_failure(assertion: &AssertionView) -> Option<String> {
 }
 
 fn write_analysis(out: &mut String, analysis: &AnalysisView) {
-    writeln!(out).unwrap();
+    let _ = writeln!(out);
 
-    writeln!(out, "Predicate Analysis:").unwrap();
+    let _ = writeln!(out, "Predicate Analysis:");
 
-    writeln!(
+    let _ = writeln!(
         out,
         "  partition-safe: {}",
         display_optional(analysis.partition_safe.as_deref())
-    )
-    .unwrap();
+    );
 
     if let Some(partition_exact) = &analysis.partition_exact {
-        writeln!(out, "  partition-exact: {partition_exact}").unwrap();
+        let _ = writeln!(out, "  partition-exact: {partition_exact}");
     }
 
-    writeln!(
+    let _ = writeln!(
         out,
         "  stats-safe:     {}",
         display_optional(analysis.stats_safe.as_deref())
-    )
-    .unwrap();
+    );
 
-    writeln!(
+    let _ = writeln!(
         out,
         "  unsplittable:   {}",
         display_optional(analysis.unsplittable.as_deref())
-    )
-    .unwrap();
+    );
 
-    writeln!(out, "  confidence:     {}", analysis.confidence).unwrap();
+    let _ = writeln!(out, "  confidence:     {}", analysis.confidence);
 }
 
 fn write_phases(out: &mut String, presentation: &Presentation) {
-    writeln!(out).unwrap();
+    let _ = writeln!(out);
 
-    writeln!(
+    let _ = writeln!(
         out,
         "Files in snapshot: {}",
         fmt(presentation.table.total_files)
-    )
-    .unwrap();
+    );
 
     for (index, phase) in presentation.phases.iter().enumerate() {
-        writeln!(out).unwrap();
+        let _ = writeln!(out);
 
-        writeln!(
+        let _ = writeln!(
             out,
             "Phase {}: {} [{}]",
             index + 1,
             phase.name,
             phase.confidence,
-        )
-        .unwrap();
+        );
 
-        writeln!(out, "  predicate:       {}", phase_predicate(phase)).unwrap();
+        let _ = writeln!(out, "  predicate:       {}", phase_predicate(phase));
 
-        writeln!(
+        let _ = writeln!(
             out,
             "  files remaining: {}  (-{}, {:.0}% pruned)",
             fmt(phase.output_files),
             fmt(phase.pruned_files),
             phase.pruning_pct,
-        )
-        .unwrap();
+        );
 
         if let Some(files) = &presentation.files {
             write_phase_details(out, files, index);
@@ -151,16 +144,15 @@ fn write_phases(out: &mut String, presentation: &Presentation) {
     }
 
     if presentation.phases.len() > 1 {
-        writeln!(out).unwrap();
+        let _ = writeln!(out);
 
-        writeln!(
+        let _ = writeln!(
             out,
             "Total reduction: {} -> {} files ({:.0}% pruned)",
             fmt(presentation.table.total_files),
             fmt(presentation.final_files),
             presentation.total_pruning_pct,
-        )
-        .unwrap();
+        );
     }
 }
 
@@ -175,7 +167,7 @@ fn write_phase_details(out: &mut String, files: &FilesView, phase_index: usize) 
         })
         .count();
 
-    writeln!(out).unwrap();
+    let _ = writeln!(out);
 
     let mut shown = 0usize;
 
@@ -193,12 +185,11 @@ fn write_phase_details(out: &mut String, files: &FilesView, phase_index: usize) 
         {
             let remaining = candidate_count.saturating_sub(shown);
 
-            writeln!(
+            let _ = writeln!(
                 out,
                 "  ... and {} more files (raise --limit to see them)",
                 fmt(remaining)
-            )
-            .unwrap();
+            );
 
             break;
         }
@@ -227,11 +218,10 @@ fn write_file(out: &mut String, file: &FileView, state: FilePhaseState) {
 
     let stats = format_stats_compact(file);
 
-    writeln!(
+    let _ = writeln!(
         out,
         "  [{tag}] {short_path}  ({size}{records}){partitions}{stats}"
-    )
-    .unwrap();
+    );
 }
 
 fn format_partitions(file: &FileView) -> String {
@@ -295,12 +285,12 @@ fn write_warnings(out: &mut String, presentation: &Presentation) {
         return;
     }
 
-    writeln!(out).unwrap();
+    let _ = writeln!(out);
 
-    writeln!(out, "Warnings!").unwrap();
+    let _ = writeln!(out, "Warnings!");
 
     for warning in &presentation.warnings {
-        writeln!(out, "[{}]: {}", warning.code, warning.message,).unwrap();
+        let _ = writeln!(out, "[{}]: {}", warning.code, warning.message,);
     }
 }
 
@@ -309,31 +299,30 @@ fn write_explanations(
     presentation: &Presentation,
     explanations: &[ExplanationView],
 ) {
-    writeln!(out).unwrap();
+    let _ = writeln!(out);
 
-    writeln!(out, "Why:").unwrap();
+    let _ = writeln!(out, "Why:");
 
     if presentation.predicate.is_none() {
-        writeln!(
+        let _ = writeln!(
             out,
             "  No predicate given (pass --where to diagnose pruning)."
-        )
-        .unwrap();
+        );
 
         return;
     }
 
     if explanations.is_empty() {
-        writeln!(out, "  No pruning issues found.").unwrap();
+        let _ = writeln!(out, "  No pruning issues found.");
 
         return;
     }
 
     for explanation in explanations {
-        writeln!(out, "  [{}] {}", explanation.code, explanation.message,).unwrap();
+        let _ = writeln!(out, "  [{}] {}", explanation.code, explanation.message,);
 
         if let Some(suggestion) = &explanation.suggestion {
-            writeln!(out, "    -> {suggestion}").unwrap();
+            let _ = writeln!(out, "    -> {suggestion}");
         }
     }
 }

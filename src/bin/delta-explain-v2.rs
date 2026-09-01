@@ -5,10 +5,14 @@ use clap::Parser;
 use delta_explain::v2::error::Result;
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
+use delta_explain::v2::instrumentation::{Instrumentation, NoOpInstrumentation};
 use delta_explain::v2::presentation::{self, OutputFormat, PresentationOptions};
 use delta_explain::v2::storage::{self, StorageConfig, StorageOption};
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
+
+#[cfg(feature = "debug-ir")]
+use delta_explain::v2::instrumentation::DebugIrObserver;
 
 #[derive(Parser)]
 struct Cli {
@@ -25,6 +29,10 @@ struct Cli {
 
     #[arg(long = "explain-why")]
     explain_why: bool,
+
+    #[cfg(feature = "debug-ir")]
+    #[arg(long = "debug-ir", value_name = "FILE")]
+    debug_ir: Option<String>,
 
     /// Output format.
     #[arg(
@@ -108,6 +116,10 @@ fn try_main() -> Result<ExitCode> {
         },
     )?;
 
+    let mut instrumentation = build_instrumentation(&cli)?;
+
+    instrumentation.invocation(&cli.path, cli.predicate.as_deref())?;
+
     let table = table::open(
         &table_url,
         &runtime.store,
@@ -115,6 +127,7 @@ fn try_main() -> Result<ExitCode> {
         table::OpenOptions {
             version: cli.at_version,
         },
+        instrumentation.as_mut(),
     )?;
 
     let result = execution::execute(
@@ -131,9 +144,16 @@ fn try_main() -> Result<ExitCode> {
         },
         &table,
         runtime.engine.as_ref(),
+        instrumentation.as_mut(),
     )?;
 
     let elapsed_ms = start.elapsed().as_millis();
+
+    // All table/kernel/analysis work is complete.
+    // Close instrumentation before presentation/rendering
+    // so the debug dump is complete even if output later
+    // fails or a gate returns a failing exit status.
+    instrumentation.finish()?;
 
     let presentation = presentation::build(
         &result.report,
@@ -170,4 +190,16 @@ fn try_main() -> Result<ExitCode> {
     };
 
     Ok(exit_code)
+}
+
+fn build_instrumentation(cli: &Cli) -> Result<Box<dyn Instrumentation>> {
+    #[cfg(feature = "debug-ir")]
+    if let Some(path) = cli.debug_ir.as_deref() {
+        return Ok(Box::new(DebugIrObserver::create(path)?));
+    }
+
+    #[cfg(not(feature = "debug-ir"))]
+    let _ = cli;
+
+    Ok(Box::new(NoOpInstrumentation))
 }

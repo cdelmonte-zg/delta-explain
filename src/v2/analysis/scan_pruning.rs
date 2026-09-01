@@ -5,6 +5,7 @@ use delta_kernel::schema::SchemaRef;
 use delta_kernel::{Engine, Snapshot};
 
 use crate::v2::error::Result;
+use crate::v2::instrumentation::Instrumentation;
 use crate::v2::metadata::scan::FileInfo;
 
 use super::kernel;
@@ -28,6 +29,7 @@ pub(super) fn prune(
     snapshot: Arc<Snapshot>,
     engine: &dyn Engine,
     schema: &SchemaRef,
+    instrumentation: &mut dyn Instrumentation,
 ) -> Result<ScanAnalysis> {
     if !classification.requires_scan_phase() {
         return Ok(ScanAnalysis { survivors: None });
@@ -37,10 +39,16 @@ pub(super) fn prune(
         Some(predicate) => {
             let kernel_predicate = kernel::lower(&predicate, schema)?;
 
+            instrumentation.scan_kernel_predicate_lowered(&predicate, &kernel_predicate)?;
+
             kernel::surviving_files(snapshot, engine, &kernel_predicate)?
         }
 
-        None => baseline_paths(files),
+        None => {
+            instrumentation.scan_without_predicate()?;
+
+            baseline_paths(files)
+        }
     };
 
     if let Some(partition_survivors) = &partition.survivors {
