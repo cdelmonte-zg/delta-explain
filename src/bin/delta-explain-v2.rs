@@ -8,7 +8,8 @@ use delta_kernel_default_engine::storage::store_from_url_opts;
 use delta_explain::v2::error::Result;
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
-use delta_explain::v2::render;
+use delta_explain::v2::presentation::{self, PresentationOptions};
+use delta_explain::v2::render::{self, OutputFormat};
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
 
@@ -24,10 +25,10 @@ struct Cli {
 
     /// Output format.
     #[arg(
-    long,
-    default_value = "text",
-    value_parser = ["text", "json"]
-)]
+        long,
+        default_value = "text",
+        value_parser = ["text", "json"]
+    )]
     format: String,
 
     /// Fail if total pruning is below this percentage.
@@ -45,6 +46,7 @@ fn main() -> ExitCode {
 
         Err(err) => {
             eprintln!("Error: {err:#}");
+
             ExitCode::FAILURE
         }
     }
@@ -68,10 +70,12 @@ fn try_main() -> Result<ExitCode> {
     let result = execution::execute(
         ExecutionInput {
             table_path: &cli.path,
+
             predicate: cli.predicate.as_deref(),
 
             gate_config: GateConfig {
                 min_pruning: cli.min_pruning,
+
                 assert_stats: cli.assert_stats,
             },
         },
@@ -79,24 +83,30 @@ fn try_main() -> Result<ExitCode> {
         &engine,
     )?;
 
-    for failure in render::gate_failures(&result.gates) {
+    let elapsed_ms = start.elapsed().as_millis();
+
+    let presentation = presentation::build(
+        &result.report,
+        &result.gates,
+        elapsed_ms,
+        PresentationOptions {
+            explain_why: cli.explain_why,
+        },
+    );
+
+    for failure in render::gate_failures(&presentation) {
         eprintln!("{failure}");
     }
 
-    let elapsed_ms = start.elapsed().as_millis();
+    let format = match cli.format.as_str() {
+        "json" => OutputFormat::Json,
 
-    match cli.format.as_str() {
-        "json" => {
-            println!(
-                "{}",
-                render::json(&result.report, &result.gates, elapsed_ms, cli.explain_why,)?
-            );
-        }
-
-        _ => {
-            print!("{}", render::text(&result.report, cli.explain_why,));
-        }
+        _ => OutputFormat::Text,
     };
+
+    let output = format.render(&presentation)?;
+
+    print!("{output}");
 
     let exit_code = if result.gates.failed() {
         ExitCode::FAILURE

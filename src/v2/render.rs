@@ -1,24 +1,25 @@
-mod diagnostics;
 mod json;
 mod text;
 
 use crate::v2::error::Result;
-use crate::v2::gates::GateOutcome;
-use crate::v2::report::Report;
+use crate::v2::presentation::Presentation;
 
-pub fn text(report: &Report, explain_why: bool) -> String {
-    text::render(report, explain_why)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
 }
 
-pub fn json(
-    report: &Report,
-    gates: &GateOutcome,
-    elapsed_ms: u128,
-    explain_why: bool,
-) -> Result<String> {
-    json::render(report, gates, elapsed_ms, explain_why)
+impl OutputFormat {
+    pub fn render(self, presentation: &Presentation) -> Result<String> {
+        match self {
+            OutputFormat::Text => Ok(text::render(presentation)),
+
+            OutputFormat::Json => json::render(presentation),
+        }
+    }
 }
 
-pub fn gate_failures(outcome: &GateOutcome) -> Vec<String> {
-    text::gate_failures(outcome)
+pub fn gate_failures(presentation: &Presentation) -> Vec<String> {
+    text::gate_failures(presentation)
 }

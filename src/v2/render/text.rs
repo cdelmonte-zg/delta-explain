@@ -1,28 +1,52 @@
 use std::fmt::Write;
 
-use super::diagnostics::{explanation_message, explanation_suggestion, warning_message};
+use crate::v2::presentation::{AssertionView, PhaseView, Presentation, StatusView};
 
-use crate::v2::analysis::model::{
-    Confidence, PhaseKind, PredicateClassification, UnsplittableHandling,
-};
-use crate::v2::gates::{AssertionResult, GateOutcome, GateStatus};
-use crate::v2::report::{PredicateReport, Report};
+pub(super) fn render(presentation: &Presentation) -> String {
+    let mut out = String::new();
 
-pub(super) fn gate_failures(outcome: &GateOutcome) -> Vec<String> {
-    outcome
+    writeln!(out, "Delta table: {}", presentation.table.path).unwrap();
+
+    writeln!(out, "Version:     {}", presentation.table.version).unwrap();
+
+    if let Some(predicate) = &presentation.predicate {
+        writeln!(out, "Predicate:   {predicate}").unwrap();
+
+        if let Some(analysis) = &presentation.analysis {
+            write_analysis(&mut out, analysis);
+        }
+
+        write_phases(&mut out, presentation);
+    } else {
+        writeln!(out).unwrap();
+
+        writeln!(out, "Files in snapshot: {}", presentation.table.total_files).unwrap();
+    }
+
+    write_warnings(&mut out, presentation);
+
+    if let Some(explanations) = &presentation.explanations {
+        write_explanations(&mut out, presentation, explanations);
+    }
+
+    out
+}
+
+pub(super) fn gate_failures(presentation: &Presentation) -> Vec<String> {
+    presentation
         .assertions
         .iter()
         .filter_map(assertion_failure)
         .collect()
 }
 
-fn assertion_failure(assertion: &AssertionResult) -> Option<String> {
-    if assertion.status() != GateStatus::Fail {
+fn assertion_failure(assertion: &AssertionView) -> Option<String> {
+    if assertion.status() != StatusView::Fail {
         return None;
     }
 
     match assertion {
-        AssertionResult::MinPruning {
+        AssertionView::MinPruning {
             threshold, actual, ..
         } => Some(format!(
             "ASSERTION FAILED: total pruning \
@@ -30,7 +54,7 @@ fn assertion_failure(assertion: &AssertionResult) -> Option<String> {
              {threshold:.1}%"
         )),
 
-        AssertionResult::StatsComplete { missing_files, .. } => {
+        AssertionView::StatsComplete { missing_files, .. } => {
             let mut message = format!(
                 "ASSERTION FAILED: {} file(s) missing statistics:",
                 missing_files.len()
@@ -45,35 +69,7 @@ fn assertion_failure(assertion: &AssertionResult) -> Option<String> {
     }
 }
 
-pub(super) fn render(report: &Report, explain_why: bool) -> String {
-    let mut out = String::new();
-
-    writeln!(out, "Delta table: {}", report.table.path).unwrap();
-
-    writeln!(out, "Version:     {}", report.table.version).unwrap();
-
-    if let Some(predicate) = &report.predicate {
-        writeln!(out, "Predicate:   {}", predicate.input).unwrap();
-
-        write_predicate_analysis(&mut out, predicate);
-
-        write_phases(&mut out, report, predicate);
-    } else {
-        writeln!(out).unwrap();
-
-        writeln!(out, "Files in snapshot: {}", report.table.total_files).unwrap();
-    }
-
-    write_warnings(&mut out, report);
-
-    if explain_why {
-        write_explanations(&mut out, report);
-    }
-
-    out
-}
-
-fn write_predicate_analysis(out: &mut String, predicate: &PredicateReport) {
+fn write_analysis(out: &mut String, analysis: &crate::v2::presentation::AnalysisView) {
     writeln!(out).unwrap();
 
     writeln!(out, "Predicate Analysis:").unwrap();
@@ -81,95 +77,74 @@ fn write_predicate_analysis(out: &mut String, predicate: &PredicateReport) {
     writeln!(
         out,
         "  partition-safe: {}",
-        conjunction(&predicate.classification.partition_safe)
+        display_optional(analysis.partition_safe.as_deref())
     )
     .unwrap();
 
-    if !predicate.classification.partition_exact.is_empty() {
-        writeln!(
-            out,
-            "  partition-exact: {}",
-            conjunction(&predicate.classification.partition_exact)
-        )
-        .unwrap();
+    if let Some(partition_exact) = &analysis.partition_exact {
+        writeln!(out, "  partition-exact: {partition_exact}").unwrap();
     }
 
     writeln!(
         out,
         "  stats-safe:     {}",
-        conjunction(&predicate.classification.stats_safe)
+        display_optional(analysis.stats_safe.as_deref())
     )
     .unwrap();
 
     writeln!(
         out,
         "  unsplittable:   {}",
-        unsplittable_display(&predicate.classification)
+        display_optional(analysis.unsplittable.as_deref())
     )
     .unwrap();
 
-    writeln!(
-        out,
-        "  confidence:     {}",
-        confidence_label(predicate.confidence)
-    )
-    .unwrap();
+    writeln!(out, "  confidence:     {}", analysis.confidence).unwrap();
 }
 
-fn write_phases(out: &mut String, report: &Report, predicate: &PredicateReport) {
+fn write_phases(out: &mut String, presentation: &Presentation) {
     writeln!(out).unwrap();
 
-    writeln!(out, "Files in snapshot: {}", report.table.total_files).unwrap();
+    writeln!(out, "Files in snapshot: {}", presentation.table.total_files).unwrap();
 
-    for (index, phase) in predicate.phases.iter().enumerate() {
-        let dropped = phase.input_count.saturating_sub(phase.output_count);
-
-        let pct = pruning_pct(phase.input_count, phase.output_count);
-
+    for (index, phase) in presentation.phases.iter().enumerate() {
         writeln!(out).unwrap();
 
         writeln!(
             out,
             "Phase {}: {} [{}]",
             index + 1,
-            phase_name(phase.kind),
-            confidence_label(phase.confidence),
+            phase.name,
+            phase.confidence,
         )
         .unwrap();
 
-        writeln!(
-            out,
-            "  predicate:       {}",
-            phase_predicate(phase.kind, &predicate.classification,)
-        )
-        .unwrap();
+        writeln!(out, "  predicate:       {}", phase_predicate(phase)).unwrap();
 
         writeln!(
             out,
             "  files remaining: {}  (-{}, {:.0}% pruned)",
-            phase.output_count, dropped, pct,
+            phase.output_files, phase.pruned_files, phase.pruning_pct,
         )
         .unwrap();
     }
 
-    if predicate.phases.len() > 1 {
-        if let Some(last) = predicate.phases.last() {
-            writeln!(out).unwrap();
+    if presentation.phases.len() > 1 {
+        writeln!(out).unwrap();
 
-            writeln!(
-                out,
-                "Total reduction: {} -> {} files ({:.0}% pruned)",
-                report.table.total_files,
-                last.output_count,
-                pruning_pct(report.table.total_files, last.output_count,),
-            )
-            .unwrap();
-        }
+        writeln!(
+            out,
+            "Total reduction: {} -> {} files ({:.0}% pruned)",
+            presentation.table.total_files,
+            presentation.final_files,
+            presentation.total_pruning_pct,
+        )
+        .unwrap();
     }
 }
 
-fn write_warnings(out: &mut String, report: &Report) {
-    if report.warnings.is_empty() {
+fn write_warnings(out: &mut String, presentation: &Presentation) {
+    if presentation.warnings.is_empty() {
         return;
     }
 
@@ -177,17 +152,21 @@ fn write_warnings(out: &mut String, report: &Report) {
 
     writeln!(out, "Warnings!").unwrap();
 
-    for warning in &report.warnings {
-        writeln!(out, "[{}]: {}", warning.code(), warning_message(warning),).unwrap();
+    for warning in &presentation.warnings {
+        writeln!(out, "[{}]: {}", warning.code, warning.message,).unwrap();
     }
 }
 
-fn write_explanations(out: &mut String, report: &Report) {
+fn write_explanations(
+    out: &mut String,
+    presentation: &Presentation,
+    explanations: &[crate::v2::presentation::ExplanationView],
+) {
     writeln!(out).unwrap();
 
     writeln!(out, "Why:").unwrap();
 
-    if report.predicate.is_none() {
+    if presentation.predicate.is_none() {
         writeln!(
             out,
             "  No predicate given (pass --where to diagnose pruning)."
@@ -197,132 +176,50 @@ fn write_explanations(out: &mut String, report: &Report) {
         return;
     }
 
-    if report.explanations.is_empty() {
+    if explanations.is_empty() {
         writeln!(out, "  No pruning issues found.").unwrap();
 
         return;
     }
 
-    for explanation in &report.explanations {
-        writeln!(
-            out,
-            "  [{}] {}",
-            explanation.code(),
-            explanation_message(explanation),
-        )
-        .unwrap();
+    for explanation in explanations {
+        writeln!(out, "  [{}] {}", explanation.code, explanation.message,).unwrap();
 
-        if let Some(suggestion) = explanation_suggestion(explanation) {
+        if let Some(suggestion) = &explanation.suggestion {
             writeln!(out, "    -> {suggestion}").unwrap();
         }
     }
 }
 
-fn phase_predicate(kind: PhaseKind, classification: &PredicateClassification) -> String {
-    match kind {
-        PhaseKind::PartitionPruning => {
-            let predicates = classification
-                .partition_safe
-                .iter()
-                .chain(classification.partition_exact.iter())
-                .map(ToString::to_string)
-                .collect::<Vec<_>>();
+fn phase_predicate(phase: &PhaseView) -> String {
+    match (
+        phase.conservative_fragments,
+        phase.scanned_predicate.as_deref(),
+    ) {
+        (0, _) => phase.predicate.clone(),
 
-            display_conjunction(&predicates)
+        (1, Some(scanned)) => {
+            format!(
+                "{scanned}  \
+                 (+1 unsupported fragment, keeps all files)"
+            )
         }
 
-        PhaseKind::DataSkipping => data_skipping_predicate(classification),
-    }
-}
+        (n, Some(scanned)) => {
+            format!(
+                "{scanned}  \
+                 (+{n} unsupported fragments, keep all files)"
+            )
+        }
 
-fn data_skipping_predicate(classification: &PredicateClassification) -> String {
-    let scanned = classification
-        .stats_safe
-        .iter()
-        .map(ToString::to_string)
-        .chain(
-            classification
-                .unsplittable
-                .iter()
-                .filter(|fragment| fragment.handling == UnsplittableHandling::Scanned)
-                .map(|fragment| fragment.predicate.to_string()),
-        )
-        .collect::<Vec<_>>();
+        (1, None) => "(1 unsupported fragment, keeps all files)".to_string(),
 
-    let stripped = classification.stripped_count();
-
-    let scanned = display_conjunction(&scanned);
-
-    match (stripped, scanned.as_str()) {
-        (0, _) => scanned,
-
-        (1, "-") => "(1 unsupported fragment, keeps all files)".to_string(),
-
-        (n, "-") => {
+        (n, None) => {
             format!("({n} unsupported fragments, keep all files)")
         }
-
-        (1, scanned) => {
-            format!("{scanned}  (+1 unsupported fragment, keeps all files)")
-        }
-
-        (n, scanned) => {
-            format!("{scanned}  (+{n} unsupported fragments, keep all files)")
-        }
     }
 }
 
-fn conjunction(predicates: &[crate::v2::analysis::predicate::Pred]) -> String {
-    let rendered = predicates
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-
-    display_conjunction(&rendered)
-}
-
-fn display_conjunction(predicates: &[String]) -> String {
-    if predicates.is_empty() {
-        "-".to_string()
-    } else {
-        predicates.join(" AND ")
-    }
-}
-
-fn unsplittable_display(classification: &PredicateClassification) -> String {
-    let rendered = classification
-        .unsplittable
-        .iter()
-        .map(|fragment| fragment.predicate.to_string())
-        .collect::<Vec<_>>();
-
-    display_conjunction(&rendered)
-}
-
-fn phase_name(kind: PhaseKind) -> &'static str {
-    match kind {
-        PhaseKind::PartitionPruning => "Partition pruning",
-
-        PhaseKind::DataSkipping => "Data skipping (min/max statistics)",
-    }
-}
-
-fn confidence_label(confidence: Confidence) -> &'static str {
-    match confidence {
-        Confidence::Exact => "exact",
-
-        Confidence::Conservative => "conservative",
-
-        Confidence::Incomplete => "incomplete",
-    }
-}
-
-fn pruning_pct(input: usize, output: usize) -> f64 {
-    if input == 0 {
-        return 0.0;
-    }
-
-    let dropped = input.saturating_sub(output);
-
-    dropped as f64 / input as f64 * 100.0
+fn display_optional(value: Option<&str>) -> &str {
+    value.unwrap_or("-")
 }

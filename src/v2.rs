@@ -4,6 +4,7 @@ pub mod error;
 pub mod execution;
 pub mod gates;
 pub mod metadata;
+pub mod presentation;
 pub mod render;
 pub mod report;
 pub mod table;

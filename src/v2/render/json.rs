@@ -1,131 +1,106 @@
 use serde_json::{Value, json};
 
-use super::diagnostics::{explanation_message, explanation_suggestion, warning_message};
-
-use crate::v2::analysis::model::{Confidence, PhaseKind, PredicateClassification};
-use crate::v2::analysis::predicate::Pred;
-use crate::v2::diagnostics::{Explanation, Warning};
 use crate::v2::error::Result;
-use crate::v2::gates::{AssertionResult, GateOutcome};
-use crate::v2::report::Report;
+use crate::v2::presentation::{AssertionView, DiagnosticScope, ExplanationView, Presentation};
 
 pub const SCHEMA_VERSION: &str = "0.4.0";
 
-pub(super) fn render(
-    report: &Report,
-    gates: &GateOutcome,
-    elapsed_ms: u128,
-    explain_why: bool,
-) -> Result<String> {
-    let total_files = report.table.total_files;
+pub(super) fn render(presentation: &Presentation) -> Result<String> {
+    let analysis_notes = presentation
+        .warnings
+        .iter()
+        .filter(|warning| warning.scope == DiagnosticScope::Analysis)
+        .map(|warning| {
+            json!({
+                "code":
+                    warning.schema_code,
 
-    let final_files = report
-        .predicate
-        .as_ref()
-        .and_then(|predicate| predicate.phases.last().map(|phase| phase.output_count))
-        .unwrap_or(total_files);
+                "message":
+                    warning.message,
+            })
+        })
+        .collect::<Vec<_>>();
 
-    let stats_present = report.table.files_with_stats;
+    let table_notes = presentation
+        .warnings
+        .iter()
+        .filter(|warning| warning.scope == DiagnosticScope::Table)
+        .map(|warning| {
+            json!({
+                "code":
+                    warning.schema_code,
 
-    let stats_pct = if total_files == 0 {
-        0.0
-    } else {
-        stats_present as f64 / total_files as f64 * 100.0
-    };
+                "message":
+                    warning.message,
+            })
+        })
+        .collect::<Vec<_>>();
 
-    let analysis = report.predicate.as_ref().map(|predicate| {
-        let classification = &predicate.classification;
-
+    let analysis = presentation.analysis.as_ref().map(|analysis| {
         json!({
             "partition_safe":
-                predicate_conjunction(
-                    &classification
-                        .partition_safe
-                ),
+                analysis
+                    .partition_safe,
 
             "partition_exact":
-                predicate_conjunction(
-                    &classification
-                        .partition_exact
-                ),
+                analysis
+                    .partition_exact,
 
             "stats_safe":
-                predicate_conjunction(
-                    &classification
-                        .stats_safe
-                ),
+                analysis
+                    .stats_safe,
 
             "unsplittable":
-                unsplittable_conjunction(
-                    classification
-                ),
+                analysis
+                    .unsplittable,
 
             "confidence":
-                confidence_label(
-                    predicate.confidence
-                ),
+                analysis
+                    .confidence,
 
             "notes":
-                analysis_notes(
-                    report
-                ),
+                analysis_notes,
         })
     });
 
-    let phases = report
-        .predicate
-        .as_ref()
-        .map(|predicate| {
-            predicate
-                .phases
-                .iter()
-                .map(|phase| {
-                    json!({
-                        "name":
-                            phase_name(
-                                phase.kind
-                            ),
+    let phases = presentation
+        .phases
+        .iter()
+        .map(|phase| {
+            json!({
+                "name":
+                    phase.name,
 
-                        "confidence":
-                            confidence_label(
-                                phase.confidence
-                            ),
+                "confidence":
+                    phase.confidence,
 
-                        "predicate":
-                            phase_predicate(
-                                phase.kind,
-                                &predicate
-                                    .classification,
-                            ),
+                "predicate":
+                    phase.predicate,
 
-                        "input_files":
-                            phase.input_count,
+                "input_files":
+                    phase.input_files,
 
-                        "output_files":
-                            phase.output_count,
+                "output_files":
+                    phase.output_files,
 
-                        "pruned_files":
-                            phase
-                                .input_count
-                                .saturating_sub(
-                                    phase
-                                        .output_count
-                                ),
+                "pruned_files":
+                    phase.pruned_files,
 
-                        "pruning_pct":
-                            pruning_pct(
-                                phase
-                                    .input_count,
-                                phase
-                                    .output_count,
-                            ),
-                    })
-                })
-                .collect::<Vec<_>>()
+                "pruning_pct":
+                    phase.pruning_pct,
+            })
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
 
-    let features = &report.table.features;
+    let assertions = presentation
+        .assertions
+        .iter()
+        .map(assertion)
+        .collect::<Vec<_>>();
+
+    let features = &presentation.table.features;
+
+    let stats = &presentation.table.stats;
 
     let mut output = json!({
         "schema_version":
@@ -135,33 +110,25 @@ pub(super) fn render(
             env!("CARGO_PKG_VERSION"),
 
         "elapsed_ms":
-            elapsed_ms,
+            presentation.elapsed_ms,
 
         "table":
-            &report.table.path,
+            presentation.table.path,
 
         "version":
-            report.table.version,
+            presentation.table.version,
 
         "predicate":
-            report
-                .predicate
-                .as_ref()
-                .map(|predicate| {
-                    &predicate.input
-                }),
+            presentation.predicate,
 
         "total_files":
-            total_files,
+            presentation.table.total_files,
 
         "final_files":
-            final_files,
+            presentation.final_files,
 
         "total_pruning_pct":
-            pruning_pct(
-                total_files,
-                final_files,
-            ),
+            presentation.total_pruning_pct,
 
         "analysis":
             analysis,
@@ -178,11 +145,11 @@ pub(super) fn render(
             },
 
             "column_mapping_mode":
-                &features
+                features
                     .column_mapping_mode,
 
             "clustering_columns":
-                &features
+                features
                     .clustering_columns,
 
             "in_commit_timestamps":
@@ -190,286 +157,100 @@ pub(super) fn render(
                     .in_commit_timestamps,
 
             "unrecognized_writer_features":
-                &features
+                features
                     .unrecognized_writer_features,
 
             "notes":
-                table_notes(
-                    report
-                ),
+                table_notes,
         },
 
         "stats": {
             "mode":
-                stats_mode(
-                    stats_present,
-                    total_files,
-                ),
+                stats.mode,
 
             "files_with_stats":
-                stats_present,
+                stats.files_with_stats,
 
             "total_files":
-                total_files,
+                stats.total_files,
 
             "pct":
-                stats_pct,
+                stats.pct,
         },
 
         "phases":
             phases,
 
         "assertions":
-            assertions(
-                gates
-            ),
+            assertions,
 
         "result":
-            gates
-                .overall
+            presentation
+                .result
                 .map(|status| {
                     status.as_str()
                 }),
     });
 
-    if explain_why {
-        output["explain"] = json!(
-            report
-                .explanations
-                .iter()
-                .map(explanation)
-                .collect::<Vec<_>>()
-        );
+    if let Some(explanations) = &presentation.explanations {
+        output["explain"] = json!(explanations.iter().map(explanation).collect::<Vec<_>>());
     }
 
     Ok(serde_json::to_string_pretty(&output)?)
 }
 
-fn assertions(gates: &GateOutcome) -> Vec<Value> {
-    gates
-        .assertions
-        .iter()
-        .map(|assertion| match assertion {
-            AssertionResult::MinPruning {
-                threshold,
-                actual,
-                status,
-            } => {
-                json!({
-                    "name":
-                        "min_pruning",
-
-                    "threshold":
-                        threshold,
-
-                    "actual":
-                        actual,
-
-                    "result":
-                        status.as_str(),
-                })
-            }
-
-            AssertionResult::StatsComplete {
-                missing_files,
-                status,
-            } => {
-                json!({
-                    "name":
-                        "stats_complete",
-
-                    "missing_count":
-                        missing_files.len(),
-
-                    "result":
-                        status.as_str(),
-                })
-            }
-        })
-        .collect()
-}
-
-fn analysis_notes(report: &Report) -> Vec<Value> {
-    report
-        .warnings
-        .iter()
-        .filter(|warning| {
-            matches!(
-                warning,
-                Warning::UnsupportedExpression { .. }
-                    | Warning::UnsplittableOr { .. }
-                    | Warning::PartitionEvaluationGap { .. }
-            )
-        })
-        .map(|warning| {
+fn assertion(assertion: &AssertionView) -> Value {
+    match assertion {
+        AssertionView::MinPruning {
+            threshold,
+            actual,
+            status,
+        } => {
             json!({
-                "code":
-                    analysis_warning_code(
-                        warning
-                    ),
+                "name":
+                    "min_pruning",
 
-                "message":
-                    warning_message(
-                        warning
-                    ),
+                "threshold":
+                    threshold,
+
+                "actual":
+                    actual,
+
+                "result":
+                    status.as_str(),
             })
-        })
-        .collect()
-}
+        }
 
-fn table_notes(report: &Report) -> Vec<Value> {
-    report
-        .warnings
-        .iter()
-        .filter(|warning| {
-            matches!(
-                warning,
-                Warning::DeletionVectors { .. }
-                    | Warning::ColumnMapping { .. }
-                    | Warning::LiquidClustering { .. }
-                    | Warning::UnrecognizedTableFeature { .. }
-            )
-        })
-        .map(|warning| {
+        AssertionView::StatsComplete {
+            missing_files,
+            status,
+        } => {
             json!({
-                "code":
-                    warning.code(),
+                "name":
+                    "stats_complete",
 
-                "message":
-                    warning_message(
-                        warning
-                    ),
+                "missing_count":
+                    missing_files.len(),
+
+                "result":
+                    status.as_str(),
             })
-        })
-        .collect()
-}
-
-fn analysis_warning_code(warning: &Warning) -> &'static str {
-    match warning {
-        Warning::PartitionEvaluationGap { .. } => "PARTITION_EVAL_GAP",
-
-        _ => warning.code(),
+        }
     }
 }
 
-fn explanation(explanation: &Explanation) -> Value {
+fn explanation(explanation: &ExplanationView) -> Value {
     json!({
         "code":
-            explanation.code(),
+            explanation.code,
 
         "severity":
-            explanation_severity(
-                explanation
-            ),
+            explanation.severity,
 
         "message":
-            explanation_message(
-                explanation
-            ),
+            explanation.message,
 
         "suggestion":
-            explanation_suggestion(
-                explanation
-            ),
+            explanation.suggestion,
     })
-}
-
-fn explanation_severity(explanation: &Explanation) -> &'static str {
-    match explanation {
-        Explanation::UnsupportedFragment { .. } => "info",
-
-        _ => "warning",
-    }
-}
-
-fn predicate_conjunction(predicates: &[Pred]) -> Option<String> {
-    if predicates.is_empty() {
-        None
-    } else {
-        Some(
-            predicates
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(" AND "),
-        )
-    }
-}
-
-fn unsplittable_conjunction(classification: &PredicateClassification) -> Option<String> {
-    if classification.unsplittable.is_empty() {
-        return None;
-    }
-
-    Some(
-        classification
-            .unsplittable
-            .iter()
-            .map(|fragment| fragment.predicate.to_string())
-            .collect::<Vec<_>>()
-            .join(" AND "),
-    )
-}
-
-fn phase_predicate(kind: PhaseKind, classification: &PredicateClassification) -> String {
-    match kind {
-        PhaseKind::PartitionPruning => classification
-            .partition_safe
-            .iter()
-            .chain(classification.partition_exact.iter())
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(" AND "),
-
-        PhaseKind::DataSkipping => classification
-            .stats_safe
-            .iter()
-            .map(ToString::to_string)
-            .chain(
-                classification
-                    .unsplittable
-                    .iter()
-                    .map(|fragment| fragment.predicate.to_string()),
-            )
-            .collect::<Vec<_>>()
-            .join(" AND "),
-    }
-}
-
-fn phase_name(kind: PhaseKind) -> &'static str {
-    match kind {
-        PhaseKind::PartitionPruning => "Partition pruning",
-
-        PhaseKind::DataSkipping => "Data skipping (min/max statistics)",
-    }
-}
-
-fn confidence_label(confidence: Confidence) -> &'static str {
-    match confidence {
-        Confidence::Exact => "exact",
-
-        Confidence::Conservative => "conservative",
-
-        Confidence::Incomplete => "incomplete",
-    }
-}
-
-fn stats_mode(present: usize, total: usize) -> &'static str {
-    if total == 0 || present == 0 {
-        "absent"
-    } else if present == total {
-        "exact"
-    } else {
-        "partial"
-    }
-}
-
-fn pruning_pct(input: usize, output: usize) -> f64 {
-    if input == 0 {
-        return 0.0;
-    }
-
-    let dropped = input.saturating_sub(output);
-
-    dropped as f64 / input as f64 * 100.0
 }
