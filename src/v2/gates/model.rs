@@ -56,9 +56,9 @@ pub struct GateConfig {
 /// only the fields required by each gate-specific evaluator.
 #[derive(Debug, Clone)]
 pub struct GateContext {
-    pub total_files: usize,
-    pub final_files: usize,
-    pub missing_stats_files: Vec<String>,
+    pub(crate) total_files: usize,
+    pub(crate) final_files: usize,
+    pub(crate) missing_stats_files: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

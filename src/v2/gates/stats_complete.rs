@@ -12,8 +12,7 @@ pub(super) fn evaluate(input: Input) -> AssertionResult {
     };
 
     AssertionResult::StatsComplete {
-        missing_files: input.missing_files.to_vec(),
-
+        missing_files: input.missing_files,
         status,
     }
 }

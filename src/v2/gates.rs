@@ -5,7 +5,9 @@ mod stats_complete;
 
 use crate::v2::analysis::model::AnalysisResult;
 use crate::v2::table::TableState;
-pub use model::{AssertionResult, GateConfig, GateContext, GateOutcome, GateStatus};
+use model::GateContext;
+
+pub use model::{AssertionResult, GateConfig, GateOutcome, GateStatus};
 
 pub fn context(table: &TableState, analysis: Option<&AnalysisResult>) -> GateContext {
     context::build(table, analysis)
