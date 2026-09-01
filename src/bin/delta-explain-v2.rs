@@ -43,6 +43,10 @@ struct Cli {
     /// Fail if any file in the snapshot is missing statistics.
     #[arg(long)]
     assert_stats: bool,
+
+    /// Analyze this table version instead of the latest.
+    #[arg(long, value_name = "N")]
+    at_version: Option<u64>,
 }
 
 fn main() -> ExitCode {
@@ -70,7 +74,14 @@ fn try_main() -> Result<ExitCode> {
 
     let engine = DefaultEngineBuilder::new(store.clone()).build();
 
-    let table = table::open(&table_url, &store, &engine)?;
+    let table = table::open(
+        &table_url,
+        &store,
+        &engine,
+        table::OpenOptions {
+            version: cli.at_version,
+        },
+    )?;
 
     let result = execution::execute(
         ExecutionInput {

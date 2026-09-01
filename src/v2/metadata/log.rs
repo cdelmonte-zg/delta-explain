@@ -19,11 +19,12 @@ pub struct LogMetadata {
 pub fn read_log_metadata(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
+    max_version: Option<u64>,
 ) -> Result<LogMetadata, Error> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| Error::Storage(format!("Cannot create tokio runtime: {e}")))?;
 
-    rt.block_on(read_log_metadata_async(table_url, store))
+    rt.block_on(read_log_metadata_async(table_url, store, max_version))
 }
 
 fn log_prefix_for(table_url: &Url) -> Result<ObjectPath, Error> {
@@ -37,9 +38,22 @@ fn log_prefix_for(table_url: &Url) -> Result<ObjectPath, Error> {
     })
 }
 
+fn commit_version(path: &ObjectPath) -> Option<u64> {
+    let filename = path.as_ref().rsplit('/').next()?;
+
+    let version = filename.strip_suffix(".json")?;
+
+    if version.len() != 20 || !version.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+
+    version.parse().ok()
+}
+
 async fn read_log_metadata_async(
     table_url: &Url,
     store: &Arc<DynObjectStore>,
+    max_version: Option<u64>,
 ) -> Result<LogMetadata, Error> {
     let log_prefix = log_prefix_for(table_url)?;
 
@@ -49,17 +63,29 @@ async fn read_log_metadata_async(
         .await
         .map_err(|e| Error::Storage(format!("Cannot list delta log: {e}")))?;
 
-    let mut json_paths: Vec<ObjectPath> = objects
+    let mut json_paths = objects
         .into_iter()
-        .filter(|obj| obj.location.to_string().ends_with(".json"))
-        .map(|obj| obj.location)
-        .collect();
+        .filter_map(|obj| {
+            let version = commit_version(&obj.location)?;
+
+            let within_range = match max_version {
+                Some(max) => version <= max,
+
+                None => true,
+            };
+
+            within_range.then_some(obj.location)
+        })
+        .collect::<Vec<_>>();
 
     json_paths.sort();
 
     let mut partition_columns = Vec::new();
+
     let mut clustering_domain = None;
+
     let mut reader_features = Vec::new();
+
     let mut writer_features = Vec::new();
 
     for path in json_paths {
@@ -102,6 +128,7 @@ async fn read_log_metadata_async(
                 };
 
                 reader_features = feature_list("readerFeatures");
+
                 writer_features = feature_list("writerFeatures");
             }
 
@@ -156,6 +183,31 @@ mod tests {
                 log_prefix_for(&url).unwrap().as_ref(),
                 expected,
                 "url: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn commit_version_is_parsed_from_delta_json_path() {
+        let path = ObjectPath::from("_delta_log/00000000000000000042.json");
+
+        assert_eq!(commit_version(&path), Some(42));
+    }
+
+    #[test]
+    fn commit_version_rejects_non_commit_json() {
+        let cases = [
+            "_delta_log/foo.json",
+            "_delta_log/42.json",
+            "_delta_log/00000000000000000042.crc",
+            "_delta_log/_last_checkpoint",
+        ];
+
+        for path in cases {
+            assert_eq!(
+                commit_version(&ObjectPath::from(path)),
+                None,
+                "path: {path}"
             );
         }
     }
