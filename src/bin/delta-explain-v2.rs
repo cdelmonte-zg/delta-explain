@@ -1,8 +1,9 @@
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 use clap::Parser;
 
-use delta_explain::v2::error::Result;
+use delta_explain::v2::error::{Error, Result};
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
 use delta_explain::v2::instrumentation::{Instrumentation, NoOpInstrumentation};
@@ -149,10 +150,6 @@ fn try_main() -> Result<ExitCode> {
 
     let elapsed_ms = start.elapsed().as_millis();
 
-    // All table/kernel/analysis work is complete.
-    // Close instrumentation before presentation/rendering
-    // so the debug dump is complete even if output later
-    // fails or a gate returns a failing exit status.
     instrumentation.finish()?;
 
     let presentation = presentation::build(
@@ -181,7 +178,7 @@ fn try_main() -> Result<ExitCode> {
 
     let output = format.render(&presentation)?;
 
-    print!("{output}");
+    write_stdout(&output)?;
 
     let exit_code = if result.gates.failed() {
         ExitCode::FAILURE
@@ -190,6 +187,30 @@ fn try_main() -> Result<ExitCode> {
     };
 
     Ok(exit_code)
+}
+
+fn write_stdout(output: &str) -> Result<()> {
+    let stdout = io::stdout();
+
+    let mut stdout = stdout.lock();
+
+    if let Err(err) = stdout.write_all(output.as_bytes()) {
+        return handle_stdout_error(err);
+    }
+
+    if let Err(err) = stdout.flush() {
+        return handle_stdout_error(err);
+    }
+
+    Ok(())
+}
+
+fn handle_stdout_error(err: io::Error) -> Result<()> {
+    if err.kind() == io::ErrorKind::BrokenPipe {
+        Ok(())
+    } else {
+        Err(Error::Output(err))
+    }
 }
 
 fn build_instrumentation(cli: &Cli) -> Result<Box<dyn Instrumentation>> {

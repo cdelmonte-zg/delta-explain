@@ -176,20 +176,15 @@ impl Instrumentation for DebugIrObserver {
         partition: Option<usize>,
         scan: Option<usize>,
     ) -> Result<()> {
-        let partition_line =
-            match partition {
-                Some(files) => {
-                    format!(
-                        "partition pruning: {files} files"
-                    )
-                }
+        let partition_line = match partition {
+            Some(files) => {
+                format!("partition pruning: {files} files")
+            }
 
-                None => {
-                    "partition pruning: skipped \
+            None => "partition pruning: skipped \
                     (no partition fragment)"
-                        .to_string()
-                }
-            };
+                .to_string(),
+        };
 
         let scan_line = match scan {
             Some(files) => {
