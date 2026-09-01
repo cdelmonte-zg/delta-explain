@@ -27,6 +27,17 @@ pub struct TableReport {
     pub total_files: usize,
     pub files_with_stats: usize,
     pub partition_columns: Vec<String>,
+    pub features: TableFeatureReport,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableFeatureReport {
+    pub deletion_vectors_enabled: bool,
+    pub files_with_deletion_vectors: usize,
+    pub column_mapping_mode: Option<String>,
+    pub clustering_columns: Option<Vec<String>>,
+    pub in_commit_timestamps: bool,
+    pub unrecognized_writer_features: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +55,8 @@ pub fn build(
     table: &TableState,
     result: Option<&AnalysisResult>,
 ) -> Report {
+    let features = &table.metadata.features;
+
     let table_report = TableReport {
         path: table_path.to_string(),
 
@@ -54,6 +67,20 @@ pub fn build(
         files_with_stats: table.metadata.baseline.stats.len(),
 
         partition_columns: table.metadata.partition_columns.clone(),
+
+        features: TableFeatureReport {
+            deletion_vectors_enabled: features.deletion_vectors_enabled,
+
+            files_with_deletion_vectors: features.files_with_deletion_vectors,
+
+            column_mapping_mode: features.column_mapping_mode.clone(),
+
+            clustering_columns: features.clustering_columns.clone(),
+
+            in_commit_timestamps: features.in_commit_timestamps,
+
+            unrecognized_writer_features: features.unrecognized_writer_features.clone(),
+        },
     };
 
     let predicate_report = match (predicate, result) {

@@ -22,6 +22,14 @@ struct Cli {
     #[arg(long = "explain-why")]
     explain_why: bool,
 
+    /// Output format.
+    #[arg(
+    long,
+    default_value = "text",
+    value_parser = ["text", "json"]
+)]
+    format: String,
+
     /// Fail if total pruning is below this percentage.
     #[arg(long, value_name = "PERCENT", requires = "predicate")]
     min_pruning: Option<f64>,
@@ -44,6 +52,8 @@ fn main() -> ExitCode {
 
 fn try_main() -> Result<ExitCode> {
     let cli = Cli::parse();
+
+    let start = std::time::Instant::now();
 
     let table_url = table_uri::parse(&cli.path)?;
 
@@ -73,7 +83,20 @@ fn try_main() -> Result<ExitCode> {
         eprintln!("{failure}");
     }
 
-    print!("{}", render::text(&result.report, cli.explain_why,));
+    let elapsed_ms = start.elapsed().as_millis();
+
+    match cli.format.as_str() {
+        "json" => {
+            println!(
+                "{}",
+                render::json(&result.report, &result.gates, elapsed_ms, cli.explain_why,)?
+            );
+        }
+
+        _ => {
+            print!("{}", render::text(&result.report, cli.explain_why,));
+        }
+    };
 
     let exit_code = if result.gates.failed() {
         ExitCode::FAILURE
