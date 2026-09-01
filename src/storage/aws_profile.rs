@@ -1,58 +1,43 @@
-//! AWS shared-config credential resolution for `--profile`.
-//!
-//! Resolves static credentials from the standard AWS shared files, the same
-//! ones the AWS CLI reads: `~/.aws/credentials` (overridable via
-//! `AWS_SHARED_CREDENTIALS_FILE`) and `~/.aws/config` (via
-//! `AWS_CONFIG_FILE`). This covers the everyday laptop case that raw
-//! environment variables (`--env-creds`) do not.
-//!
-//! Deliberately NOT a full SDK credential chain: profiles that rely on SSO,
-//! `credential_process`, or role assumption produce a clear error pointing
-//! at `aws configure export-credentials`, instead of pulling the whole AWS
-//! SDK into the dependency tree for a diagnostic CLI.
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::error::Error;
+use crate::error::{Error, Result};
 
-/// Resolve the named profile into object-store options
-/// (`aws_access_key_id`, `aws_secret_access_key`, optionally
-/// `aws_session_token` and `region`).
-pub fn resolve_aws_profile(profile: &str) -> Result<HashMap<String, String>, Error> {
-    let credentials = read_aws_file(
-        "AWS_SHARED_CREDENTIALS_FILE",
-        ".aws/credentials",
-        /* config_style */ false,
-    )?;
-    let config = read_aws_file(
-        "AWS_CONFIG_FILE",
-        ".aws/config",
-        /* config_style */ true,
-    )?;
+use super::StorageOption;
+
+pub(super) fn resolve(profile: &str) -> Result<Vec<StorageOption>> {
+    let credentials = read_aws_file("AWS_SHARED_CREDENTIALS_FILE", ".aws/credentials", false)?;
+
+    let config = read_aws_file("AWS_CONFIG_FILE", ".aws/config", true)?;
 
     let cred_section = credentials.get(profile);
+
     let conf_section = config.get(profile);
+
     if cred_section.is_none() && conf_section.is_none() {
         return Err(Error::Credentials(format!(
             "AWS profile '{profile}' not found in ~/.aws/credentials or ~/.aws/config"
         )));
     }
 
-    // The credentials file wins over the config file, like the AWS CLI.
+    // Like the AWS CLI, credentials-file
+    // values win over config-file values.
     let lookup = |key: &str| {
         cred_section
-            .and_then(|s| s.get(key))
-            .or_else(|| conf_section.and_then(|s| s.get(key)))
+            .and_then(|section| section.get(key))
+            .or_else(|| conf_section.and_then(|section| section.get(key)))
             .cloned()
     };
 
-    let mut opts = HashMap::new();
+    let mut options = Vec::new();
+
     match (lookup("aws_access_key_id"), lookup("aws_secret_access_key")) {
         (Some(id), Some(secret)) => {
-            opts.insert("aws_access_key_id".to_string(), id);
-            opts.insert("aws_secret_access_key".to_string(), secret);
+            options.push(StorageOption::new("access_key_id", id));
+
+            options.push(StorageOption::new("secret_access_key", secret));
         }
+
         _ => {
             let mechanism = [
                 "sso_start_url",
@@ -61,79 +46,96 @@ pub fn resolve_aws_profile(profile: &str) -> Result<HashMap<String, String>, Err
                 "role_arn",
             ]
             .iter()
-            .find(|k| lookup(k).is_some());
+            .find(|key| lookup(key).is_some());
+
             return Err(match mechanism {
-                Some(m) => Error::Credentials(format!(
-                    "AWS profile '{profile}' uses {m}, which delta-explain does not resolve. \
-                     Export static credentials first: \
-                     eval $(aws configure export-credentials --profile {profile} --format env) \
-                     and use --env-creds"
+                Some(mechanism) => Error::Credentials(format!(
+                    "AWS profile '{profile}' uses {mechanism}, which delta-explain does not resolve. \
+                                 Export static credentials first: \
+                                 eval $(aws configure export-credentials --profile {profile} --format env) \
+                                 and use --env-creds"
                 )),
+
                 None => Error::Credentials(format!(
                     "AWS profile '{profile}' has no aws_access_key_id / aws_secret_access_key"
                 )),
             });
         }
     }
+
     if let Some(token) = lookup("aws_session_token") {
-        opts.insert("aws_session_token".to_string(), token);
+        options.push(StorageOption::new("session_token", token));
     }
+
     if let Some(region) = lookup("region") {
-        opts.insert("region".to_string(), region);
+        options.push(StorageOption::new("region", region));
     }
-    Ok(opts)
+
+    Ok(options)
 }
 
-/// Read one of the AWS shared files into `profile name -> key -> value`.
-/// A missing file is an empty map, not an error: the other file may still
-/// hold the profile. In the config file sections are `[profile name]`
-/// (except `[default]`); in the credentials file they are plain `[name]`.
 fn read_aws_file(
     env_override: &str,
     home_relative: &str,
     config_style: bool,
-) -> Result<HashMap<String, HashMap<String, String>>, Error> {
+) -> Result<HashMap<String, HashMap<String, String>>> {
     let path = match std::env::var_os(env_override) {
-        Some(p) => PathBuf::from(p),
+        Some(path) => PathBuf::from(path),
+
         None => match std::env::home_dir() {
             Some(home) => home.join(home_relative),
-            None => return Ok(HashMap::new()),
+
+            None => {
+                return Ok(HashMap::new());
+            }
         },
     };
+
     let Ok(content) = std::fs::read_to_string(&path) else {
         return Ok(HashMap::new());
     };
+
     Ok(parse_ini(&content, config_style))
 }
 
-/// Minimal INI parse for the AWS shared-file dialect: `[section]` headers,
-/// `key = value` pairs, `#`/`;` comments. Nested `s3 =`-style blocks and
-/// other AWS extensions are ignored line by line.
 fn parse_ini(content: &str, config_style: bool) -> HashMap<String, HashMap<String, String>> {
-    let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let mut sections = HashMap::new();
+
     let mut current: Option<String> = None;
 
     for raw in content.lines() {
         let line = raw.trim();
+
         if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
             continue;
         }
-        if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+
+        if let Some(header) = line
+            .strip_prefix('[')
+            .and_then(|line| line.strip_suffix(']'))
+        {
             let name = header.trim();
+
             let name = if config_style {
                 name.strip_prefix("profile ").unwrap_or(name).trim()
             } else {
                 name
             };
+
             current = Some(name.to_string());
-            sections.entry(name.to_string()).or_default();
+
+            sections
+                .entry(name.to_string())
+                .or_insert_with(HashMap::new);
+
             continue;
         }
+
         if let (Some(section), Some((key, value))) = (&current, line.split_once('=')) {
             let key = key.trim().to_ascii_lowercase();
+
             let value = value.trim();
-            // Skip nested-block openers like `s3 =` and their indented body
-            // keys we cannot attribute; only plain `key = value` matters here.
+
             if !value.is_empty()
                 && let Some(map) = sections.get_mut(section)
             {
@@ -141,6 +143,7 @@ fn parse_ini(content: &str, config_style: bool) -> HashMap<String, HashMap<Strin
             }
         }
     }
+
     sections
 }
 
@@ -160,8 +163,11 @@ aws_access_key_id = AKIADEV
 aws_secret_access_key = devsecret
 aws_session_token = tok
 ";
+
         let parsed = parse_ini(ini, false);
+
         assert_eq!(parsed["default"]["aws_access_key_id"], "AKIADEFAULT");
+
         assert_eq!(parsed["dev"]["aws_session_token"], "tok");
     }
 
@@ -174,8 +180,11 @@ region = eu-central-1
 [default]
 region = us-east-1
 ";
+
         let parsed = parse_ini(ini, true);
+
         assert_eq!(parsed["dev"]["region"], "eu-central-1");
+
         assert_eq!(parsed["default"]["region"], "us-east-1");
     }
 
@@ -187,7 +196,9 @@ region = us-east-1
 ; another
 aws_access_key_id = X
 ";
+
         let parsed = parse_ini(ini, false);
+
         assert_eq!(parsed["p"]["aws_access_key_id"], "X");
     }
 }

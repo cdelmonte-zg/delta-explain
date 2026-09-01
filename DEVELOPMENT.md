@@ -77,73 +77,106 @@ trusted publishing (environment `pypi`).
 
 ## Architecture
 
-The pipeline is a thin sequence of pure-ish library modules consumed by the
-CLI in `main.rs`:
+The pipeline is a chain of layers, each a directory (or single file) under
+`src/`, consumed top-down by the CLI:
 
-- **`predicate_ast.rs`**: SQL string -> owned `Pred` AST, via a converter from
-  sqlparser (the only module coupled to sqlparser types). The AST vocabulary is
-  the language of pruning: column-op-literal comparisons, junctions, null checks,
-  `IN`/`BETWEEN` sugar, structural `LIKE`. Anything outside it becomes an
-  `Unsupported` leaf carrying the raw fragment and a reason; the converter is
-  total, consumers decide severity. Normalization (De Morgan, the string-gated
-  prefix-LIKE range rewrite, OR factoring) also lives here.
-- **`predicate_analyzer.rs`**: `Pred` -> `PredicateAnalysis` (top-level AND split,
-  classification of each fragment as `partition_safe` / `partition_exact` /
-  `stats_safe` / `unsplittable`, `Confidence` derivation, encoded notes like
-  `UNSPLITTABLE_OR`). `classify` also returns the partition-safe and
-  partition-exact subtrees so the CLI can consume them without re-parsing.
-- **`kernel_bridge.rs`**: the only module that names the kernel's expression
-  vocabulary. Lowers `Pred` to `delta_kernel::expressions::Predicate` with
-  schema-driven literal coercion (temporal, decimal, narrow ints, nested leaf
-  types), and maps every kernel operator to a `Capability` tier through
-  exhaustive matches with no catch-all arm, so a kernel bump that widens an
-  enum breaks compilation instead of silently gapping support.
-- **`partition_eval.rs`**: the third interpreter (ADR 0006). Evaluates a `Pred`
-  against a file's literal partition values under a four-valued logic: SQL
-  `Null` drops exactly (the fragment is constant per file, rows are selected
-  only on TRUE), evaluator ignorance (`Unknown`) keeps conservatively. Its
-  vocabulary is `Pred` minus `Unsupported`; growing it means growing the AST
-  first, never a second parser.
-- **`features.rs`**: detect-and-declare for protocol features that distort or
-  reframe the report's numbers (deletion vectors, column mapping, liquid
-  clustering). Detection reads `snapshot.table_properties()` plus the
-  `delta.clustering` domain from the JSON log (`stats::read_log_metadata`;
-  the kernel exposes no public accessor for system domains). Produces the
-  JSON `table_features` block and table-level warnings; never changes how
-  pruning is computed.
-- **`scan.rs`**: kernel-backed metadata scans. `scan_baseline` collects the file
-  listing and the per-file stats from one `scan_metadata` pass (the stats ride on
-  the scan rows via `include_all_stats_columns`, checkpoint Parquet included);
-  `collect_files` runs the per-phase predicate scans; `partition_columns_from_files`
-  is the checkpoint-only fallback for partition columns.
-- **`stats.rs`**: the statistics domain. `FileStats` types, stats-JSON parsing and
-  nested flattening to dotted leaf keys, plus the JSON `metaData.partitionColumns`
-  reader (primary source; the scan fallback covers fully checkpointed logs).
-- **`attribution.rs`**: survivor sets -> chained, labeled pruning phases. Pure.
-  Owns the phase-name constants (`DATA_SKIPPING_PHASE`, ...) that the
-  diagnostics engine matches against, so a rename is a compile-time change.
-- **`diagnostics.rs`**: `--explain-why` (ADR 0007). A deterministic rules
-  engine over the finished report (classification, stats coverage, partition
-  columns, per-phase pruning) producing `Diagnosis` records with stable codes;
-  no ML, nothing predicted. Pure.
-- **`gates.rs`**: `--min-pruning` / `--assert-stats` -> assertion records, overall
-  result, failure messages. Pure.
-- **`report.rs`**: the computed model (`PruningReport`, `PhaseResult`, `FileInfo`,
-  the `explain` diagnoses, `StatsMode`). `stats_mode()` is the single source of
-  truth for stats coverage, shared by render and diagnostics.
-- **`render.rs`**: all presentation, text and JSON (including `schema_version`);
-  per-file detail behind `--verbose`, diagnoses behind `--explain-why`.
-- **`error.rs`**: the crate error enum (thiserror); kernel errors pass through
-  transparently.
-- **`main.rs`**: CLI layer: parse args, build the kernel engine, baseline scan,
-  analyzer, per-phase scans, `build_phases`, diagnostics, gates, render, exit code.
+```
+CLI (main.rs)
+ -> storage       object-store + kernel engine construction
+ -> table         snapshot open: log metadata, baseline scan, features
+ -> execution     orchestrator: analysis + gates + report
+      -> analysis    the predicate pipeline (parse, classify, prune)
+      -> gates       CI assertions over the finished analysis
+      -> report      the computed model
+ -> presentation  report + gates -> presentable model -> text/JSON
+```
+
+- **`main.rs`**: the CLI layer and nothing else: parse args, `storage::open`,
+  `table::open`, `execution::execute`, `presentation::build`, render, exit
+  code (gate failures map to a nonzero exit; broken pipes exit clean).
+- **`table_uri.rs`**: path or URL -> the table `Url` handed to storage and
+  the kernel.
+- **`storage/`**: resolves the object store and builds the kernel engine.
+  `options.rs` merges the credential sources into `KEY=VALUE` options with
+  explicit precedence (`--option` wins), `environment.rs` maps `--env-creds`
+  environment variables, `aws_profile.rs` resolves static AWS profile
+  credentials (SSO and `credential_process` produce an actionable error).
+- **`table.rs`**: opens the snapshot into a `TableState`: reads the JSON log
+  metadata, refuses catalog-managed tables (their truth lives outside the
+  filesystem log), runs the baseline scan, resolves partition columns
+  (log `metaData` primary, scan fallback for checkpoint-only logs), and
+  detects protocol features.
+- **`metadata/`**: what the Delta log says about the table. `log.rs` reads
+  the JSON commits (`partitionColumns`, reader/writer features, the
+  `delta.clustering` domain; the kernel exposes no public accessor for
+  system domains). `scan.rs` is the kernel-backed baseline: one
+  `scan_metadata` pass collecting the file listing and per-file stats
+  (checkpoint Parquet included). `stats.rs` owns `FileStats`, stats-JSON
+  parsing and nested flattening to dotted leaf keys. `features.rs` is
+  detect-and-declare for features that distort or reframe the numbers
+  (deletion vectors, column mapping, liquid clustering); it feeds the JSON
+  `table_features` block and table-level warnings, never how pruning is
+  computed.
+- **`analysis/`**: the predicate pipeline, from SQL string to survivor sets.
+  - `predicate/`: the owned `Pred` vocabulary (ADR 0001, ADR 0008).
+    `parser.rs` is the only code coupled to sqlparser types; the converter
+    is total, anything outside the vocabulary becomes an `Unsupported` leaf
+    carrying the raw fragment and a reason. `normalize.rs` holds the
+    rewrites (De Morgan, the string-gated prefix-LIKE range rewrite, OR
+    factoring); `display.rs` renders `Pred` back to SQL-shaped text.
+  - `predicate_analyzer.rs`: top-level AND split and classification of each
+    fragment as `partition_safe` / `partition_exact` / `stats_safe` /
+    `unsplittable`, keeping the classified subtrees so nothing re-parses.
+  - `kernel/`: explicit lowering of already-classified `Pred` fragments to
+    `delta_kernel::expressions::Predicate` (ADR 0008: the kernel vocabulary
+    is a lowering target, not a semantic input), with schema-driven literal
+    coercion in `literal.rs` (temporal, decimal, narrow ints, nested leaf
+    types; `PrimitiveType` stays exhaustively matched with no catch-all).
+  - `partition_eval.rs`: the third interpreter (ADR 0006). Evaluates a
+    `Pred` against a file's literal partition values under a four-valued
+    logic: SQL `Null` drops exactly, evaluator ignorance (`Unknown`) keeps
+    conservatively. Its vocabulary is `Pred` minus `Unsupported`; growing
+    it means growing the AST first, never a second parser.
+  - `partition_pruning.rs` / `scan_pruning.rs`: the per-phase survivor
+    computations (partition-literal evaluation and kernel predicate scans);
+    `attribution.rs` turns survivor sets into chained, labeled phases and
+    owns the phase-name constants; `confidence.rs` derives the reported
+    confidence; `model.rs` is the `AnalysisResult` the rest consumes.
+- **`execution.rs`**: the orchestrator: run the analysis (if a predicate was
+  given), evaluate the gates over it, assemble the report. No I/O of its
+  own, no presentation.
+- **`gates/`**: `--min-pruning` / `--assert-stats` -> assertion records and
+  the overall result. One module per gate over a shared `context.rs`;
+  adding a gate is additive. Pure.
+- **`report.rs`**: the computed model the presentation layer consumes.
+- **`diagnostics/`**: `warnings.rs` derives the warning records with their
+  stable codes (`PARTITION_EVAL_GAP`, ...) from analysis and table state;
+  `explain.rs` is `--explain-why` (ADR 0007), a deterministic rules engine
+  producing `Diagnosis` records with stable codes; no ML, nothing
+  predicted. Pure.
+- **`presentation/`**: everything shown to a user. `build.rs` folds report,
+  gates and baseline into the presentation model (`model.rs`); `files.rs`
+  handles per-file detail behind `--verbose` and `--limit`; `render/`
+  holds the two renderers, `text.rs` and `json.rs` (the JSON carries
+  `schema_version`).
+- **`instrumentation/`**: the observer seam. `observer.rs` defines the
+  `Instrumentation` trait the pipeline reports into (`NoOpInstrumentation`
+  by default); `debug_ir.rs` (behind the `debug-ir` feature) implements it
+  as the `--debug-ir` dump. The pipeline never knows whether anyone is
+  listening.
+- **`error.rs`**: the crate error enum (thiserror); kernel errors pass
+  through transparently.
 
 Why the AST sits between sqlparser and everything else: one parse, three
-interpreters. `kernel_bridge` produces the type the kernel consumes; the
+interpreters. `analysis/kernel` lowers to the type the kernel consumes; the
 analyzer produces the metadata we report to the user; `partition_eval`
 decides what the partition literals decide. All read the same owned `Pred`,
 so "what the kernel sees", "what the user reads" and "what gets evaluated"
 can never drift, while no module but the converter touches sqlparser types.
+The owned vocabulary is also the capability boundary (ADR 0008): a kernel
+release that widens its predicate enums cannot silently expand the pruning
+language, because nothing reaches the kernel that the analysis did not
+explicitly classify and lower.
 
 ## Testing
 

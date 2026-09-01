@@ -1,189 +1,119 @@
-//! CI gates: evaluate the assertion flags against a report.
-//!
-//! Pure: the caller prints `failures` to stderr and maps `overall` to the
-//! process exit code. `--min-pruning` is the hard gate on the total pruning
-//! percentage; `--assert-stats` flags files whose `add` action carries no
-//! statistics.
+mod context;
+mod min_pruning;
+mod model;
+mod stats_complete;
 
-use serde_json::json;
+use crate::analysis::model::AnalysisResult;
+use crate::table::TableState;
 
-use crate::report::{OverallResult, PruningReport};
+use model::GateContext;
 
-/// The outcome of evaluating the CI gates: the JSON assertion records for the
-/// report, the overall pass/fail (None when no gate was requested), and the
-/// stderr lines to emit on failure.
-pub struct GateOutcome {
-    pub assertions: Vec<serde_json::Value>,
-    pub overall: Option<OverallResult>,
-    pub failures: Vec<String>,
+pub use model::{AssertionResult, GateConfig, GateOutcome, GateStatus};
+
+pub(crate) fn context(table: &TableState, analysis: Option<&AnalysisResult>) -> GateContext {
+    context::build(table, analysis)
 }
 
-/// Evaluate `--min-pruning` and `--assert-stats` against the report.
-pub fn evaluate(
-    report: &PruningReport,
-    min_pruning: Option<f64>,
-    assert_stats: bool,
-) -> GateOutcome {
+pub(crate) fn evaluate(context: GateContext, config: GateConfig) -> GateOutcome {
     let mut assertions = Vec::new();
-    let mut failures = Vec::new();
-    let mut any_assertion = false;
-    let mut all_pass = true;
 
-    if let Some(threshold) = min_pruning {
-        any_assertion = true;
-        let actual = report.total_pruning_pct();
-        let pass = actual >= threshold;
-        all_pass &= pass;
-        if !pass {
-            failures.push(format!(
-                "ASSERTION FAILED: total pruning {actual:.1}% is below threshold {threshold:.1}%"
-            ));
-        }
-        assertions.push(json!({
-            "name": "min_pruning",
-            "threshold": threshold,
-            "actual": actual,
-            "result": if pass { "pass" } else { "fail" },
+    if let Some(threshold) = config.min_pruning {
+        assertions.push(min_pruning::evaluate(min_pruning::Input {
+            total_files: context.total_files,
+            final_files: context.final_files,
+            threshold,
         }));
     }
 
-    if assert_stats {
-        any_assertion = true;
-        let missing: Vec<&str> = report
-            .all_files
-            .iter()
-            .filter(|f| !report.file_stats.contains_key(&f.path))
-            .map(|f| f.path.as_str())
-            .collect();
-        let pass = missing.is_empty();
-        all_pass &= pass;
-        if !pass {
-            let mut msg = format!(
-                "ASSERTION FAILED: {} file(s) missing statistics:",
-                missing.len()
-            );
-            for path in &missing {
-                msg.push_str(&format!("\n  {path}"));
-            }
-            failures.push(msg);
-        }
-        assertions.push(json!({
-            "name": "stats_complete",
-            "missing_count": missing.len(),
-            "result": if pass { "pass" } else { "fail" },
+    if config.assert_stats {
+        assertions.push(stats_complete::evaluate(stats_complete::Input {
+            missing_files: context.missing_stats_files,
         }));
     }
 
-    let overall = if any_assertion {
-        Some(if all_pass {
-            OverallResult::Pass
-        } else {
-            OverallResult::Fail
-        })
-    } else {
-        None
-    };
+    let overall = overall(&assertions);
 
     GateOutcome {
         assertions,
         overall,
-        failures,
+    }
+}
+
+fn overall(assertions: &[AssertionResult]) -> Option<GateStatus> {
+    if assertions.is_empty() {
+        return None;
+    }
+
+    if assertions
+        .iter()
+        .all(|assertion| assertion.status() == GateStatus::Pass)
+    {
+        Some(GateStatus::Pass)
+    } else {
+        Some(GateStatus::Fail)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
-    use crate::predicate_analyzer::Confidence;
-    use crate::report::{FileInfo, PhaseResult, PruningReport};
-    use crate::stats::FileStats;
-
-    /// A 4-file report where the last phase keeps 1 file (75% pruned) and
-    /// only files "a" and "b" have stats.
-    fn report() -> PruningReport {
-        let files: Vec<FileInfo> = ["a", "b", "c", "d"]
-            .iter()
-            .map(|p| FileInfo {
-                path: p.to_string(),
-                size: 1,
-                partition_values: HashMap::new(),
-                num_records: None,
-                has_deletion_vector: false,
-            })
-            .collect();
-        let mut file_stats = HashMap::new();
-        for p in ["a", "b"] {
-            file_stats.insert(
-                p.to_string(),
-                FileStats {
-                    num_records: Some(1),
-                    columns: HashMap::new(),
-                },
-            );
-        }
-        PruningReport {
-            analysis: None,
-            table_features: Default::default(),
-            table_path: "t".into(),
-            version: 0,
-            total_files: files.len(),
-            all_files: files,
-            file_stats,
-            phases: vec![PhaseResult {
-                confidence: Confidence::Conservative,
-                name: "Data skipping (min/max statistics)".into(),
-                predicate_display: "x > 1".into(),
-                conservative_fragments: 0,
-                scan_predicate_display: None,
-                input_count: 4,
-                output_count: 1,
-                surviving_paths: ["a".to_string()].into_iter().collect(),
-            }],
-            explain: Vec::new(),
-            elapsed_ms: 0,
-            assertions: Vec::new(),
-            overall_result: None,
-        }
-    }
 
     #[test]
-    fn no_flags_means_no_overall_result() {
-        let outcome = evaluate(&report(), None, false);
-        assert!(outcome.overall.is_none());
+    fn no_requested_gate_has_no_verdict() {
+        let outcome = evaluate(
+            GateContext {
+                total_files: 4,
+                final_files: 1,
+                missing_stats_files: vec![],
+            },
+            GateConfig::default(),
+        );
+
         assert!(outcome.assertions.is_empty());
-        assert!(outcome.failures.is_empty());
+        assert_eq!(outcome.overall, None);
     }
 
     #[test]
-    fn min_pruning_passes_below_actual_and_fails_above() {
-        let pass = evaluate(&report(), Some(60.0), false);
-        assert_eq!(pass.overall, Some(OverallResult::Pass));
-        assert!(pass.failures.is_empty());
+    fn both_gates_can_pass() {
+        let outcome = evaluate(
+            GateContext {
+                total_files: 4,
+                final_files: 1,
+                missing_stats_files: vec![],
+            },
+            GateConfig {
+                min_pruning: Some(60.0),
+                assert_stats: true,
+            },
+        );
 
-        let fail = evaluate(&report(), Some(90.0), false);
-        assert_eq!(fail.overall, Some(OverallResult::Fail));
-        assert!(fail.failures[0].contains("below threshold 90.0%"));
-        assert_eq!(fail.assertions[0]["result"], "fail");
-    }
-
-    #[test]
-    fn assert_stats_flags_files_without_stats() {
-        let outcome = evaluate(&report(), None, true);
-        assert_eq!(outcome.overall, Some(OverallResult::Fail));
-        let msg = &outcome.failures[0];
-        assert!(msg.contains("2 file(s) missing statistics"));
-        assert!(msg.contains("\n  c") && msg.contains("\n  d"));
-        assert_eq!(outcome.assertions[0]["missing_count"], 2);
-    }
-
-    #[test]
-    fn one_failing_gate_fails_the_overall_result() {
-        let outcome = evaluate(&report(), Some(60.0), true);
-        assert_eq!(outcome.overall, Some(OverallResult::Fail));
         assert_eq!(outcome.assertions.len(), 2);
-        assert_eq!(outcome.assertions[0]["result"], "pass");
-        assert_eq!(outcome.assertions[1]["result"], "fail");
+
+        assert_eq!(outcome.overall, Some(GateStatus::Pass));
+    }
+
+    #[test]
+    fn one_failed_gate_fails_overall() {
+        let missing = vec!["c.parquet".to_string()];
+
+        let outcome = evaluate(
+            GateContext {
+                total_files: 4,
+                final_files: 1,
+                missing_stats_files: missing,
+            },
+            GateConfig {
+                min_pruning: Some(60.0),
+                assert_stats: true,
+            },
+        );
+
+        assert_eq!(outcome.assertions[0].status(), GateStatus::Pass);
+
+        assert_eq!(outcome.assertions[1].status(), GateStatus::Fail);
+
+        assert_eq!(outcome.overall, Some(GateStatus::Fail));
+
+        assert!(outcome.failed());
     }
 }

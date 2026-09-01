@@ -1,7 +1,7 @@
 # 0003. Exhaustive capability matches over the kernel vocabulary, no catch-all
 
 Date: 2026-07-05 (recorded retroactively; the decision predates the record)
-Status: accepted
+Status: superseded by ADR 0008
 
 ## Context
 
