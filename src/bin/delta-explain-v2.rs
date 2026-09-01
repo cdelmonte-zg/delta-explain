@@ -8,8 +8,7 @@ use delta_kernel_default_engine::storage::store_from_url_opts;
 use delta_explain::v2::error::Result;
 use delta_explain::v2::execution::{self, ExecutionInput};
 use delta_explain::v2::gates::GateConfig;
-use delta_explain::v2::presentation::{self, PresentationOptions};
-use delta_explain::v2::render::{self, OutputFormat};
+use delta_explain::v2::presentation::{self, OutputFormat, PresentationOptions};
 use delta_explain::v2::table;
 use delta_explain::v2::table_uri;
 
@@ -94,7 +93,7 @@ fn try_main() -> Result<ExitCode> {
         },
     );
 
-    for failure in render::gate_failures(&presentation) {
+    for failure in presentation::gate_failures(&presentation) {
         eprintln!("{failure}");
     }
 
