@@ -7,6 +7,7 @@ mod partition_pruning;
 pub mod predicate;
 pub mod predicate_analyzer;
 mod scan_pruning;
+pub(crate) mod stats_coverage;
 mod value_coercion;
 
 use delta_kernel::{Engine, schema::SchemaRef};

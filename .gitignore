@@ -1,5 +1,6 @@
 /target
 .venv/
+.vscode/*
 
 # never commit GCP service-account keys
 key.json

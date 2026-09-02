@@ -183,6 +183,24 @@ fn conjunction(predicates: &[Pred]) -> Option<Pred> {
     }
 }
 
+/// Statistics required to evaluate one predicate column during data skipping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StatsRequirement {
+    MinMax,
+    NullCount,
+    NullCountAndNumRecords,
+}
+
+/// Availability of one required statistics family over the files entering
+/// the data-skipping phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnStatsCoverage {
+    pub column: String,
+    pub requirement: StatsRequirement,
+    pub candidate_files: usize,
+    pub covered_files: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
