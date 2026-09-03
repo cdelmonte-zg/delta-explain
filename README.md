@@ -38,7 +38,7 @@ With `--verbose`, the per-file view - which files were kept or dropped, and why:
 
 <img src="assets/readme/cli-verbose.png" alt="delta-explain --verbose - the per-file listing: four files DROPPED and two KEPT by partition pruning, each with size, records, partition values and stats ranges">
 
-Cloud tables authenticate through the provider's ambient credential chain, environment variables (`--env-creds`), AWS profiles (`--profile`), or explicit `--option` pairs; the per-provider recipes are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html). The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html).
+Cloud tables authenticate through the provider's ambient credential chain, environment variables (`--env-creds`), AWS profiles (`--profile`), or explicit `--option` pairs; the per-provider recipes are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html). The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
 
 ### From Python
 
@@ -115,10 +115,6 @@ The contract is formal: [`schemas/report-v0.5.schema.json`](schemas/report-v0.5.
 Any saved JSON report renders as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
 
 <img src="https://raw.githubusercontent.com/cdelmonte-zg/delta-explain/main/viewer/screenshot.png" alt="The report viewer rendering a pruning report: funnel, predicate analysis with stats coverage, diagnoses, per-file table" width="720">
-
-## Predicate syntax
-
-Standard SQL WHERE-clause syntax, parsed via [sqlparser-rs](https://github.com/sqlparser-rs/sqlparser-rs): comparisons, `AND`/`OR`/`NOT`, `IN`, `BETWEEN`, `IS [NOT] NULL`, `IS [NOT] DISTINCT FROM`, nested columns (`payload.age > 30`), typed and schema-coerced literals, and `LIKE` (prefix patterns prune on both axes; on partition columns every shape prunes exactly). The full list with examples is the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html). Subqueries, functions, and non-prefix `LIKE` on data columns are outside the pruning language: they warn and keep files instead of failing (see the [degradation rules](docs/semantics.md#degradation-rules)).
 
 ## Development
 
