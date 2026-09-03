@@ -11,9 +11,9 @@ It is a conservative metadata diagnostic to use from the shell, programmatically
 
 It points at any Delta table location - a local path, or `s3://`, `az://`, `gs://` straight on AWS, Azure, Google Cloud, or any S3-compatible store (MinIO).
 
-And it is strictly read-only: it reads the transaction log and nothing else: no table rows, no writes or locks, no telemetry. So it clears easily for regulated data.
+And it is strictly read-only: it reads the transaction log and nothing else - no table rows, no writes or locks, no telemetry. So it clears easily for regulated data. Its guarantees are written down in [docs/semantics.md](docs/semantics.md).
 
-The **documentation** can be found here: [documentation site](https://cdelmonte-zg.github.io/delta-explain/)
+**Documentation**: [cdelmonte-zg.github.io/delta-explain](https://cdelmonte-zg.github.io/delta-explain/)
 
 ## Install
 
@@ -102,35 +102,19 @@ Data volume itself is invisible - what a big table costs is its log. A 10 TB pro
 
 Output is the dimension to manage on large tables: the compact JSON stays summary-only at any size, and per-file detail (`--verbose`, in both formats) should be capped with `--limit`.
 
-## The JSON report
-
-```bash
-delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
-```
-
-The JSON output is versioned independently from the CLI binary (`schema_version: "0.5.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
-
-The contract is formal: [`schemas/report-v0.5.schema.json`](schemas/report-v0.5.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`. See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
-
 ## The report viewer
 
-Any saved JSON report renders as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
+Reports are also emitted as versioned JSON (`--format json`) under a formal, CI-enforced contract - [the schema](schemas/report-v0.5.schema.json) and [the field-by-field reference](docs/json-schema.md). Any saved report can be visualized as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
 
 <img src="https://raw.githubusercontent.com/cdelmonte-zg/delta-explain/main/viewer/screenshot.png" alt="The report viewer rendering a pruning report: funnel, predicate analysis with stats coverage, diagnoses, per-file table" width="720">
-
-## Development
-
-```bash
-git clone https://github.com/cdelmonte-zg/delta-explain
-cd delta-explain
-cargo build && cargo test
-```
-
-The integration tests rely on real Delta tables checked into `fixtures/` (not synthetic blobs), so they exercise the kernel's actual scan planner. The full contributor guide - architecture, testing conventions, fixture regeneration - is [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Deep dive
 
 For a detailed walkthrough of the architecture, design decisions, and the reasoning behind the two-phase model, see the companion article: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/projects/delta-explain-making-delta-pruning-visible/).
+
+## Contributing
+
+Build with `cargo build && cargo test`; the contributor guide - architecture, testing conventions, fixtures - is [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 
