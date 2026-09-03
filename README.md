@@ -74,53 +74,13 @@ Phase 1: Partition pruning [exact]
 
 ## Install
 
-### Homebrew (macOS, Linux)
-
 ```bash
-brew tap cdelmonte-zg/tap
-brew install delta-explain
+brew tap cdelmonte-zg/tap && brew install delta-explain    # Homebrew (macOS, Linux)
+pip install delta-explain                                  # PyPI: binary wheel + Python API
+cargo install delta-explain                                # crates.io (Rust 1.88+)
 ```
 
-### Scoop (Windows)
-
-```powershell
-scoop bucket add cdelmonte-zg https://github.com/cdelmonte-zg/scoop-bucket
-scoop install delta-explain
-```
-
-### Debian / Ubuntu (`.deb`)
-
-Download the `.deb` for your architecture from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest) and install with `dpkg`:
-
-```bash
-wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.7.0/delta-explain_0.7.0-1_amd64.deb
-sudo dpkg -i delta-explain_0.7.0-1_amd64.deb
-```
-
-Available for `amd64` and `arm64`. Uninstall with `sudo apt remove delta-explain`.
-
-### Pre-built binary (any OS, no package manager)
-
-Download the archive for your platform from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest), extract, and place on `$PATH`:
-
-| Platform | Archive |
-|---|---|
-| Linux x86_64 (glibc) | `delta-explain-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux x86_64 (static, musl) | `delta-explain-x86_64-unknown-linux-musl.tar.gz` |
-| Linux ARM64 | `delta-explain-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS Intel | `delta-explain-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `delta-explain-aarch64-apple-darwin.tar.gz` |
-| Windows x86_64 | `delta-explain-x86_64-pc-windows-msvc.zip` |
-
-Each archive ships with a `.sha256` checksum. The musl build is statically linked and runs on any Linux distribution without glibc dependencies.
-
-### From PyPI (Python, no Rust needed)
-
-```bash
-pip install delta-explain
-```
-
-The wheel ships the compiled binary (the `delta-explain` command works from the same environment) plus a thin Python API around the JSON contract:
+The PyPI wheel ships the compiled binary (the `delta-explain` command works from the same environment) plus a thin Python API around the JSON contract:
 
 ```python
 from delta_explain import explain
@@ -130,31 +90,9 @@ report = explain("s3://warehouse/events",
                  min_pruning=80, env_creds=True)
 report.passed              # gate outcome; False means the CLI would exit 1
 report.total_pruning_pct
-report["analysis"]["confidence"]
 ```
 
-Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message: the same exit-code contract as the command line, in Python types.
-
-### From crates.io (requires Rust 1.88+)
-
-```bash
-cargo install delta-explain
-```
-
-### From Git (latest development version)
-
-```bash
-cargo install --git https://github.com/cdelmonte-zg/delta-explain
-```
-
-### Docker (amd64 + arm64)
-
-```bash
-docker pull ghcr.io/cdelmonte-zg/delta-explain
-docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
-```
-
-For pipelines, pin to a release tag (e.g., `:0.7.0`) or to a digest; `:latest` is for local exploration only.
+Every other route - pre-built binaries and `.deb` packages for six targets, Scoop, Docker (amd64 + arm64), from Git - is on the [install page](https://cdelmonte-zg.github.io/delta-explain/getting-started/install.html).
 
 ## Usage
 
@@ -217,36 +155,13 @@ delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --explain-why
 
 ### Cloud storage
 
-**Credentials.** Three ways in, by environment:
-
-- **On cloud infrastructure** (EC2/ECS, EKS, AKS, GKE): with no explicit credentials the storage layer falls back to the provider's ambient chain (instance profile, Managed Identity, Workload Identity) on its own; add `--env-creds` when the credentials live in environment variables instead (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`/`AWS_REGION`, `AZURE_STORAGE_ACCOUNT_NAME`/`AZURE_STORAGE_ACCOUNT_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`).
-- **On a developer laptop** (AWS): `--profile <name>` resolves static keys, session token, and region from `~/.aws/credentials` and `~/.aws/config`, the same files the AWS CLI reads (including the `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` overrides). Profiles that rely on SSO, `credential_process`, or role assumption are not resolved; export them first and use `--env-creds`:
-  ```bash
-  eval $(aws configure export-credentials --profile corp --format env)
-  delta-explain --env-creds s3://bucket/table -w "..."
-  ```
-- **Static keys** (MinIO, local development): pass them via `--option`, expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
+`s3://`, `az://`, and `gs://` URIs work with the provider's ambient credential chain (instance profile, Managed Identity, Workload Identity), environment variables (`--env-creds`), AWS shared-config profiles (`--profile`), or explicit `--option KEY=VALUE` pairs for S3-compatible stores:
 
 ```bash
-# S3 with credentials from the environment
 delta-explain --env-creds s3://bucket/path/to/table -w "date = '2024-01-01'"
-
-# S3 public bucket
-delta-explain --region us-east-1 --public s3://my-public-bucket/table -w "id > 100"
-
-# Azure
-delta-explain --env-creds az://container/table -w "region = 'eu-west-1'"
-
-# GCS (Workload Identity on GKE, or service account JSON via env)
-delta-explain --env-creds gs://bucket/table -w "date = '2024-01-01'"
-
-# S3-compatible (MinIO, Akamai, etc.); endpoint via --option, key/secret expanded from env
-delta-explain \
-    --option AWS_ENDPOINT=https://minio.local:9000 \
-    --option AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-    --option AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-    s3://bucket/table -w "col > 5"
 ```
+
+Per-provider recipes (Azure, GCS, MinIO, public buckets) and the credential resolution rules are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html).
 
 ## CI/CD mode
 
@@ -275,31 +190,15 @@ Inputs mirror the CLI flags (`table`, `where`, `min-pruning`, `assert-stats`, `a
   run: echo "Pruning ${{ steps.gate.outputs.pruning-pct }}%"
 ```
 
-### Assert minimum pruning
+### Gates
 
-Fail the pipeline if a predicate doesn't eliminate enough files:
-
-```bash
-delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90
-```
-
-Exit code 1 if total pruning is below 90%.
-
-The threshold is per-invocation, applied to the current predicate against the current snapshot. Calibrate it against a baseline pruning percentage in dev (set the gate a few points below it); a flat threshold across heterogeneous partitions will misfire. Note also that 100% pruning can signal a broken or unexpectedly empty predicate, so pair `--min-pruning` with a sanity check on `final_files > 0` when the workload is expected to read data.
-
-### Assert statistics coverage
-
-Fail if any file in the table is missing min/max statistics:
+`--min-pruning <PCT>` fails the run (exit 1) when total pruning falls below the threshold; `--assert-stats` fails it when any file in the snapshot is missing statistics:
 
 ```bash
-delta-explain s3://warehouse/events --assert-stats
+delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90 --assert-stats
 ```
 
-Statistics are resolved through the kernel's log replay, checkpoint Parquet included, so a file is flagged only when its `add` action genuinely carries no statistics. Long-lived tables whose older commits have been consolidated into a checkpoint do not produce false positives.
-
-### Predicate parity
-
-The pruning percentage `delta-explain` reports reflects the predicate you pass to `-w`. If the runtime query wraps a column in `LOWER`, `CAST`, or a UDF, the engine may prune less than the gate suggests. Use a CI predicate that is semantically equivalent to the runtime predicate and explicitly track that equivalence: a gate on `country = 'DE'` does not automatically validate a production query using `LOWER(country) = 'de'`.
+How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
 
 ### JSON output for downstream processing
 
@@ -315,58 +214,13 @@ Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result
 
 See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
-### Docker in a pipeline
-
-```yaml
-# GitHub Actions example
-- name: Verify pruning after ETL
-  run: |
-    docker run --rm \
-      -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-      ghcr.io/cdelmonte-zg/delta-explain:0.7.0 \
-      --env-creds s3://warehouse/events \
-      -w "date = '2024-01-15'" \
-      --min-pruning 90 --assert-stats --format json
-```
-
 ## How it works
 
 `delta-explain` replays Delta metadata through [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) and runs separate metadata scans (no predicate, partition-safe fragment, full predicate) to isolate each pruning phase's contribution. No query engine is involved, no data files are read: only metadata. The full pipeline, the soundness guarantee, and the attribution rules are in [docs/semantics.md](docs/semantics.md).
 
 ## Predicate syntax
 
-`delta-explain` accepts standard SQL WHERE-clause syntax, parsed via [sqlparser-rs](https://github.com/sqlparser-rs/sqlparser-rs).
-
-```sql
--- Comparisons
-age > 30
-country = 'DE'
-score >= 90.5
-
--- Logical operators
-age > 30 AND country = 'DE'
-country = 'DE' OR country = 'IT'
-NOT country = 'US'
-
--- IN lists
-country IN ('DE', 'IT', 'US')
-country NOT IN ('US')
-
--- BETWEEN
-age BETWEEN 20 AND 40
-
--- NULL checks
-name IS NOT NULL
-age IS NULL
-
--- Parentheses
-(country = 'DE' OR country = 'IT') AND age > 30
-
--- Nested columns
-payload.age > 30
-```
-
-Also supported: `IS [NOT] DISTINCT FROM`, `DATE '...'` / `TIMESTAMP '...'` literal forms, schema-driven coercion (a quoted `'2026-07-01'` against a `DATE` column just works, including `DECIMAL` and narrow integers), and `LIKE`: prefix patterns (`country LIKE 'D%'`) prune on partition values and on string min/max statistics, and on partition columns every other shape (`'%son'`, `_`, `NOT LIKE`) prunes exactly too. Subqueries, functions, and non-prefix `LIKE` on data columns are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
+Standard SQL WHERE-clause syntax, parsed via [sqlparser-rs](https://github.com/sqlparser-rs/sqlparser-rs): comparisons, `AND`/`OR`/`NOT`, `IN`, `BETWEEN`, `IS [NOT] NULL`, `IS [NOT] DISTINCT FROM`, nested columns (`payload.age > 30`), typed and schema-coerced literals, and `LIKE` (prefix patterns prune on both axes; on partition columns every shape prunes exactly). The full list with examples is the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html). Subqueries, functions, and non-prefix `LIKE` on data columns are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
 
 ## Performance notes
 
@@ -404,36 +258,13 @@ See [VISION.md](VISION.md) for planned improvements.
 
 ## Development
 
-To build and test from a fresh clone:
-
 ```bash
 git clone https://github.com/cdelmonte-zg/delta-explain
 cd delta-explain
-cargo build
-cargo test
+cargo build && cargo test
 ```
 
-The integration tests under `tests/` rely on pre-built Delta tables checked into the repo under `fixtures/`. They are real Delta tables, not synthetic blobs, so the tests exercise the kernel's actual scan planner.
-
-### Regenerating the fixtures
-
-The fixtures only need to be regenerated when you change their schema or the data they contain, for ordinary development you can ignore this step entirely.
-
-The generator is a small Python script (`fixtures/create_test_table.py`) that uses `pyarrow` and `deltalake` to write the tables. Set up a virtual environment and install the pinned dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r fixtures/requirements.txt
-```
-
-Then run the generator:
-
-```bash
-python fixtures/create_test_table.py
-```
-
-The script skips any fixture directory that already exists; delete the directory you want to regenerate first, then re-run.
+The integration tests rely on real Delta tables checked into `fixtures/` (not synthetic blobs), so they exercise the kernel's actual scan planner. The full contributor guide - architecture, testing conventions, fixture regeneration - is [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Deep dive
 
