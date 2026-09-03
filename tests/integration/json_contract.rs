@@ -223,3 +223,41 @@ fn mapped_stats_coverage_uses_logical_name_and_all_candidate_files() {
     assert_eq!(age["covered_files"].as_u64(), Some(1));
     assert_eq!(age["coverage_pct"].as_f64(), Some(50.0));
 }
+
+#[test]
+fn out_of_budget_column_reports_zero_coverage_while_table_stats_stay_exact() {
+    // Arrange
+    let validator = schema();
+
+    // Act
+    let doc = assert_valid(
+        &validator,
+        &[
+            &fixture("test-table-stats-budget"),
+            "-w",
+            "tail > 500",
+            "--format",
+            "json",
+        ],
+    );
+
+    // Assert: every file carries a stats blob, so the table-wide mode is
+    // exact - yet the predicate column sits past the indexing budget and
+    // no file carries stats for it. Only the per-column block can tell.
+    assert_eq!(doc["stats"]["mode"].as_str(), Some("exact"));
+
+    let coverage = doc
+        .pointer("/analysis/stats_coverage")
+        .and_then(serde_json::Value::as_array)
+        .expect("analysis.stats_coverage should be an array");
+
+    assert_eq!(coverage.len(), 1);
+
+    let tail = &coverage[0];
+
+    assert_eq!(tail["column"].as_str(), Some("tail"));
+    assert_eq!(tail["requirement"].as_str(), Some("min_max"));
+    assert_eq!(tail["covered_files"].as_u64(), Some(0));
+    assert_eq!(tail["candidate_files"], doc["total_files"]);
+    assert_eq!(tail["coverage_pct"].as_f64(), Some(0.0));
+}

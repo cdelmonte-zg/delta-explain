@@ -224,6 +224,7 @@ mod tests {
             mapped_field("age", "physical_age", DataType::INTEGER),
             StructField::new("plain", DataType::STRING, true),
             mapped_field("s", "physical_s", DataType::Struct(Box::new(nested))),
+            mapped_field("s.a", "physical_dotted", DataType::INTEGER),
         ])
         .expect("test schema should be valid")
     }
@@ -240,6 +241,10 @@ mod tests {
     #[case::mapped_nested(
         &["s".to_string(), "a".to_string()],
         Some("physical_s.physical_a")
+    )]
+    #[case::dot_inside_a_single_segment_is_a_literal_name(
+        &["s.a".to_string()],
+        Some("physical_dotted")
     )]
     #[case::unknown_field(
         &["missing".to_string()],
