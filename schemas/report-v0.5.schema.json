@@ -12,7 +12,7 @@
     "version",
     "predicate",
     "total_files",
-    "final_files", 
+    "final_files",
     "total_pruning_pct",
     "analysis",
     "table_features",
