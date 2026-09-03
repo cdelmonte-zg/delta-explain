@@ -84,6 +84,22 @@ whether it is correct (it always is, in the conservative direction):
 
 The global `confidence` is the least informative label across fragments.
 
+## Per-column stats coverage
+
+For every column a `stats_safe` fragment references, the analysis reports
+how many of the files entering the data-skipping phase (the partition
+survivors, or every file when nothing pruned before) carry the statistics
+that fragment actually needs: min/max for comparisons, `IN` and
+`BETWEEN`; a null count for `IS NULL`; a null count plus the record count
+for `IS NOT NULL`. A file without the required statistics is never
+skipped by that fragment, so coverage bounds what data skipping *can* do
+before any ranges are compared. Coverage is diagnostic only: it never
+changes the survivor set. Columns are reported under their logical
+names; under column mapping the statistics are resolved by physical
+name. When a predicate column cannot be resolved against the table
+schema, the block degrades to `null` rather than report a number that
+might be wrong.
+
 ## Diagnostics (`--explain-why`)
 
 `--explain-why` turns the report into advice: a set of diagnoses, each a
@@ -191,8 +207,9 @@ separate mode.
 
 - Statistics exist only for the first `delta.dataSkippingNumIndexedCols`
   leaf columns; predicates past the budget classify as `stats-safe` but
-  cannot prune, and `stats.mode` reflects table coverage, not per-predicate
-  reachability.
+  cannot prune. The per-column `stats_coverage` block makes this visible
+  per predicate column (a column past the budget shows zero covered
+  files), while `stats.mode` keeps reflecting table-wide coverage.
 - On a fully checkpointed log (no JSON commits): an *empty* partitioned
   table's partition columns are undetectable, and liquid clustering is
   undetectable.

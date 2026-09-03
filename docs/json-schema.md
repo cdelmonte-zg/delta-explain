@@ -2,7 +2,7 @@
 
 The goal of this page: **a consumer can trust the JSON without reading the
 code**. The formal schema lives at
-[`schemas/report-v0.4.schema.json`](https://github.com/cdelmonte-zg/delta-explain/blob/main/schemas/report-v0.4.schema.json) and
+[`schemas/report-v0.5.schema.json`](https://github.com/cdelmonte-zg/delta-explain/blob/main/schemas/report-v0.5.schema.json) and
 the integration suite validates every emitted document against it; this
 page explains what the fields mean.
 
@@ -20,7 +20,7 @@ changes bump the major. Consumers should:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | string | Schema of this document (`0.4.x`) |
+| `schema_version` | string | Schema of this document (`0.5.x`) |
 | `tool_version` | string | delta-explain release |
 | `elapsed_ms` | integer | Wall-clock analysis duration |
 | `table` | string | Table path/URI as given |
@@ -29,7 +29,7 @@ changes bump the major. Consumers should:
 | `total_files` | integer | Files before pruning |
 | `final_files` | integer | Files surviving the last phase |
 | `total_pruning_pct` | number | Overall reduction in percent |
-| `analysis` | object \| null | Predicate classification (`partition_safe`, `partition_exact`, `stats_safe`, `unsplittable`, `confidence`, `notes`), null without `--where` |
+| `analysis` | object \| null | Predicate classification (`partition_safe`, `partition_exact`, `stats_safe`, `stats_coverage`, `unsplittable`, `confidence`, `notes`), null without `--where` |
 | `table_features` | object | Detect-and-declare block: deletion vectors, `column_mapping_mode`, `clustering_columns`, `in_commit_timestamps`, `unrecognized_writer_features`, and warning `notes` |
 | `stats` | object | Statistics coverage: `mode` is `exact` / `partial` / `absent` |
 | `phases` | array | Chained pruning phases, empty without `--where` |
@@ -60,6 +60,34 @@ vectors), `has_stats`, **`kept`**, **`pruned_by`**.
   `phases[].name` values), or null when kept. Phases chain, so "first
   phase whose survivor set misses the file" is exactly the phase that
   eliminated it.
+
+## `analysis.stats_coverage`
+
+One entry per column a `stats_safe` fragment references and per family of
+statistics it needs:
+
+```json
+{"column": "age", "requirement": "min_max",
+ "candidate_files": 2, "covered_files": 2, "coverage_pct": 100.0}
+```
+
+- `column`: the logical column name, dotted for nested leaves
+  (`profile.age`). Under column mapping the coverage is checked against
+  the physical name, but the reported name is always the logical one.
+- `requirement`: which statistics the fragment needs to skip a file:
+  `min_max` (comparisons, `IN`, `BETWEEN`), `null_count` (`IS NULL`),
+  `null_count_and_num_records` (`IS NOT NULL`).
+- `candidate_files`: the files entering the data-skipping phase (the
+  partition survivors; all files when nothing pruned before).
+- `covered_files` / `coverage_pct`: how many of those candidates carry
+  the required statistics. A file without them can never be skipped by
+  that fragment, so coverage bounds what data skipping can achieve
+  before any ranges are compared.
+
+The array is empty when no `stats_safe` fragment needs statistics, and
+the whole field is `null` when coverage could not be computed reliably
+(a predicate column that does not resolve against the table schema).
+Coverage is diagnostic only: it never changes the survivor set.
 
 ## `confidence`
 
