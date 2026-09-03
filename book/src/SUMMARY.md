@@ -21,6 +21,7 @@
 # Reference
 
 - [What delta-explain guarantees](reference/semantics.md)
+- [Predicate syntax](reference/predicate-syntax.md)
 - [The JSON report, field by field](reference/json-schema.md)
 - [What it is validated against](reference/validation.md)
 
