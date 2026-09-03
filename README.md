@@ -40,7 +40,7 @@ The three ways in: the shell, Python, CI.
 ### From the shell
 
 ```bash
-delta-explain ./my-table -w "age > 40 AND country = 'DE'"
+delta-explain ./my-table --where "age > 40 AND country = 'DE'"
 ```
 
 <img src="assets/readme/cli-demo.png" alt="delta-explain run on a table with a two-column predicate: the predicate analysis with stats coverage, two pruning phases, and the total reduction 6 -> 1 files (83% pruned)" width="700">
