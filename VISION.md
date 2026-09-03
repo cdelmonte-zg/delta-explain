@@ -91,7 +91,14 @@ Goal, delivered: shift from "file counter" to "pruning advisor", and make a repo
 
 Still planned in this track:
 
-- **`--engine-profile`**: emulate a specific engine's pruning strength (`max` | `datafusion` | `spark` | `kernel`) so a CI gate asserts what *your* engine will do, not the metadata's theoretical best. The known divergences (IN-list strategies) are documented in the README today; this makes them selectable.
+- **`--engine-profile`**: emulate a specific engine's pruning strength (`max` | `datafusion` | `spark` | `kernel`) so a CI gate asserts what *your* engine will do, not the metadata's theoretical best. The known divergences (IN-list strategies) are documented in the semantics contract today; this makes them selectable.
+
+## v0.7: Per-column stats coverage (shipped September 2026)
+
+Goal, delivered: answer "can data skipping even work here?" per column, instead of assuming it.
+
+- **Per-column stats coverage**: for every column a stats-safe fragment references, the analysis reports how many of the files entering the data-skipping phase actually carry the statistics that fragment needs (`min_max` for range operators, `null_count` / `null_count_and_num_records` for the null tests), so "stats-safe but cannot prune" becomes visible per predicate column instead of hidden behind the table-wide stats mode. Columns are reported under their logical names, with coverage resolved by physical name under column mapping; the JSON contract grows additively (`analysis.stats_coverage`, `schema_version` 0.5.0).
+- Deliberately **not** shipped with it: a confidence downgrade on zero coverage. `incomplete` marks an attribution failure of the analysis; missing statistics are a property of the table, fully explained by the coverage numbers themselves. The CI channel for the structural no-op is a coverage gate, planned as part of the finer-gates milestone.
 
 ## Later: Fidelity and coverage (planned)
 

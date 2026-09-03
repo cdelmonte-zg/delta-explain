@@ -32,6 +32,12 @@ same environment) plus a thin Python API; see [From Python](../guides/python.md)
 cargo install delta-explain
 ```
 
+For the latest development version, install from Git instead:
+
+```bash
+cargo install --git https://github.com/cdelmonte-zg/delta-explain
+```
+
 ## Docker (amd64 + arm64)
 
 ```bash

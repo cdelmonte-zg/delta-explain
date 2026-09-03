@@ -1,126 +1,48 @@
 # delta-explain
 
-**Make Delta pruning visible.**
+[![crates.io](https://img.shields.io/crates/v/delta-explain)](https://crates.io/crates/delta-explain)
+[![PyPI](https://img.shields.io/pypi/v/delta-explain)](https://pypi.org/project/delta-explain/)
+[![CI](https://github.com/cdelmonte-zg/delta-explain/actions/workflows/ci.yml/badge.svg)](https://github.com/cdelmonte-zg/delta-explain/actions/workflows/ci.yml)
+[![license](https://img.shields.io/crates/l/delta-explain)](LICENSE)
 
-A CLI that shows how partition pruning and data skipping reduce the set of candidate files in a Delta table.
+**Make Delta pruning visible.** delta-explain shows how partition pruning and data skipping narrow the set of candidate files in a Delta table.
 
-Production-usable as a conservative Delta metadata diagnostic and CI guardrail, not yet a fully production-grade general-purpose Delta observability product. That line is meant literally: what the tool guarantees, and what it deliberately does not, is written down in [docs/semantics.md](docs/semantics.md).
+It is a conservative metadata diagnostic to use from the shell, programmatically through its versioned JSON contract and Python API, or in CI as a threshold-based guardrail.
 
+It points at any Delta table location - a local path, or `s3://`, `az://`, `gs://` straight on AWS, Azure, Google Cloud, or any S3-compatible store (MinIO).
 
-**Documentation**: the full [documentation site](https://cdelmonte-zg.github.io/delta-explain/) (guides, reference, architecture) - or jump to the [three-minute quickstart](examples/quickstart/), [what delta-explain guarantees (and what it does not)](docs/semantics.md), [the JSON report, field by field](docs/json-schema.md), [what it is validated against](docs/validation.md), or [current limitations](#current-limitations).
+And it is strictly read-only: it reads the transaction log and nothing else - no table rows, no writes or locks, no telemetry. So it clears easily for regulated data. Its guarantees are written down in [docs/semantics.md](docs/semantics.md).
 
-## The problem
-
-You run a query with a filter. The engine reads some files. But how many files were actually eliminated, and *why*?
-
-Delta Lake uses two mechanisms to skip files before reading data:
-
-- **Partition pruning** eliminates files at the directory level based on partition column values
-- **Data skipping** eliminates files at the file level based on per-column min/max statistics
-
-Both happen silently during scan planning, below the query. If partitioning is wrong or stats are missing, you won't know until performance degrades.
-
-## What this tool does
-
-`delta-explain` uses [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) to read Delta metadata directly (no Spark, no DuckDB, no query execution engine) and shows, step by step, how a predicate narrows the set of candidate files.
-
-```
-$ delta-explain ./my-table -w "age > 40 AND country = 'DE'"
-
-Delta table: ./my-table
-Version:     5
-Predicate:   age > 40 AND country = 'DE'
-
-Predicate Analysis:
-  partition-safe: country = 'DE'
-  stats-safe:     age > 40
-  stats coverage:
-    age [min_max]: 2/2 candidate files (100%)
-  unsplittable:   -
-  confidence:     conservative
-
-Files in snapshot: 6
-
-Phase 1: Partition pruning [exact]
-  predicate:       country = 'DE'
-  files remaining: 2  (-4, 67% pruned)
-
-Phase 2: Data skipping (min/max statistics) [conservative]
-  predicate:       age > 40
-  files remaining: 1  (-1, 50% pruned)
-
-Total reduction: 6 -> 1 files (83% pruned)
-```
-
-The **Predicate Analysis** block shows how the predicate was split across the two pruning phases, and `confidence` labels how precisely the elimination can be explained (`exact` / `conservative` / `incomplete`). Under `stats-safe`, one line per column reports how many of the files entering the data-skipping phase actually carry the statistics that column needs (min/max for comparisons, null counts for `IS [NOT] NULL`): a file without them can never be skipped, so low coverage bounds what data skipping can do before any ranges are compared. The precise definitions, the degradation rules, and what each label guarantees are in [docs/semantics.md](docs/semantics.md).
-
-With `--verbose`, you see exactly *which* files are kept or dropped and *why*:
-
-```
-Phase 1: Partition pruning [exact]
-  predicate:       country = 'DE'
-  files remaining: 2  (-4, 67% pruned)
-
-  [DROPPED] part-00000-48368dae.parquet  (1.1 KB  3 records)  partition(country=IT)  stats(age: 41..65)
-  [DROPPED] part-00000-fcf95aac.parquet  (1.1 KB  5 records)  partition(country=IT)  stats(age: 22..38)
-  [DROPPED] part-00000-eee5a3ec.parquet  (1.1 KB  3 records)  partition(country=US)  stats(age: 31..55)
-  [DROPPED] part-00000-de2ffaef.parquet  (1.1 KB  4 records)  partition(country=US)  stats(age: 18..29)
-  [KEPT   ] part-00000-a35083c1.parquet  (1.1 KB  4 records)  partition(country=DE)  stats(age: 40..60)
-  [KEPT   ] part-00000-c34f1417.parquet  (1.1 KB  5 records)  partition(country=DE)  stats(age: 20..35)
-
-```
-
-(Use `--limit` to cap the listing on large tables; in JSON mode `--verbose` emits the machine-readable `files[]` array instead.) Files without a `stats` payload appear as `[no stats]`; statistics come from the kernel's log replay, checkpoint Parquet included, so `[no stats]` means the writer really recorded none.
+**Documentation**: [cdelmonte-zg.github.io/delta-explain](https://cdelmonte-zg.github.io/delta-explain/)
 
 ## Install
 
-### Homebrew (macOS, Linux)
-
 ```bash
-brew tap cdelmonte-zg/tap
-brew install delta-explain
+brew tap cdelmonte-zg/tap && brew install delta-explain    # Homebrew (macOS, Linux)
+pip install delta-explain                                  # PyPI: binary wheel + Python API
+cargo install delta-explain                                # crates.io (Rust 1.88+)
+docker pull ghcr.io/cdelmonte-zg/delta-explain             # Docker (amd64 + arm64)
 ```
 
-### Scoop (Windows)
+Every other route - pre-built binaries and `.deb` packages for six targets, Scoop, from Git - is on the [install page](https://cdelmonte-zg.github.io/delta-explain/getting-started/install.html).
 
-```powershell
-scoop bucket add cdelmonte-zg https://github.com/cdelmonte-zg/scoop-bucket
-scoop install delta-explain
-```
+## Usage
 
-### Debian / Ubuntu (`.deb`)
+The three ways in: the shell, Python, CI.
 
-Download the `.deb` for your architecture from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest) and install with `dpkg`:
+### From the shell
 
-```bash
-wget https://github.com/cdelmonte-zg/delta-explain/releases/download/v0.7.0/delta-explain_0.7.0-1_amd64.deb
-sudo dpkg -i delta-explain_0.7.0-1_amd64.deb
-```
+<img src="assets/readme/cli-demo.png" alt="delta-explain run on a table with a two-column predicate: the predicate analysis with stats coverage, two pruning phases, and the total reduction 6 -> 1 files (83% pruned)" width="700">
 
-Available for `amd64` and `arm64`. Uninstall with `sudo apt remove delta-explain`.
+With `--verbose`, the per-file view - which files were kept or dropped, and why:
 
-### Pre-built binary (any OS, no package manager)
+<img src="assets/readme/cli-verbose.png" alt="delta-explain --verbose - the per-file listing: four files DROPPED and two KEPT by partition pruning, each with size, records, partition values and stats ranges">
 
-Download the archive for your platform from the [latest release](https://github.com/cdelmonte-zg/delta-explain/releases/latest), extract, and place on `$PATH`:
+Cloud tables authenticate through the provider's ambient credential chain, environment variables (`--env-creds`), AWS profiles (`--profile`), or explicit `--option` pairs; the per-provider recipes are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html). The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
 
-| Platform | Archive |
-|---|---|
-| Linux x86_64 (glibc) | `delta-explain-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux x86_64 (static, musl) | `delta-explain-x86_64-unknown-linux-musl.tar.gz` |
-| Linux ARM64 | `delta-explain-aarch64-unknown-linux-gnu.tar.gz` |
-| macOS Intel | `delta-explain-x86_64-apple-darwin.tar.gz` |
-| macOS Apple Silicon | `delta-explain-aarch64-apple-darwin.tar.gz` |
-| Windows x86_64 | `delta-explain-x86_64-pc-windows-msvc.zip` |
+### From Python
 
-Each archive ships with a `.sha256` checksum. The musl build is statically linked and runs on any Linux distribution without glibc dependencies.
-
-### From PyPI (Python, no Rust needed)
-
-```bash
-pip install delta-explain
-```
-
-The wheel ships the compiled binary (the `delta-explain` command works from the same environment) plus a thin Python API around the JSON contract:
+The PyPI wheel ships the compiled binary (the `delta-explain` command works from the same environment) plus a thin Python API around the JSON contract:
 
 ```python
 from delta_explain import explain
@@ -130,133 +52,19 @@ report = explain("s3://warehouse/events",
                  min_pruning=80, env_creds=True)
 report.passed              # gate outcome; False means the CLI would exit 1
 report.total_pruning_pct
-report["analysis"]["confidence"]
 ```
 
-Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message: the same exit-code contract as the command line, in Python types.
+Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message: the same exit-code contract as the command line, in Python types. More in the [Python guide](https://cdelmonte-zg.github.io/delta-explain/guides/python.html).
 
-### From crates.io (requires Rust 1.88+)
+### In CI, as a gate
+
+`--min-pruning <PCT>` fails the run (exit 1) when total pruning falls below the threshold; `--assert-stats` fails it when any file in the snapshot is missing statistics:
 
 ```bash
-cargo install delta-explain
+delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90 --assert-stats
 ```
 
-### From Git (latest development version)
-
-```bash
-cargo install --git https://github.com/cdelmonte-zg/delta-explain
-```
-
-### Docker (amd64 + arm64)
-
-```bash
-docker pull ghcr.io/cdelmonte-zg/delta-explain
-docker run --rm -v /path/to/table:/data ghcr.io/cdelmonte-zg/delta-explain /data -w "col > 10"
-```
-
-For pipelines, pin to a release tag (e.g., `:0.7.0`) or to a digest; `:latest` is for local exploration only.
-
-## Usage
-
-```
-delta-explain <PATH> [OPTIONS]
-
-Arguments:
-  <PATH>  Path to the Delta table (local path, s3://, az://, gs://)
-
-Options:
-  -w, --where <PREDICATE>   Predicate (e.g. "age > 30 AND country = 'DE'")
-  -v, --verbose             Show per-file details (kept/dropped with reason);
-                            in JSON, adds the "files" array
-      --limit <N>           Cap per-file listings at N entries
-      --explain-why         Diagnose why the predicate pruned as it did, with
-                            suggestions; in JSON, adds the "explain" array
-      --format <FORMAT>     Output format: text (default) or json
-      --min-pruning <PCT>   Fail if total pruning is below this percentage
-      --assert-stats        Fail if any file is missing statistics
-      --at-version <N>      Analyze the table at this version (time travel)
-      --profile <NAME>      Static AWS credentials from ~/.aws/credentials (S3)
-      --region <REGION>     AWS region (S3 / S3-compatible)
-      --option <KEY=VALUE>  Object store config (repeatable)
-      --env-creds           Read cloud credentials from environment variables
-      --public              Access a public bucket (skip auth)
-```
-
-### Local table
-
-```bash
-delta-explain ./my-table -w "country = 'DE'"
-delta-explain ./my-table -w "age > 30 AND country = 'IT'" --verbose
-```
-
-### On a real table
-
-The repo ships `fixtures/taxi-nyc`, a small Delta table written from public
-[NYC TLC yellow-taxi](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
-data, partitioned by pickup date - a realistic shape to see both pruning
-axes on real column names:
-
-```bash
-# date is the partition column: directory-level pruning, exact
-delta-explain fixtures/taxi-nyc -w "pickup_date = '2024-01-03'"
-
-# date prunes partitions, fare prunes on min/max stats within them
-delta-explain fixtures/taxi-nyc -w "pickup_date = '2024-01-03' AND fare_amount > 50"
-
-# a predicate on a non-partition, non-clustered column (pickup zone):
-# stats-safe, but the per-file ranges overlap, so nothing is eliminated -
-# exactly the "why isn't this pruning" case the tool exists to show
-delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --verbose
-
-# --explain-why turns that into advice:
-delta-explain fixtures/taxi-nyc -w "PULocationID = 132" --explain-why
-#   Why:
-#     [NO_PARTITION_FILTER] ... filter on a partition column (pickup_date) ...
-#     [WEAK_DATA_SKIPPING]  ... sort or cluster the table by that column ...
-```
-
-### Cloud storage
-
-**Credentials.** Three ways in, by environment:
-
-- **On cloud infrastructure** (EC2/ECS, EKS, AKS, GKE): with no explicit credentials the storage layer falls back to the provider's ambient chain (instance profile, Managed Identity, Workload Identity) on its own; add `--env-creds` when the credentials live in environment variables instead (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`/`AWS_REGION`, `AZURE_STORAGE_ACCOUNT_NAME`/`AZURE_STORAGE_ACCOUNT_KEY`, `GOOGLE_APPLICATION_CREDENTIALS`).
-- **On a developer laptop** (AWS): `--profile <name>` resolves static keys, session token, and region from `~/.aws/credentials` and `~/.aws/config`, the same files the AWS CLI reads (including the `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` overrides). Profiles that rely on SSO, `credential_process`, or role assumption are not resolved; export them first and use `--env-creds`:
-  ```bash
-  eval $(aws configure export-credentials --profile corp --format env)
-  delta-explain --env-creds s3://bucket/table -w "..."
-  ```
-- **Static keys** (MinIO, local development): pass them via `--option`, expanding from environment variables to keep secrets out of argv. Valid `--option` keys are passed through to the [`object_store`](https://docs.rs/object_store/) builders; see upstream docs for the per-backend list.
-
-```bash
-# S3 with credentials from the environment
-delta-explain --env-creds s3://bucket/path/to/table -w "date = '2024-01-01'"
-
-# S3 public bucket
-delta-explain --region us-east-1 --public s3://my-public-bucket/table -w "id > 100"
-
-# Azure
-delta-explain --env-creds az://container/table -w "region = 'eu-west-1'"
-
-# GCS (Workload Identity on GKE, or service account JSON via env)
-delta-explain --env-creds gs://bucket/table -w "date = '2024-01-01'"
-
-# S3-compatible (MinIO, Akamai, etc.); endpoint via --option, key/secret expanded from env
-delta-explain \
-    --option AWS_ENDPOINT=https://minio.local:9000 \
-    --option AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-    --option AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-    s3://bucket/table -w "col > 5"
-```
-
-## CI/CD mode
-
-`delta-explain` doubles as an assertion tool in pipelines. After your ETL writes a Delta table, verify that the pruning layout is healthy.
-
-`--min-pruning`, `--assert-stats`, `--format json`, and `--verbose` are independent. Without `--verbose` the JSON document is summary-only; with it, a per-file `files` array is included (cap it with `--limit` on large tables).
-
-### GitHub Action
-
-The repo doubles as a composite action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
+The repo doubles as a composite GitHub Action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
 - uses: cdelmonte-zg/delta-explain@v0.7.0
@@ -268,107 +76,17 @@ The repo doubles as a composite action, so the gate is one step. Pin the tag: th
     env-creds: "true"
 ```
 
-Inputs mirror the CLI flags (`table`, `where`, `min-pruning`, `assert-stats`, `at-version`, `env-creds`, `profile`, plus `options` as one `KEY=VALUE` per line, and `version` to pin a release; default `latest`). The step fails when a gate fails, and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps:
+Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
 
-```yaml
-- name: Comment the pruning percentage
-  run: echo "Pruning ${{ steps.gate.outputs.pruning-pct }}%"
-```
+### Examples
 
-### Assert minimum pruning
+Every example in [`examples/`](examples/) is executable and runs against real tables:
 
-Fail the pipeline if a predicate doesn't eliminate enough files:
+- [The three-minute quickstart](examples/quickstart/) - one script, five beats, each one thing delta-explain does.
+- [Tuning a Delta table](examples/taxi-optimization/) - a notebook that uses delta-explain to measure four layouts of real NYC-taxi data, from unpartitioned pile to date partitions plus fare-sorted files.
+- [S3-compatible storage (MinIO)](examples/minio-s3/) and [a real GCS bucket](examples/gcs/) - the same data pruning very differently depending on physical layout, on `s3://` and `gs://` tables.
 
-```bash
-delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90
-```
-
-Exit code 1 if total pruning is below 90%.
-
-The threshold is per-invocation, applied to the current predicate against the current snapshot. Calibrate it against a baseline pruning percentage in dev (set the gate a few points below it); a flat threshold across heterogeneous partitions will misfire. Note also that 100% pruning can signal a broken or unexpectedly empty predicate, so pair `--min-pruning` with a sanity check on `final_files > 0` when the workload is expected to read data.
-
-### Assert statistics coverage
-
-Fail if any file in the table is missing min/max statistics:
-
-```bash
-delta-explain s3://warehouse/events --assert-stats
-```
-
-Statistics are resolved through the kernel's log replay, checkpoint Parquet included, so a file is flagged only when its `add` action genuinely carries no statistics. Long-lived tables whose older commits have been consolidated into a checkpoint do not produce false positives.
-
-### Predicate parity
-
-The pruning percentage `delta-explain` reports reflects the predicate you pass to `-w`. If the runtime query wraps a column in `LOWER`, `CAST`, or a UDF, the engine may prune less than the gate suggests. Use a CI predicate that is semantically equivalent to the runtime predicate and explicitly track that equivalence: a gate on `country = 'DE'` does not automatically validate a production query using `LOWER(country) = 'de'`.
-
-### JSON output for downstream processing
-
-```bash
-delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
-```
-
-The JSON output is versioned independently from the CLI binary (`schema_version: "0.5.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
-
-The contract is formal: [`schemas/report-v0.5.schema.json`](schemas/report-v0.5.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
-
-Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
-
-See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
-
-### Docker in a pipeline
-
-```yaml
-# GitHub Actions example
-- name: Verify pruning after ETL
-  run: |
-    docker run --rm \
-      -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION \
-      ghcr.io/cdelmonte-zg/delta-explain:0.7.0 \
-      --env-creds s3://warehouse/events \
-      -w "date = '2024-01-15'" \
-      --min-pruning 90 --assert-stats --format json
-```
-
-## How it works
-
-`delta-explain` replays Delta metadata through [delta-kernel-rs](https://github.com/delta-io/delta-kernel-rs) and runs separate metadata scans (no predicate, partition-safe fragment, full predicate) to isolate each pruning phase's contribution. No query engine is involved, no data files are read: only metadata. The full pipeline, the soundness guarantee, and the attribution rules are in [docs/semantics.md](docs/semantics.md).
-
-## Predicate syntax
-
-`delta-explain` accepts standard SQL WHERE-clause syntax, parsed via [sqlparser-rs](https://github.com/sqlparser-rs/sqlparser-rs).
-
-```sql
--- Comparisons
-age > 30
-country = 'DE'
-score >= 90.5
-
--- Logical operators
-age > 30 AND country = 'DE'
-country = 'DE' OR country = 'IT'
-NOT country = 'US'
-
--- IN lists
-country IN ('DE', 'IT', 'US')
-country NOT IN ('US')
-
--- BETWEEN
-age BETWEEN 20 AND 40
-
--- NULL checks
-name IS NOT NULL
-age IS NULL
-
--- Parentheses
-(country = 'DE' OR country = 'IT') AND age > 30
-
--- Nested columns
-payload.age > 30
-```
-
-Also supported: `IS [NOT] DISTINCT FROM`, `DATE '...'` / `TIMESTAMP '...'` literal forms, schema-driven coercion (a quoted `'2026-07-01'` against a `DATE` column just works, including `DECIMAL` and narrow integers), and `LIKE`: prefix patterns (`country LIKE 'D%'`) prune on partition values and on string min/max statistics, and on partition columns every other shape (`'%son'`, `_`, `NOT LIKE`) prunes exactly too. Subqueries, functions, and non-prefix `LIKE` on data columns are outside the pruning language: they warn and keep files instead of failing (see [Current limitations](#current-limitations)).
-
-## Performance notes
+## Performance
 
 delta-explain reads only the Delta log, never the parquet data files, so its cost scales with the number of `add` actions, not with data volume. Measured at 200k files on Linux, local disk, in the three log shapes that matter (generate them yourself with `cargo run --release --example gen_scale_log`):
 
@@ -384,60 +102,19 @@ Data volume itself is invisible - what a big table costs is its log. A 10 TB pro
 
 Output is the dimension to manage on large tables: the compact JSON stays summary-only at any size, and per-file detail (`--verbose`, in both formats) should be capped with `--limit`.
 
-## Current limitations
+## The report viewer
 
-- **First N indexed leaf columns only.** Delta collects min/max statistics only for the first `delta.dataSkippingNumIndexedCols` leaf fields (default 32, configurable per-table; nested struct children count separately).
+Reports are also emitted as versioned JSON (`--format json`) under a formal, CI-enforced contract - [the schema](schemas/report-v0.5.schema.json) and [the field-by-field reference](docs/json-schema.md). Any saved report can be visualized as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
 
-  Predicates on columns past this index are still classified as `stats-safe` but contribute no pruning, because the column's min/max never appears in the log. The per-column `stats coverage` lines in the analysis make this visible per predicate column (a column past the budget shows zero covered files), while `stats.mode` keeps reflecting per-table coverage of the indexed columns, so it can read `exact` even when the predicate column is unreachable by stats.
-
-- **No query planner simulation.** This tool shows metadata-level file elimination only. It does not predict query execution time or replicate engine-specific optimizer behavior.
-
-- **OR-mixed predicates.** Predicate classification operates on top-level AND conjuncts, after normalization: negations push down to the leaves (De Morgan) and conjuncts common to every OR branch factor out of the OR, so `NOT (country = 'DE' OR age > 30)` splits into two attributable phases and `(country = 'DE' AND x) OR (country = 'DE' AND y)` exposes `country = 'DE'` as partition-safe. What remains is the irreducibly mixed OR (`country = 'DE' OR age > 30`): it is flagged as `unsplittable` per the rule above, never silently downgraded.
-
-- **Computed expressions keep all files.** Function calls, arithmetic, subqueries, column-to-column comparisons, `LIKE ... ESCAPE`, and non-prefix `LIKE` on data columns (leading or embedded wildcards, `_`, `NOT LIKE`) are outside the pruning language; such fragments are reported with an `UNSUPPORTED_EXPRESSION` warning and conservatively keep every file, while sibling AND conjuncts still prune. (On partition columns, `LIKE` in any shape prunes exactly instead.) Most of these are file-level unskippable for any engine.
-
-- **`IN` pruning strength varies by engine.** delta-explain expands `IN` lists into OR-of-equalities, the strongest sound form, with no size cap. Real engines differ: DataFusion-based engines (delta-rs) do the same expansion but stop skipping past 20 list items, and delta-spark evaluates an imprecise range test over the whole list (`min(values) <= col <= max(values)`), which keeps more files on sparse lists. On `IN`-heavy predicates a specific engine may therefore prune less than this report shows; the report reflects what the metadata makes possible, and it is always sound.
-
-- **Protocol features are declared, not compensated.** Deletion vectors, column mapping, and liquid clustering are detected and reported in `table_features` with explicit warnings, but the numbers are not adjusted: record counts still include soft-deleted rows on files with deletion vectors, verbose statistics may show physical column names under column mapping, and clustering columns are informational. On a fully checkpointed log (no JSON commits) liquid clustering goes undetected, because delta-kernel exposes no public accessor for system metadata domains.
-
-See [VISION.md](VISION.md) for planned improvements.
-
-## Development
-
-To build and test from a fresh clone:
-
-```bash
-git clone https://github.com/cdelmonte-zg/delta-explain
-cd delta-explain
-cargo build
-cargo test
-```
-
-The integration tests under `tests/` rely on pre-built Delta tables checked into the repo under `fixtures/`. They are real Delta tables, not synthetic blobs, so the tests exercise the kernel's actual scan planner.
-
-### Regenerating the fixtures
-
-The fixtures only need to be regenerated when you change their schema or the data they contain, for ordinary development you can ignore this step entirely.
-
-The generator is a small Python script (`fixtures/create_test_table.py`) that uses `pyarrow` and `deltalake` to write the tables. Set up a virtual environment and install the pinned dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r fixtures/requirements.txt
-```
-
-Then run the generator:
-
-```bash
-python fixtures/create_test_table.py
-```
-
-The script skips any fixture directory that already exists; delete the directory you want to regenerate first, then re-run.
+<img src="https://raw.githubusercontent.com/cdelmonte-zg/delta-explain/main/viewer/screenshot.png" alt="The report viewer rendering a pruning report: funnel, predicate analysis with stats coverage, diagnoses, per-file table" width="720">
 
 ## Deep dive
 
 For a detailed walkthrough of the architecture, design decisions, and the reasoning behind the two-phase model, see the companion article: [delta-explain: Making Delta Lake Pruning Visible](https://cdelmonte.dev/projects/delta-explain-making-delta-pruning-visible/).
+
+## Contributing
+
+Build with `cargo build && cargo test`; the contributor guide - architecture, testing conventions, fixtures - is [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 
