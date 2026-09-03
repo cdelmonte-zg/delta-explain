@@ -177,10 +177,15 @@ adjusted:
 
 The report reflects what the metadata makes possible, computed with the
 strongest sound techniques in production use. Engines make different
-choices; the known divergences are documented in the README's *Current
-limitations* (notably `IN`-list strategies). The report never overstates
-correctness: only, potentially, the pruning a specific engine will
-realize.
+choices; the known divergence is the `IN`-list strategy. delta-explain
+expands `IN` lists into OR-of-equalities, the strongest sound form, with
+no size cap; DataFusion-based engines (delta-rs) do the same expansion
+but stop skipping past 20 list items, and delta-spark evaluates an
+imprecise range test over the whole list
+(`min(values) <= col <= max(values)`), which keeps more files on sparse
+lists. On `IN`-heavy predicates a specific engine may therefore prune
+less than this report shows. The report never overstates correctness:
+only, potentially, the pruning a specific engine will realize.
 
 ## Exit codes and the error contract
 

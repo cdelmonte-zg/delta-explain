@@ -36,9 +36,10 @@ not verify for you afterwards.
 - [ ] If the release changed the CLI output or the report shape,
       regenerate the committed artifacts that carry captured output and
       the tool version: re-execute `examples/taxi-optimization` (its
-      README run instructions) and refresh `viewer/screenshot.png`, both
-      against the bumped build, so the banners match the released
-      version.
+      README run instructions) and refresh `viewer/screenshot.png` and
+      the README terminal shots (`assets/readme/cli-*.png`, real output
+      rendered in a terminal frame), all against the bumped build, so
+      the banners match the released version.
 - [ ] `cargo publish --dry-run`
 - [ ] `maturin build --release` locally: the wheel builds and installs in a
       clean venv, `import delta_explain` and the bundled binary both work
