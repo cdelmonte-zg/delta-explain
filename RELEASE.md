@@ -72,13 +72,24 @@ not verify for you afterwards.
       (both amd64 and arm64 manifests present).
 - [ ] GitHub Action smoke: a workflow using
       `cdelmonte-zg/delta-explain@vX.Y.Z` with `version: X.Y.Z` passes.
-- [ ] **Marketplace republication (manual, UI-only)**: releases created by
-      CI are not published to the GitHub Marketplace automatically. Edit
-      the release in the UI, tick "Publish this Action to the GitHub
-      Marketplace", update. Verify the listing points at the new tag:
-      https://github.com/marketplace/actions/delta-explain. Note the
-      `action.yml` description must stay under 125 characters or the
-      publication is rejected.
+- [ ] **Marketplace listing points at the new tag.** Releases created by
+      CI are published to the GitHub Marketplace automatically (verified
+      on v0.7.0: the "Publish this Action" checkbox arrives already
+      ticked and the listing follows the latest release) - so this is a
+      verification, not an action. Check that the listing advertises the
+      released tag, from the UI at
+      https://github.com/marketplace/actions/delta-explain or from a
+      shell:
+
+  ```bash
+  curl -sL https://github.com/marketplace/actions/delta-explain \
+      | grep -o '"latestRelease":{"tagName":"[^"]*"'   # expect vX.Y.Z
+  ```
+
+  If it does not, edit the release in the UI and tick "Publish this
+      Action to the GitHub Marketplace". Note the `action.yml`
+      description must stay under 125 characters or the publication is
+      rejected.
 - [ ] **homebrew-tap and scoop-bucket really got bumped**: the bots update
       them but fail silently. Open both repos and check the formula and
       manifest carry the new version *and real checksums*, not
