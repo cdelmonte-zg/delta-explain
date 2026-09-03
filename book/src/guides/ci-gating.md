@@ -16,8 +16,42 @@ delta-explain s3://lake/events -w "region = 'eu' AND ts > '2026-06-01'" \
 ```
 
 On failure the report still prints (with `result: "fail"`) and stderr carries
-`ASSERTION FAILED: ...`. The exit-code contract is precise and stable; see the
-table in [What delta-explain guarantees](../reference/semantics.md).
+`ASSERTION FAILED: ...` - the terminal shows both, and the exit code flips
+to 1:
+
+```
+$ delta-explain ./table -w "country = 'DE' AND age > 40" --min-pruning 90
+ASSERTION FAILED: total pruning 83.3% is below threshold 90.0%
+Delta table: ./table
+Version:     5
+Predicate:   country = 'DE' AND age > 40
+
+Predicate Analysis:
+  partition-safe: country = 'DE'
+  stats-safe:     age > 40
+  stats coverage:
+    age [min_max]: 2/2 candidate files (100%)
+  unsplittable:   -
+  confidence:     conservative
+
+Files in snapshot: 6
+
+Phase 1: Partition pruning [exact]
+  predicate:       country = 'DE'
+  files remaining: 2  (-4, 67% pruned)
+
+Phase 2: Data skipping (min/max statistics) [conservative]
+  predicate:       age > 40
+  files remaining: 1  (-1, 50% pruned)
+
+Total reduction: 6 -> 1 files (83% pruned)
+
+$ echo $?
+1
+```
+
+The exit-code contract is precise and stable; see the table in
+[What delta-explain guarantees](../reference/semantics.md).
 
 Statistics are resolved through the kernel's log replay, checkpoint Parquet
 included, so `--assert-stats` flags a file only when its `add` action genuinely
