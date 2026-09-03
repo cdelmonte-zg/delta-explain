@@ -5,17 +5,24 @@
 [![CI](https://github.com/cdelmonte-zg/delta-explain/actions/workflows/ci.yml/badge.svg)](https://github.com/cdelmonte-zg/delta-explain/actions/workflows/ci.yml)
 [![license](https://img.shields.io/crates/l/delta-explain)](LICENSE)
 
-**Make Delta pruning visible.** delta-explain shows how partition pruning and data skipping narrow the set of candidate files in a Delta table.
+**Make Delta pruning visible.** delta-explain shows how partition
+pruning and data skipping narrow the set of candidate files in a
+Delta table.
 
-It is a conservative metadata diagnostic to use from the shell, programmatically through its versioned JSON contract and Python API, or in CI as a threshold-based guardrail.
+Use it from the shell, through its versioned JSON contract and Python
+API, or in CI as a threshold-based guardrail. Point it at a local Delta
+table or an `s3://`, `az://`, or `gs://` location.
 
-It points at any Delta table location - a local path, or `s3://`, `az://`, `gs://` straight on AWS, Azure, Google Cloud, or any S3-compatible store (MinIO).
-
-And it is strictly read-only: it reads the transaction log and nothing else - no table rows, no writes or locks, no telemetry. So it clears easily for regulated data. Its guarantees are written down in [docs/semantics.md](docs/semantics.md).
+delta-explain is strictly read-only: it reads Delta transaction-log
+metadata, not table rows, and performs no writes, locks, or telemetry.
+This keeps its data-access surface small. Its guarantees are documented
+in [docs/semantics.md](docs/semantics.md).
 
 **Documentation**: [cdelmonte-zg.github.io/delta-explain](https://cdelmonte-zg.github.io/delta-explain/)
 
 ## Install
+
+Choose one:
 
 ```bash
 brew tap cdelmonte-zg/tap && brew install delta-explain    # Homebrew (macOS, Linux)
@@ -31,6 +38,10 @@ Every other route - pre-built binaries and `.deb` packages for six targets, Scoo
 The three ways in: the shell, Python, CI.
 
 ### From the shell
+
+```bash
+delta-explain ./my-table -w "age > 40 AND country = 'DE'"
+```
 
 <img src="assets/readme/cli-demo.png" alt="delta-explain run on a table with a two-column predicate: the predicate analysis with stats coverage, two pruning phases, and the total reduction 6 -> 1 files (83% pruned)" width="700">
 
@@ -96,7 +107,7 @@ delta-explain reads only the Delta log, never the parquet data files, so its cos
 | 2000 JSON commits | ~1.4 s | ~2.2 s | ~320 MB |
 | 2000 commits + parquet checkpoint | ~0.8 s | ~1.0 s | ~240 MB |
 
-The most production-like shape (checkpointed) is also the fastest: the kernel reads one parquet checkpoint instead of replaying thousands of JSON commits. Scaling is linear at roughly 1.5 KB of resident memory per file, which extrapolates to ~1.5 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is immaterial at this level: an `IN` list with 500 items over 200k files adds ~0.4 s.
+The most production-like shape (checkpointed) is also the fastest: the kernel reads one parquet checkpoint instead of replaying thousands of JSON commits. Scaling is linear at roughly 1.5 KB of resident memory per file, which extrapolates to ~1.5 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is usually secondary to log size at this scale: an `IN` list with 500 items over 200k files adds about 0.4 s.
 
 Data volume itself is invisible - what a big table costs is its log. A 10 TB profile (40k files x 256 MB, 31 stats columns, checkpointed; `--wide 30 --file-size-mb 256`) runs in ~1.5 s at ~470 MB; the pathological small-files version of the same 10 TB (160k files x 64 MB, same stats width) takes ~5 s at ~1.8 GB. Memory scales with files x stats leaves, so the one-million-file ceiling above assumes a narrow schema: wide production schemas reach it proportionally earlier, and `delta.dataSkippingNumIndexedCols` on the table bounds the width the log carries in the first place.
 
