@@ -75,8 +75,13 @@ statistics it needs:
   (`profile.age`). Under column mapping the coverage is checked against
   the physical name, but the reported name is always the logical one.
 - `requirement`: which statistics the fragment needs to skip a file:
-  `min_max` (comparisons, `IN`, `BETWEEN`), `null_count` (`IS NULL`),
-  `null_count_and_num_records` (`IS NOT NULL`).
+  `min_max` (comparisons, `IN`, `BETWEEN`, bare boolean columns),
+  `null_count` (`IS NULL`, `IS NOT DISTINCT FROM NULL`),
+  `null_count_and_num_records` (`IS NOT NULL`, `IS DISTINCT FROM
+  NULL`). `IS [NOT] DISTINCT FROM <value>` needs both a range and a
+  null test, so a column can appear once per required family: `min_max`
+  plus `null_count` (`IS DISTINCT FROM`) or `min_max` plus
+  `null_count_and_num_records` (`IS NOT DISTINCT FROM`).
 - `candidate_files`: the files entering the data-skipping phase (the
   partition survivors; all files when nothing pruned before).
 - `covered_files` / `coverage_pct`: how many of those candidates carry

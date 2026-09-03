@@ -14,8 +14,10 @@ follow SemVer relative to that field.
 - Per-column stats coverage (#132): the analysis now reports, for every
   column a stats-safe fragment references, how many of the files entering
   the data-skipping phase actually carry the statistics that fragment
-  needs (`min_max` for comparisons, `null_count` for `IS NULL`,
-  `null_count_and_num_records` for `IS NOT NULL`), so "stats-safe but
+  needs (`min_max` for comparisons, `IN`, `BETWEEN` and bare boolean
+  columns; `null_count` / `null_count_and_num_records` for the null
+  tests; `IS [NOT] DISTINCT FROM` combines both families, one coverage
+  row per required family), so "stats-safe but
   cannot prune" becomes visible per column instead of hidden behind the
   table-wide `stats.mode`. Candidate files are the partition survivors;
   columns are reported under their logical names while coverage is

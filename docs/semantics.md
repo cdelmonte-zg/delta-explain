@@ -89,9 +89,18 @@ The global `confidence` is the least informative label across fragments.
 For every column a `stats_safe` fragment references, the analysis reports
 how many of the files entering the data-skipping phase (the partition
 survivors, or every file when nothing pruned before) carry the statistics
-that fragment actually needs: min/max for comparisons, `IN` and
-`BETWEEN`; a null count for `IS NULL`; a null count plus the record count
-for `IS NOT NULL`. A file without the required statistics is never
+that fragment actually needs. The requirement follows the operator:
+
+- `min_max`: comparisons, `IN`, `BETWEEN`, and a bare boolean column;
+- `null_count`: `IS NULL` and `IS NOT DISTINCT FROM NULL`;
+- `null_count_and_num_records`: `IS NOT NULL` and
+  `IS DISTINCT FROM NULL`;
+- `IS [NOT] DISTINCT FROM <value>` needs both a range and a null test,
+  so it requires `min_max` plus `null_count` (`IS DISTINCT FROM`) or
+  `min_max` plus `null_count_and_num_records` (`IS NOT DISTINCT FROM`).
+
+A column is reported once per required family, so one column can carry
+more than one coverage row. A file without the required statistics is never
 skipped by that fragment, so coverage bounds what data skipping *can* do
 before any ranges are compared. Coverage is diagnostic only: it never
 changes the survivor set. Columns are reported under their logical
