@@ -112,6 +112,8 @@ The JSON output is versioned independently from the CLI binary (`schema_version:
 
 The contract is formal: [`schemas/report-v0.5.schema.json`](schemas/report-v0.5.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`. See [CHANGELOG.md](CHANGELOG.md) for the full schema notes.
 
+## The report viewer
+
 Any saved JSON report renders as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
 
 <img src="https://raw.githubusercontent.com/cdelmonte-zg/delta-explain/main/viewer/screenshot.png" alt="The report viewer rendering a pruning report: funnel, predicate analysis with stats coverage, diagnoses, per-file table" width="720">
