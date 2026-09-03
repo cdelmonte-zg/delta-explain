@@ -4,7 +4,7 @@ use num_format::{Locale, ToFormattedString};
 
 use crate::presentation::{
     AnalysisView, AssertionView, ExplanationView, FilePhaseState, FileView, FilesView, PhaseView,
-    Presentation, StatusView,
+    Presentation, StatusView, model::ColumnStatsCoverageView,
 };
 
 pub(super) fn render(presentation: &Presentation) -> String {
@@ -99,6 +99,8 @@ fn write_analysis(out: &mut String, analysis: &AnalysisView) {
         display_optional(analysis.stats_safe.as_deref())
     );
 
+    write_stats_coverage(out, analysis.stats_coverage.as_deref());
+
     let _ = writeln!(
         out,
         "  unsplittable:   {}",
@@ -106,6 +108,29 @@ fn write_analysis(out: &mut String, analysis: &AnalysisView) {
     );
 
     let _ = writeln!(out, "  confidence:     {}", analysis.confidence);
+}
+
+fn write_stats_coverage(out: &mut String, coverage: Option<&[ColumnStatsCoverageView]>) {
+    match coverage {
+        None => {
+            let _ = writeln!(out, " stats coverage unavailable");
+        }
+        Some([]) => {}
+
+        Some(entries) => {
+            for entry in entries {
+                let _ = writeln!(
+                    out,
+                    "    {} [{}]: {}/{} candidate files ({:.0}%)",
+                    entry.column,
+                    entry.requirement,
+                    fmt(entry.covered_files),
+                    fmt(entry.candidate_files),
+                    entry.coverage_pct,
+                );
+            }
+        }
+    }
 }
 
 fn write_phases(out: &mut String, presentation: &Presentation) {

@@ -1,4 +1,4 @@
-use crate::analysis::model::{Confidence, PhaseKind};
+use crate::analysis::model::{Confidence, PhaseKind, StatsRequirement};
 
 pub(super) fn phase_name(kind: PhaseKind) -> &'static str {
     match kind {
@@ -15,5 +15,13 @@ pub(super) fn confidence_label(confidence: Confidence) -> &'static str {
         Confidence::Conservative => "conservative",
 
         Confidence::Incomplete => "incomplete",
+    }
+}
+
+pub(super) fn stats_requirement_label(requirement: StatsRequirement) -> &'static str {
+    match requirement {
+        StatsRequirement::MinMax => "min_max",
+        StatsRequirement::NullCount => "null_count",
+        StatsRequirement::NullCountAndNumRecords => "null_count_and_num_records",
     }
 }
