@@ -1,3 +1,5 @@
+use delta_kernel::schema::Schema;
+
 use crate::analysis;
 use crate::analysis::model::{
     AnalysisResult, ColumnStatsCoverage, Confidence, PhaseAnalysis, PredicateClassification,
@@ -48,7 +50,7 @@ pub struct PredicateReport {
     pub classification: PredicateClassification,
     pub phases: Vec<PhaseAnalysis>,
     pub partition_evaluation_gaps: usize,
-    pub stats_coverage: Vec<ColumnStatsCoverage>,
+    pub stats_coverage: Option<Vec<ColumnStatsCoverage>>,
 }
 
 pub fn build(
@@ -58,6 +60,7 @@ pub fn build(
     result: Option<&AnalysisResult>,
 ) -> Report {
     let features = &table.metadata.features;
+    let schema = table.snapshot.schema();
 
     let table_report = TableReport {
         path: table_path.to_string(),
@@ -81,6 +84,7 @@ pub fn build(
             result,
             table_report.total_files,
             &table.metadata.baseline,
+            schema.as_ref(),
         )),
 
         _ => None,
@@ -117,6 +121,7 @@ fn build_predicate_report(
     result: &AnalysisResult,
     total_files: usize,
     baseline: &BaselineScan,
+    schema: &Schema,
 ) -> PredicateReport {
     PredicateReport {
         input: input.to_string(),
@@ -124,10 +129,11 @@ fn build_predicate_report(
         classification: result.classification.clone(),
         phases: analysis::phases(result, total_files),
         partition_evaluation_gaps: result.partition.evaluation_gaps,
-        stats_coverage: analysis::stats_coverage::derive(
+        stats_coverage: analysis::stats_coverage::compute(
             &result.classification,
             &result.partition,
             baseline,
+            schema,
         ),
     }
 }
