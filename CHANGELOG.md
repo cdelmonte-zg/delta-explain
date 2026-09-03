@@ -9,6 +9,16 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.7.0] - 2026-09-03
+
+The release that answers "can data skipping even work here?" per column.
+A stats-safe predicate used to be reported as prunable-in-principle even
+when the files entering the phase carry no statistics for its columns;
+the analysis now measures that instead of assuming it. The JSON contract
+grows additively (`schema_version` 0.4.0 → 0.5.0).
+
 ### Added
 
 - Per-column stats coverage (#132): the analysis now reports, for every
