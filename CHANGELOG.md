@@ -9,7 +9,23 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Per-column stats coverage (#132): the analysis now reports, for every
+  column a stats-safe fragment references, how many of the files entering
+  the data-skipping phase actually carry the statistics that fragment
+  needs (`min_max` for comparisons, `IN`, `BETWEEN` and bare boolean
+  columns; `null_count` / `null_count_and_num_records` for the null
+  tests; `IS [NOT] DISTINCT FROM` combines both families, one coverage
+  row per required family), so "stats-safe but
+  cannot prune" becomes visible per column instead of hidden behind the
+  table-wide `stats.mode`. Candidate files are the partition survivors;
+  columns are reported under their logical names while coverage is
+  checked against the physical names under column mapping. Additive JSON
+  change: an `analysis.stats_coverage` array (`null` when a predicate
+  column cannot be resolved against the table schema), `schema_version`
+  0.4.0 -> 0.5.0, new `schemas/report-v0.5.schema.json`. The text output
+  gains one coverage line per column under `stats-safe`.
 
 ## [0.6.0] - 2026-07-05
 

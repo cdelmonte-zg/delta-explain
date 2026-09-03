@@ -79,6 +79,19 @@ pub struct AnalysisView {
     pub stats_safe: Option<String>,
     pub unsplittable: Option<String>,
     pub confidence: &'static str,
+
+    /// None means coverage could not be computed reliably.
+    /// Some([]) means no stats-safe column required statistics.
+    pub stats_coverage: Option<Vec<ColumnStatsCoverageView>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ColumnStatsCoverageView {
+    pub column: String,
+    pub requirement: &'static str,
+    pub candidate_files: usize,
+    pub covered_files: usize,
+    pub coverage_pct: f64,
 }
 
 #[derive(Debug, Clone)]

@@ -224,6 +224,14 @@
   .bucket .k { color: var(--ink-3); }
   .bucket .v { word-break: break-word; }
   .bucket .v.none { color: var(--ink-3); }
+  .bucket .v.cov { display: flex; align-items: center; gap: 10px; }
+  .cov-meter {
+    flex: 0 0 90px; height: 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .cov-fill { display: block; height: 100%; background: var(--kept); }
   .note {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -654,6 +662,7 @@
       b.appendChild(el("span", "k", k));
       b.appendChild(el("span", "v" + (v ? "" : " none"), v || "-"));
       buckets.appendChild(b);
+      if (k === "stats-safe") appendStatsCoverage(buckets, a.stats_coverage);
     }
 
     const notes = $("notes");
@@ -665,6 +674,33 @@
       card.appendChild(el("span", null, n.message));
       notes.appendChild(card);
     }
+  }
+
+  function appendStatsCoverage(buckets, coverage) {
+    if (coverage === undefined) return; // pre-0.5 report
+    if (coverage === null) {
+      const b = el("div", "bucket");
+      b.appendChild(el("span", "k", "stats coverage"));
+      b.appendChild(el("span", "v none", "unavailable"));
+      buckets.appendChild(b);
+      return;
+    }
+    coverage.forEach((c, i) => {
+      const b = el("div", "bucket");
+      b.appendChild(el("span", "k", i === 0 ? "stats coverage" : ""));
+      const v = el("span", "v cov");
+      const meter = el("span", "cov-meter");
+      const fill = el("span", "cov-fill");
+      fill.style.width = Math.min(100, Math.max(0, c.coverage_pct)) + "%";
+      meter.appendChild(fill);
+      v.appendChild(meter);
+      v.appendChild(el("span", null,
+        c.column + " [" + c.requirement + "]: " +
+        nf.format(c.covered_files) + "/" + nf.format(c.candidate_files) +
+        " files (" + Math.round(c.coverage_pct) + "%)"));
+      b.appendChild(v);
+      buckets.appendChild(b);
+    });
   }
 
   function renderExplain(doc) {

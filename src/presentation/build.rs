@@ -15,6 +15,8 @@ use crate::analysis::predicate::Pred;
 use crate::diagnostics::{Explanation, Warning};
 use crate::gates::{AssertionResult, GateOutcome, GateStatus};
 use crate::metadata::scan::BaselineScan;
+use crate::presentation::labels::stats_requirement_label;
+use crate::presentation::model::ColumnStatsCoverageView;
 use crate::report::Report;
 
 pub fn build(
@@ -45,8 +47,29 @@ pub fn build(
             unsplittable: unsplittable_conjunction(classification),
 
             confidence: confidence_label(predicate.confidence),
+
+            stats_coverage: predicate.stats_coverage.as_ref().map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| ColumnStatsCoverageView {
+                        column: entry.column.clone(),
+                        requirement: stats_requirement_label(entry.requirement),
+                        candidate_files: entry.candidate_files,
+                        covered_files: entry.covered_files,
+                        coverage_pct: percentage(entry.covered_files, entry.candidate_files),
+                    })
+                    .collect()
+            }),
         }
     });
+
+    fn percentage(part: usize, total: usize) -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            (part as f64 / total as f64) * 100.0
+        }
+    }
 
     let phases = report
         .predicate

@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use crate::error::Result;
 use crate::presentation::{AssertionView, DiagnosticScope, ExplanationView, Presentation};
 
-pub const SCHEMA_VERSION: &str = "0.4.0";
+pub const SCHEMA_VERSION: &str = "0.5.0";
 
 pub(super) fn render(presentation: &Presentation) -> Result<String> {
     let analysis_notes = presentation
@@ -37,6 +37,21 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
         .collect::<Vec<_>>();
 
     let analysis = presentation.analysis.as_ref().map(|analysis| {
+        let stats_coverage = analysis.stats_coverage.as_ref().map(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    json!({
+                        "column": entry.column,
+                        "requirement": entry.requirement,
+                        "candidate_files": entry.candidate_files,
+                        "covered_files": entry.covered_files,
+                        "coverage_pct": entry.coverage_pct,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+
         json!({
             "partition_safe":
                 analysis
@@ -49,6 +64,9 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
             "stats_safe":
                 analysis
                     .stats_safe,
+
+            "stats_coverage":
+                stats_coverage,
 
             "unsplittable":
                 analysis

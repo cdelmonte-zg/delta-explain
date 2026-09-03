@@ -1,6 +1,11 @@
+use delta_kernel::schema::Schema;
+
 use crate::analysis;
-use crate::analysis::model::{AnalysisResult, Confidence, PhaseAnalysis, PredicateClassification};
+use crate::analysis::model::{
+    AnalysisResult, ColumnStatsCoverage, Confidence, PhaseAnalysis, PredicateClassification,
+};
 use crate::diagnostics::{self, ExplainContext, Explanation, Warning, WarningContext};
+use crate::metadata::scan::BaselineScan;
 use crate::table::TableState;
 
 #[derive(Debug, Clone)]
@@ -45,6 +50,7 @@ pub struct PredicateReport {
     pub classification: PredicateClassification,
     pub phases: Vec<PhaseAnalysis>,
     pub partition_evaluation_gaps: usize,
+    pub stats_coverage: Option<Vec<ColumnStatsCoverage>>,
 }
 
 pub fn build(
@@ -54,29 +60,20 @@ pub fn build(
     result: Option<&AnalysisResult>,
 ) -> Report {
     let features = &table.metadata.features;
+    let schema = table.snapshot.schema();
 
     let table_report = TableReport {
         path: table_path.to_string(),
-
         version: table.snapshot.version(),
-
         total_files: table.metadata.baseline.files.len(),
-
         files_with_stats: table.metadata.baseline.stats.len(),
-
         partition_columns: table.metadata.partition_columns.clone(),
-
         features: TableFeatureReport {
             deletion_vectors_enabled: features.deletion_vectors_enabled,
-
             files_with_deletion_vectors: features.files_with_deletion_vectors,
-
             column_mapping_mode: features.column_mapping_mode.clone(),
-
             clustering_columns: features.clustering_columns.clone(),
-
             in_commit_timestamps: features.in_commit_timestamps,
-
             unrecognized_writer_features: features.unrecognized_writer_features.clone(),
         },
     };
@@ -86,6 +83,8 @@ pub fn build(
             input,
             result,
             table_report.total_files,
+            &table.metadata.baseline,
+            schema.as_ref(),
         )),
 
         _ => None,
@@ -93,22 +92,16 @@ pub fn build(
 
     let warnings = diagnostics::warnings::derive(WarningContext {
         analysis: result,
-
         features: &table.metadata.features,
-
         total_files: table_report.total_files,
     });
 
     let explanations = match (result, predicate_report.as_ref()) {
         (Some(result), Some(predicate_report)) => diagnostics::explain::derive(ExplainContext {
             classification: &result.classification,
-
             phases: &predicate_report.phases,
-
             partition_columns: &table_report.partition_columns,
-
             total_files: table_report.total_files,
-
             files_with_stats: table_report.files_with_stats,
         }),
 
@@ -127,16 +120,20 @@ fn build_predicate_report(
     input: &str,
     result: &AnalysisResult,
     total_files: usize,
+    baseline: &BaselineScan,
+    schema: &Schema,
 ) -> PredicateReport {
     PredicateReport {
         input: input.to_string(),
-
         confidence: analysis::confidence(result),
-
         classification: result.classification.clone(),
-
         phases: analysis::phases(result, total_files),
-
         partition_evaluation_gaps: result.partition.evaluation_gaps,
+        stats_coverage: analysis::stats_coverage::compute(
+            &result.classification,
+            &result.partition,
+            baseline,
+            schema,
+        ),
     }
 }

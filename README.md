@@ -34,6 +34,8 @@ Predicate:   age > 40 AND country = 'DE'
 Predicate Analysis:
   partition-safe: country = 'DE'
   stats-safe:     age > 40
+  stats coverage:
+    age [min_max]: 2/2 candidate files (100%)
   unsplittable:   -
   confidence:     conservative
 
@@ -50,7 +52,7 @@ Phase 2: Data skipping (min/max statistics) [conservative]
 Total reduction: 6 -> 1 files (83% pruned)
 ```
 
-The **Predicate Analysis** block shows how the predicate was split across the two pruning phases, and `confidence` labels how precisely the elimination can be explained (`exact` / `conservative` / `incomplete`). The precise definitions, the degradation rules, and what each label guarantees are in [docs/semantics.md](docs/semantics.md).
+The **Predicate Analysis** block shows how the predicate was split across the two pruning phases, and `confidence` labels how precisely the elimination can be explained (`exact` / `conservative` / `incomplete`). Under `stats-safe`, one line per column reports how many of the files entering the data-skipping phase actually carry the statistics that column needs (min/max for comparisons, null counts for `IS [NOT] NULL`): a file without them can never be skipped, so low coverage bounds what data skipping can do before any ranges are compared. The precise definitions, the degradation rules, and what each label guarantees are in [docs/semantics.md](docs/semantics.md).
 
 With `--verbose`, you see exactly *which* files are kept or dropped and *why*:
 
@@ -305,9 +307,9 @@ The pruning percentage `delta-explain` reports reflects the predicate you pass t
 delta-explain ./my-table -w "country = 'DE'" --format json | jq '.total_pruning_pct'
 ```
 
-The JSON output is versioned independently from the CLI binary (`schema_version: "0.2.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
+The JSON output is versioned independently from the CLI binary (`schema_version: "0.5.0"`). The schema is pre-1.0: additive changes bump the minor version, breaking changes bump the major version. Consumers should branch on stable field names (e.g. assertion names), tolerate unknown fields, and check `schema_version`.
 
-The contract is formal: [`schemas/report-v0.4.schema.json`](schemas/report-v0.4.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
+The contract is formal: [`schemas/report-v0.5.schema.json`](schemas/report-v0.5.schema.json) is a JSON Schema that the integration suite validates every emitted document against, and [`docs/json-schema.md`](docs/json-schema.md) explains each field, the stable note codes, and the meaning of `confidence`, `kept`, and `pruned_by`.
 
 Exit code is `0` when all assertions pass and `1` if any fails; the JSON `result` field carries the per-assertion outcome.
 
