@@ -113,11 +113,13 @@ fn write_analysis(out: &mut String, analysis: &AnalysisView) {
 fn write_stats_coverage(out: &mut String, coverage: Option<&[ColumnStatsCoverageView]>) {
     match coverage {
         None => {
-            let _ = writeln!(out, " stats coverage unavailable");
+            let _ = writeln!(out, "  stats coverage: unavailable");
         }
         Some([]) => {}
 
         Some(entries) => {
+            let _ = writeln!(out, "  stats coverage:");
+
             for entry in entries {
                 let _ = writeln!(
                     out,

@@ -81,6 +81,7 @@
             "partition_safe",
             "partition_exact",
             "stats_safe",
+            "stats_coverage",
             "unsplittable",
             "confidence",
             "notes"

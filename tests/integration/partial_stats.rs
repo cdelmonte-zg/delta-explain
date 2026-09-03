@@ -104,3 +104,15 @@ fn data_skipping_keeps_files_without_stats() {
         "expected 2 files (the ones without stats) to survive `age > 100`, got {final_files}"
     );
 }
+
+#[test]
+fn text_reports_partial_stats_coverage_for_predicate_column() {
+    cmd()
+        .args([&partial_table(), "-w", "age > 100"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("stats coverage:"))
+        .stdout(predicate::str::contains(
+            "age [min_max]: 2/4 candidate files (50%)",
+        ));
+}

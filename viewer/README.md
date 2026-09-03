@@ -10,7 +10,7 @@ of files (the text listing does not). No dependencies, no network
 requests: it works air-gapped and as a CI artifact.
 
 The viewer is a **client of the versioned JSON contract**
-(`schemas/report-v0.4.schema.json`), exactly like the Python wrapper:
+(`schemas/report-v0.5.schema.json`), exactly like the Python wrapper:
 it adds no analysis of its own, and it renders any saved report,
 retroactively. See issue #89 and ADR 0004 for the boundary.
 
