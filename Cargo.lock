@@ -805,7 +805,7 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
- "delta_kernel",
+ "delta_kernel 0.28.0",
  "delta_kernel_default_engine",
  "futures",
  "jsonschema",
@@ -833,7 +833,7 @@ dependencies = [
  "bytes",
  "chrono",
  "crc",
- "delta_kernel_derive",
+ "delta_kernel_derive 0.27.1",
  "indexmap",
  "itertools",
  "object_store",
@@ -841,6 +841,36 @@ dependencies = [
  "percent-encoding",
  "rand 0.9.4",
  "reqwest 0.13.2",
+ "roaring",
+ "rustc_version",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.20",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "z85",
+]
+
+[[package]]
+name = "delta_kernel"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00ba53f3a73c154d023528e9448028ec81f04724fb93bfde37d04f6d69f5115f"
+dependencies = [
+ "arrow",
+ "bytes",
+ "chrono",
+ "crc",
+ "delta_kernel_derive 0.28.0",
+ "indexmap",
+ "itertools",
+ "object_store",
+ "parquet",
+ "percent-encoding",
+ "rand 0.9.4",
  "roaring",
  "rustc_version",
  "serde",
@@ -864,7 +894,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
- "delta_kernel",
+ "delta_kernel 0.27.1",
  "futures",
  "itertools",
  "reqwest 0.13.2",
@@ -880,6 +910,17 @@ name = "delta_kernel_derive"
 version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b25ae700f43ea9506a97bf93c54a1fde5a0d64ad0e19b3e0ebbe91761cdeeddc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "delta_kernel_derive"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "949d8d89c6acad114297d0ffaa35abd593bd87a974472240c6a0400394f71e83"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3354,6 +3395,7 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+ "serde_derive",
 ]
 
 [[package]]
