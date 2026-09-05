@@ -15,7 +15,7 @@ authors = ["Christian Del Monte"]
 
 [dependencies]
 delta_kernel = { version = "0.27", features = ["arrow"] }
-delta_kernel_default_engine = { version = "0.27", features = ["arrow", "rustls"] }
+delta_kernel_default_engine = { version = "0.28", features = ["arrow", "rustls"] }
 clap = { version = "4", features = ["derive"] }
 url = "2"
 num-format = "0.4"
