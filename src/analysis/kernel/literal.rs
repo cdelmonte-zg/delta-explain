@@ -1,4 +1,4 @@
-use delta_kernel::expressions::{DecimalData, Expression, Scalar};
+use delta_kernel::expressions::{DecimalData, Expression, Scalar, null_lit};
 use delta_kernel::schema::{DataType, PrimitiveType};
 
 use crate::analysis::predicate::Literal;
@@ -41,9 +41,7 @@ pub(super) fn literal_expr(
         //
         // STRING is only the fallback when no type information is
         // available.
-        Literal::Null => Ok(Expression::null_literal(
-            type_hint.cloned().unwrap_or(DataType::STRING),
-        )),
+        Literal::Null => Ok(null_lit(type_hint.cloned().unwrap_or(DataType::STRING))),
 
         // The column type wins when available. For example, a SQL DATE
         // literal compared to TIMESTAMP should be emitted as the column
