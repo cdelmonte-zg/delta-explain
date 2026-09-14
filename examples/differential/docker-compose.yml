@@ -8,7 +8,7 @@ version: "3.8"
 
 services:
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: dxdiff-minio
     command: server /data --console-address ":9001"
     environment:
@@ -22,7 +22,7 @@ services:
     networks: [dxdiff]
 
   createbuckets:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on: [minio]
     entrypoint: >
       /bin/sh -c "

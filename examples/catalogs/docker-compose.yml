@@ -1,0 +1,86 @@
+# Catalog stack: MinIO (S3) + Hive Metastore + Unity Catalog OSS + Spark.
+#
+#   docker compose up -d          # or docker-compose up -d
+#   python run_catalogs.py        # from the host, delta-explain on PATH
+#
+# Ports are offset from the demo (9000/9001/8889) and differential
+# (9010/9011/8890) stacks so all three can run side by side.
+version: "3.8"
+
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: dxcat-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9020:9000"
+      - "9021:9001"
+    networks: [dxcat]
+
+  createbuckets:
+    image: quay.io/minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+        echo 'waiting for minio...'; sleep 1;
+      done &&
+      mc mb -p local/cat &&
+      echo 'bucket ready: cat'"
+    networks: [dxcat]
+
+  # Hive Metastore 3.1.3, embedded Derby (nothing to persist), Thrift on
+  # 9083. Hive 3.1 is what Spark's built-in Hive 2.3 client speaks; a 4.x
+  # metastore drops the Thrift methods that client calls (`get_table`) and
+  # would force Spark to download a matching client at every session.
+  # The image ships hadoop-aws and the AWS SDK bundle under Hadoop's
+  # tools/lib; HADOOP_OPTIONAL_TOOLS puts them on the classpath so the
+  # metastore can create warehouse directories on s3a://.
+  metastore:
+    image: apache/hive:3.1.3
+    container_name: dxcat-metastore
+    depends_on: [minio]
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: derby
+      HADOOP_OPTIONAL_TOOLS: hadoop-aws
+      HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+    ports:
+      - "9083:9083"
+    volumes:
+      - ./hive-metastore/conf:/hive_custom_conf:ro
+    networks: [dxcat]
+
+  # Unity Catalog OSS server, REST on 8080, no authorization. Only
+  # server.properties is overridden: the image's conf directory also holds
+  # dev signing keys that have no business in this repository.
+  unitycatalog:
+    image: unitycatalog/unitycatalog:v0.6.0
+    container_name: dxcat-unitycatalog
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./uc/server.properties:/home/unitycatalog/etc/conf/server.properties:ro
+    networks: [dxcat]
+
+  spark:
+    image: quay.io/jupyter/pyspark-notebook:spark-4.1.2
+    container_name: dxcat-spark
+    depends_on: [minio, metastore]
+    ports:
+      - "8891:8888"
+    environment:
+      JUPYTER_TOKEN: catalogs
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MINIO_ENDPOINT: http://minio:9000
+      HIVE_METASTORE_URI: thrift://metastore:9083
+    volumes:
+      - ./work:/home/jovyan/work
+    networks: [dxcat]
+
+networks:
+  dxcat:
