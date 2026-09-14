@@ -18,3 +18,5 @@ dist/
 fixtures/.taxi-src.parquet
 examples/differential/work/taxi-src.parquet
 book/book/
+examples/catalogs/work/locations.json
+examples/catalogs/work/uc_staging.json

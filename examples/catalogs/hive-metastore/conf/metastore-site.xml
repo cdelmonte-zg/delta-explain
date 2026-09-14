@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Loaded after the image's hive-site.xml; only the warehouse moves. -->
+<configuration>
+  <property>
+    <name>metastore.warehouse.dir</name>
+    <value>s3a://cat/warehouse</value>
+  </property>
+</configuration>
