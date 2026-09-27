@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # delta_kernel pins object_store 0.13; a lone bump puts two
+      # ObjectStore traits in the graph and breaks the build (#112,
+      # #163). Drop this once the kernel moves to 0.14.
+      - dependency-name: object_store
+        update-types: ["version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
