@@ -37,9 +37,14 @@ public NYC TLC file downloaded once into `work/` (gitignored); set `TAXI_SRC`
 to a local copy to skip the download.
 
 The MinIO images come from `ghcr.io/cdelmonte-zg/minio` and `minio-mc`, a
-mirror of the last community-edition builds: MinIO archived the project and
-no public registry serves its images any more. They are frozen artifacts,
-fine for a local S3 API, not something to run in production.
+private mirror of the last community-edition builds: MinIO archived the
+project and no public registry serves its images any more. Pulling them
+needs a GitHub token with `read:packages` and access to the packages
+(`gh auth token | docker login ghcr.io -u <user> --password-stdin`). They
+are frozen artifacts, fine for a local S3 API, not something to run in
+production, and not redistributed for that reason. Any S3-compatible
+server works in their place: point the `minio` service at it and create
+the bucket by other means.
 
 ### Against real S3
 

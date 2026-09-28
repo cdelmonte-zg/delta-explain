@@ -17,6 +17,11 @@ on physical layout.
 docker compose up -d            # or: docker-compose up -d
 ```
 
+The MinIO images are a private mirror on `ghcr.io/cdelmonte-zg` (MinIO
+no longer publishes to any public registry); pulling them needs
+`docker login ghcr.io` with a token that has `read:packages` and access
+to the packages. See `examples/differential/README.md`.
+
 MinIO API is on `http://localhost:9000`; the web console is on
 `http://localhost:9001` (`minioadmin` / `minioadmin`). The `lake` bucket is
 created automatically.
