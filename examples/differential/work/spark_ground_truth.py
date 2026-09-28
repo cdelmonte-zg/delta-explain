@@ -21,25 +21,38 @@ from pyspark.sql import SparkSession, functions as F
 AK = os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
 SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
 ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+REAL_S3 = os.environ.get("DX_DIFF_REAL_S3") == "1"
+REGION = os.environ.get("AWS_REGION", "")
+# Spark speaks s3a://; the harness hands the prefix over in the s3:// form
+# delta-explain reads.
+S3_PREFIX = os.environ.get("DX_DIFF_S3_PREFIX", "s3://diff").rstrip("/")
+S3A_PREFIX = "s3a://" + S3_PREFIX.split("://", 1)[1]
 OUT = "/home/jovyan/work/ground_truth.json"
 TAXI_SRC = "/home/jovyan/work/taxi-src.parquet"
 
-spark = (
+builder = (
     SparkSession.builder.appName("dx-differential")
     .config("spark.jars.packages",
             "io.delta:delta-spark_2.13:4.3.0,org.apache.hadoop:hadoop-aws:3.4.2")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config("spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .config("spark.hadoop.fs.s3a.endpoint", ENDPOINT)
     .config("spark.hadoop.fs.s3a.access.key", AK)
     .config("spark.hadoop.fs.s3a.secret.key", SK)
-    .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.hadoop.fs.s3a.aws.credentials.provider",
             "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
-    .getOrCreate()
 )
+if REAL_S3:
+    # AWS proper: default endpoint, TLS, virtual-hosted style; the region
+    # spares the SDK a probe that the demo IAM user is not allowed to make.
+    builder = builder.config("spark.hadoop.fs.s3a.endpoint.region", REGION)
+else:
+    builder = (
+        builder.config("spark.hadoop.fs.s3a.endpoint", ENDPOINT)
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
+    )
+spark = builder.getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
 with open("/home/jovyan/work/predicates.json") as f:
@@ -105,7 +118,7 @@ def build_taxi(uri):
 
 
 BUILDERS = {"users": build_users, "taxi": build_taxi}
-URIS = {"users": "s3a://diff/users", "taxi": "s3a://diff/taxi"}
+URIS = {"users": f"{S3A_PREFIX}/users", "taxi": f"{S3A_PREFIX}/taxi"}
 
 out = {}
 for name, predicates in config.items():

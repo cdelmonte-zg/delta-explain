@@ -105,7 +105,7 @@ Facts worth keeping for the resolver design:
 
 | component | version | notes |
 |---|---|---|
-| MinIO | `quay.io/minio/minio:latest` | bucket `cat`, ports 9020/9021 |
+| MinIO | `ghcr.io/cdelmonte-zg/minio:RELEASE.2025-09-07T16-13-09Z` | bucket `cat`, ports 9020/9021; a mirror of the last community image (MinIO no longer publishes to any public registry) |
 | Hive Metastore | `apache/hive:3.1.3` | Hadoop 3.1.0 inside; `HADOOP_OPTIONAL_TOOLS=hadoop-aws` puts the bundled `hadoop-aws` and AWS SDK on the classpath; conf in `hive-metastore/conf` |
 | Unity Catalog | `unitycatalog/unitycatalog:v0.6.0` | only `uc/server.properties` is mounted; the image's conf directory also holds dev signing keys |
 | Spark | `quay.io/jupyter/pyspark-notebook:spark-4.1.2` | `io.delta:delta-spark_2.13:4.3.0`, `org.apache.hadoop:hadoop-aws:3.4.2`, same as the differential harness |

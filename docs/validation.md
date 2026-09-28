@@ -39,7 +39,8 @@ timestamps, unknown writer features, and the catalog-managed refusal path.
 
 ## The differential oracle
 
-`examples/differential` runs Spark as ground truth over MinIO (S3 API), on
+`examples/differential` runs Spark as ground truth over S3 (MinIO locally,
+the real service in the weekly workflow), on
 two tables - a synthetic `users` table and a `taxi` table written by Spark
 from real NYC TLC data: for each of 29 predicates, Spark computes which files
 actually contain matching rows, and the harness asserts delta-explain's
@@ -66,7 +67,7 @@ three invocations). The automated regression ceiling is a 1000-file smoke.
   explanation (their commits live in the catalog, so a filesystem-only
   analysis cannot be trusted). No support, by declaration.
 - **Parts of the real-cloud auth surface**: the weekly Validation
-  workflow now runs, besides the Spark differential oracle over MinIO
+  workflow now runs, besides the Spark differential oracle over real S3
   and the Azurite `az://` smoke, a `real-cloud-smoke` leg against real
   S3, Azure Blob, and GCS demo tables with `--env-creds` (real
   authentication, endpoints, and regions: the class of the two 0.4.0
