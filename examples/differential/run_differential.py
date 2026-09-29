@@ -23,6 +23,11 @@ Usage:
     docker compose up -d          # in this directory (first Spark run
                                   # downloads jars, ~1 min)
     python3 run_differential.py   # delta-explain must be on PATH
+
+Storage: MinIO from the compose stack by default. DX_DIFF_REAL_S3=1 targets
+real S3 instead: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION from
+the environment, tables under DX_DIFF_S3_PREFIX (s3://bucket/prefix), only
+the Spark container needed (docker compose up -d --no-deps spark).
 """
 import json
 import os
@@ -35,14 +40,27 @@ HERE = Path(__file__).resolve().parent
 WORK = HERE / "work"
 DX_BIN = os.environ.get("DX_BIN", "delta-explain")
 CONTAINER = "dxdiff-spark"
-DX_OPTIONS = [
-    "--option", "aws_endpoint=http://localhost:9010",
-    "--option", "aws_allow_http=true",
-    "--option", "aws_access_key_id=minioadmin",
-    "--option", "aws_secret_access_key=minioadmin",
-    "--option", "aws_virtual_hosted_style_request=false",
-    "--option", "aws_region=us-east-1",
-]
+REAL_S3 = os.environ.get("DX_DIFF_REAL_S3") == "1"
+S3_PREFIX = os.environ.get("DX_DIFF_S3_PREFIX", "s3://diff").rstrip("/")
+if REAL_S3:
+    DX_OPTIONS = ["--env-creds"]
+    # The Spark container gets the same credentials the host process has;
+    # the compose file's MinIO defaults are shadowed by these -e overrides.
+    SPARK_ENV = {
+        k: os.environ[k]
+        for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")
+        if k in os.environ
+    }
+else:
+    DX_OPTIONS = [
+        "--option", "aws_endpoint=http://localhost:9010",
+        "--option", "aws_allow_http=true",
+        "--option", "aws_access_key_id=minioadmin",
+        "--option", "aws_secret_access_key=minioadmin",
+        "--option", "aws_virtual_hosted_style_request=false",
+        "--option", "aws_region=us-east-1",
+    ]
+    SPARK_ENV = {}
 
 # The public NYC TLC yellow-taxi file the taxi table is built from. Downloaded
 # once into the shared work volume (gitignored); the container reads it from
@@ -51,7 +69,7 @@ TAXI_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024
 
 TABLES = {
     "users": {
-        "uri": "s3://diff/users",
+        "uri": f"{S3_PREFIX}/users",
         "predicates": [
             "country = 'DE'",
             "age > 55",
@@ -83,7 +101,7 @@ TABLES = {
         ],
     },
     "taxi": {
-        "uri": "s3://diff/taxi",
+        "uri": f"{S3_PREFIX}/taxi",
         "predicates": [
             # pickup_date is the partition column: exact directory pruning
             "pickup_date = '2024-01-03'",
@@ -131,10 +149,16 @@ def spark_ground_truth():
     config = {name: t["predicates"] for name, t in TABLES.items()}
     with open(WORK / "predicates.json", "w") as f:
         json.dump(config, f)
-    fresh = os.environ.get("DX_DIFF_FRESH", "")
+    env = {
+        "DX_DIFF_FRESH": os.environ.get("DX_DIFF_FRESH", ""),
+        "DX_DIFF_REAL_S3": "1" if REAL_S3 else "",
+        "DX_DIFF_S3_PREFIX": S3_PREFIX,
+        **SPARK_ENV,
+    }
+    env_args = [arg for k, v in env.items() for arg in ("-e", f"{k}={v}")]
     subprocess.run(
         [
-            "docker", "exec", "-e", f"DX_DIFF_FRESH={fresh}",
+            "docker", "exec", *env_args,
             CONTAINER, "bash", "-lc",
             "cd /home/jovyan/work && $SPARK_HOME/bin/spark-submit "
             "--packages io.delta:delta-spark_2.13:4.3.0,"

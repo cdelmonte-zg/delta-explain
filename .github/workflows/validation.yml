@@ -2,7 +2,10 @@
 # here means a soundness or storage-path regression reached main.
 #
 # - differential: Spark ground truth vs delta-explain's survivor set over
-#   MinIO (the harness in examples/differential), fresh mode.
+#   real S3 (the harness in examples/differential), fresh mode, under a
+#   dedicated prefix of the demo bucket. The compose stack's MinIO stays
+#   for local use only: no public registry still serves its images, so CI
+#   must not depend on one.
 # - azurite-smoke: the az:// path end to end against the Azure emulator
 #   (the automated version of the manual check that caught the az://
 #   log-reader regression).
@@ -25,7 +28,20 @@ jobs:
   differential:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      DX_DIFF_REAL_S3: "1"
+      DX_DIFF_S3_PREFIX: ${{ secrets.CLOUD_DIFF_S3_PREFIX }}
     steps:
+      - name: Gate on configured credentials
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$DX_DIFF_S3_PREFIX" ]; then
+            echo "::error::AWS credentials or CLOUD_DIFF_S3_PREFIX not configured"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
@@ -35,8 +51,8 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Start MinIO + Spark
-        run: docker compose up -d
+      - name: Start Spark
+        run: docker compose up -d --no-deps spark
         working-directory: examples/differential
 
       # The checkout is owned by the runner user (uid 1001); the Spark
@@ -54,13 +70,7 @@ jobs:
       # the workflow it exists for (a pruning report on a CI run).
       - name: Render a report.html with the viewer
         run: |
-          ./target/release/delta-explain s3://diff/users \
-            --option aws_endpoint=http://localhost:9010 \
-            --option aws_allow_http=true \
-            --option aws_access_key_id=minioadmin \
-            --option aws_secret_access_key=minioadmin \
-            --option aws_virtual_hosted_style_request=false \
-            --option aws_region=us-east-1 \
+          ./target/release/delta-explain "$DX_DIFF_S3_PREFIX/users" --env-creds \
             -w "country LIKE '%E' AND age > 55" \
             --format json --verbose > report.json
           python3 - <<'EOF'

@@ -2,8 +2,8 @@
 
 The strongest claim a pruning-attribution tool can make is that its survivor
 set agrees with what an engine actually needs. This harness checks exactly
-that, on a real object store (MinIO) with a real engine (Spark + Delta),
-across two tables:
+that, on a real object store (MinIO locally, S3 in the weekly validation)
+with a real engine (Spark + Delta), across two tables:
 
 - **`users`**: synthetic, written by Spark (partitioned by country, age-banded
   files) - a controlled layout with predictable selectivity.
@@ -35,6 +35,32 @@ in `spark_ground_truth.py`, or on a stale MinIO volume, force a rewrite with
 `DX_DIFF_FRESH=1 python3 run_differential.py`. The taxi table is built from a
 public NYC TLC file downloaded once into `work/` (gitignored); set `TAXI_SRC`
 to a local copy to skip the download.
+
+The MinIO images come from `ghcr.io/cdelmonte-zg/minio` and `minio-mc`, a
+private mirror of the last community-edition builds: MinIO archived the
+project and no public registry serves its images any more. Pulling them
+needs a GitHub token with `read:packages` and access to the packages
+(`gh auth token | docker login ghcr.io -u <user> --password-stdin`). They
+are frozen artifacts, fine for a local S3 API, not something to run in
+production, and not redistributed for that reason. Any S3-compatible
+server works in their place: point the `minio` service at it and create
+the bucket by other means.
+
+### Against real S3
+
+The weekly Validation workflow runs the same harness against an AWS bucket
+instead of MinIO, so the oracle does not depend on a container registry:
+
+```bash
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=eu-central-1
+docker compose up -d --no-deps spark
+DX_DIFF_REAL_S3=1 DX_DIFF_S3_PREFIX=s3://my-bucket/diff \
+  DX_DIFF_FRESH=1 python3 run_differential.py
+```
+
+delta-explain then reads with `--env-creds`, Spark writes through the
+default AWS endpoint, and both tables land under the prefix. Nothing else
+in the bucket is touched.
 
 The matrix covers equality and ranges on partition and data columns, AND/OR
 mixes (including the `unsplittable` OR case), `IN`, `BETWEEN`, `NOT`, a

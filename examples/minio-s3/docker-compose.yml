@@ -13,7 +13,7 @@ version: "3.8"
 
 services:
   minio:
-    image: quay.io/minio/minio:latest
+    image: ghcr.io/cdelmonte-zg/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -24,7 +24,7 @@ services:
 
   # one-shot: wait for MinIO, then create the "lake" bucket
   createbucket:
-    image: quay.io/minio/mc:latest
+    image: ghcr.io/cdelmonte-zg/minio-mc:RELEASE.2025-08-13T08-35-41Z
     depends_on: [minio]
     entrypoint: >
       /bin/sh -c "

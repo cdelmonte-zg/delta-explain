@@ -71,7 +71,7 @@ the full pip contract (maturin build, clean-venv install, bundled-binary
 discovery). Version is single-sourced from `Cargo.toml`.
 
 CI beyond the per-PR pipeline: `validation.yml` runs weekly and on
-dispatch - the Spark differential harness over MinIO plus an Azurite
+dispatch - the Spark differential harness over real S3 plus an Azurite
 end-to-end smoke of the az:// path. Releases publish wheels to PyPI via
 trusted publishing (environment `pypi`).
 
