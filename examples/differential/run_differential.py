@@ -24,7 +24,7 @@ Usage:
                                   # downloads jars, ~1 min)
     python3 run_differential.py   # delta-explain must be on PATH
 
-Storage: MinIO from the compose stack by default. DX_DIFF_REAL_S3=1 targets
+Storage: RustFS from the compose stack by default. DX_DIFF_REAL_S3=1 targets
 real S3 instead: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION from
 the environment, tables under DX_DIFF_S3_PREFIX (s3://bucket/prefix), only
 the Spark container needed (docker compose up -d --no-deps spark).
@@ -45,7 +45,7 @@ S3_PREFIX = os.environ.get("DX_DIFF_S3_PREFIX", "s3://diff").rstrip("/")
 if REAL_S3:
     DX_OPTIONS = ["--env-creds"]
     # The Spark container gets the same credentials the host process has;
-    # the compose file's MinIO defaults are shadowed by these -e overrides.
+    # the compose file's RustFS defaults are shadowed by these -e overrides.
     SPARK_ENV = {
         k: os.environ[k]
         for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")
@@ -55,8 +55,8 @@ else:
     DX_OPTIONS = [
         "--option", "aws_endpoint=http://localhost:9010",
         "--option", "aws_allow_http=true",
-        "--option", "aws_access_key_id=minioadmin",
-        "--option", "aws_secret_access_key=minioadmin",
+        "--option", "aws_access_key_id=rustfsadmin",
+        "--option", "aws_secret_access_key=rustfsadmin",
         "--option", "aws_virtual_hosted_style_request=false",
         "--option", "aws_region=us-east-1",
     ]

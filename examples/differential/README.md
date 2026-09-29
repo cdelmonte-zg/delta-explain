@@ -2,7 +2,7 @@
 
 The strongest claim a pruning-attribution tool can make is that its survivor
 set agrees with what an engine actually needs. This harness checks exactly
-that, on a real object store (MinIO locally, S3 in the weekly validation)
+that, on a real object store (RustFS locally, S3 in the weekly validation)
 with a real engine (Spark + Delta), across two tables:
 
 - **`users`**: synthetic, written by Spark (partitioned by country, age-banded
@@ -25,31 +25,28 @@ For every (table, predicate):
 ## Run it
 
 ```bash
-docker compose up -d        # MinIO on :9010, Spark container (first run
+docker compose up -d        # RustFS on :9010, Spark container (first run
                             # downloads Delta + hadoop-aws jars, ~1 min)
 python3 run_differential.py # delta-explain on PATH, or DX_BIN=/path/to/bin
 ```
 
 The tables are written once and reused across runs. After changing a layout
-in `spark_ground_truth.py`, or on a stale MinIO volume, force a rewrite with
+in `spark_ground_truth.py`, or on a stale data volume, force a rewrite with
 `DX_DIFF_FRESH=1 python3 run_differential.py`. The taxi table is built from a
 public NYC TLC file downloaded once into `work/` (gitignored); set `TAXI_SRC`
 to a local copy to skip the download.
 
-The MinIO images come from `ghcr.io/cdelmonte-zg/minio` and `minio-mc`, a
-private mirror of the last community-edition builds: MinIO archived the
-project and no public registry serves its images any more. Pulling them
-needs a GitHub token with `read:packages` and access to the packages
-(`gh auth token | docker login ghcr.io -u <user> --password-stdin`). They
-are frozen artifacts, fine for a local S3 API, not something to run in
-production, and not redistributed for that reason. Any S3-compatible
-server works in their place: point the `minio` service at it and create
-the bucket by other means.
+The object store is [RustFS](https://github.com/rustfs/rustfs), pinned by
+version tag and pulled from Docker Hub with no login. The same image
+creates the bucket: it ships `curl`, which signs the request itself. Any
+S3-compatible server works in its place: point the `rustfs` service at it
+and keep path-style addressing.
 
 ### Against real S3
 
 The weekly Validation workflow runs the same harness against an AWS bucket
-instead of MinIO, so the oracle does not depend on a container registry:
+instead of the local store, so the oracle does not depend on a container
+registry:
 
 ```bash
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=eu-central-1
@@ -70,19 +67,19 @@ prefix (rewritten to a range) and non-prefix (evaluated against partition
 values), the latter checked against Spark's own `LIKE` on the real taxi
 partition column.
 
-## Results (2026-07-05, MinIO, Spark 4.1.2 + Delta 4.3)
+## Results (2026-09-29, RustFS 1.0.0, Spark 4.1.2 + Delta 4.3)
 
 ```
 === users  (17 files) ===
 country = 'DE'                                       5         5 YES
 ... (20 predicates)                                                YES
-=== taxi  (34 files, real NYC TLC data) ===
+=== taxi  (35 files, real NYC TLC data) ===
 pickup_date = '2024-01-03'                           5         5 YES
 fare_amount > 60                                    11        11 YES
 pickup_date = '2024-01-03' AND fare_amount > 60      2         2 YES
-pickup_date LIKE '2024-01-0%'                       34        34 YES
+pickup_date LIKE '2024-01-0%'                       35        35 YES
 pickup_date LIKE '%-03'                              5         5 YES
-pickup_date NOT LIKE '2024-01-0%'                    0         0 YES
+pickup_date NOT LIKE '%-03'                         30        30 YES
 ---------------------------------------------------------------------------
 SOUND: on all 29 predicates across 2 tables.
 ```

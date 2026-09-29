@@ -18,9 +18,9 @@ import os
 
 from pyspark.sql import SparkSession, functions as F
 
-AK = os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
-SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
-ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+AK = os.environ.get("AWS_ACCESS_KEY_ID", "rustfsadmin")
+SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "rustfsadmin")
+ENDPOINT = os.environ.get("S3_ENDPOINT", "http://rustfs:9000")
 REAL_S3 = os.environ.get("DX_DIFF_REAL_S3") == "1"
 REGION = os.environ.get("AWS_REGION", "")
 # Spark speaks s3a://; the harness hands the prefix over in the s3:// form
@@ -58,7 +58,7 @@ spark.sparkContext.setLogLevel("WARN")
 with open("/home/jovyan/work/predicates.json") as f:
     config = json.load(f)
 
-# DX_DIFF_FRESH=1 forces a rewrite: an old MinIO volume would otherwise keep
+# DX_DIFF_FRESH=1 forces a rewrite: an old data volume would otherwise keep
 # serving a table whose layout no longer matches what this script writes.
 FRESH = os.environ.get("DX_DIFF_FRESH") == "1"
 

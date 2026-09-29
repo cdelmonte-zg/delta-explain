@@ -95,7 +95,7 @@ Every example in [`examples/`](examples/) is executable and runs against real ta
 
 - [The three-minute quickstart](examples/quickstart/) - one script, five beats, each one thing delta-explain does.
 - [Tuning a Delta table](examples/taxi-optimization/) - a notebook that uses delta-explain to measure four layouts of real NYC-taxi data, from unpartitioned pile to date partitions plus fare-sorted files.
-- [S3-compatible storage (MinIO)](examples/minio-s3/) and [a real GCS bucket](examples/gcs/) - the same data pruning very differently depending on physical layout, on `s3://` and `gs://` tables.
+- [S3-compatible storage (RustFS)](examples/s3-compatible/) and [a real GCS bucket](examples/gcs/) - the same data pruning very differently depending on physical layout, on `s3://` and `gs://` tables.
 
 ## Performance
 

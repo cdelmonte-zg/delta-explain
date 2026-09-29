@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write two Delta tables to the local MinIO 'lake' bucket so you can try
+"""Write two Delta tables to the local RustFS 'lake' bucket so you can try
 delta-explain against S3-compatible storage.
 
 Both tables hold the same logical rows; only the physical layout differs:
@@ -20,8 +20,8 @@ from deltalake import write_deltalake
 
 STORAGE_OPTIONS = {
     "AWS_ENDPOINT_URL": "http://127.0.0.1:9000",
-    "AWS_ACCESS_KEY_ID": "minioadmin",
-    "AWS_SECRET_ACCESS_KEY": "minioadmin",
+    "AWS_ACCESS_KEY_ID": "rustfsadmin",
+    "AWS_SECRET_ACCESS_KEY": "rustfsadmin",
     "AWS_REGION": "us-east-1",
     "AWS_ALLOW_HTTP": "true",
     "AWS_S3_ALLOW_UNSAFE_RENAME": "true",

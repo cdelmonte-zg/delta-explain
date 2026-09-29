@@ -9,7 +9,11 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- The example stacks run on RustFS instead of MinIO (#174): MinIO is
+  archived and no public registry serves its images. `examples/minio-s3`
+  moves to `examples/s3-compatible`; the old path keeps a pointer.
 
 ## [0.7.0] - 2026-09-03
 

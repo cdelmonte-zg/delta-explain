@@ -39,8 +39,8 @@ UC = os.environ.get("UC_URL", "http://localhost:8080/api/2.1/unity-catalog")
 DX_OPTIONS = [
     "--option", "aws_endpoint=http://localhost:9020",
     "--option", "aws_allow_http=true",
-    "--option", "aws_access_key_id=minioadmin",
-    "--option", "aws_secret_access_key=minioadmin",
+    "--option", "aws_access_key_id=rustfsadmin",
+    "--option", "aws_secret_access_key=rustfsadmin",
     "--option", "aws_virtual_hosted_style_request=false",
     "--option", "aws_region=us-east-1",
 ]
