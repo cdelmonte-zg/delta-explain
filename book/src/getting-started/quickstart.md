@@ -24,17 +24,19 @@ That last command is the point of the tool: the pickup-zone column is not
 clustered, so data skipping cannot help, and `--explain-why` says so with a fix.
 See [Why isn't it pruning?](../guides/explain-why.md).
 
-## The full demo (Docker)
+## The guided tour
 
-`examples/quickstart/` brings up a MinIO + demo-table stack and walks the gate
-story end to end (a healthy table, a layout regression the gate catches, the
-JSON contract). Follow its README:
+`examples/quickstart/quickstart.sh` walks five beats against the tables
+committed in the repo, with no Docker and no cloud account: partition
+pruning, data skipping, a predicate that degrades instead of failing, the CI
+gate with its JSON, and a table feature the report declares. Its README
+explains each beat:
 
 ```bash
-cd examples/quickstart
-docker compose up -d
-# then the commands in examples/quickstart/README.md
+examples/quickstart/quickstart.sh
 ```
+
+It uses the `delta-explain` on your PATH, or `DX_BIN=/path/to/binary`.
 
 ## Next
 
