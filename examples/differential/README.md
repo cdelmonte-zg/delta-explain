@@ -60,7 +60,8 @@ DX_DIFF_REAL_S3=1 DX_DIFF_S3_PREFIX=s3://my-bucket/diff \
 
 delta-explain then reads with `--env-creds`, Spark writes through the
 default AWS endpoint, and both tables land under the prefix. Nothing else
-in the bucket is touched.
+in the bucket is touched. The workflow empties the prefix before and after
+each run; a local run leaves its tables in place.
 
 The matrix covers equality and ranges on partition and data columns, AND/OR
 mixes (including the `unsplittable` OR case), `IN`, `BETWEEN`, `NOT`, a
