@@ -28,6 +28,11 @@ jobs:
   differential:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Every run wipes the one prefix they all share: two at once would
+    # delete each other's tables mid-read.
+    concurrency:
+      group: validation-differential
+      cancel-in-progress: false
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -36,11 +41,21 @@ jobs:
       DX_DIFF_S3_PREFIX: ${{ secrets.CLOUD_DIFF_S3_PREFIX }}
     steps:
       - name: Gate on configured credentials
+        id: gate
         run: |
           if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$DX_DIFF_S3_PREFIX" ]; then
             echo "::error::AWS credentials or CLOUD_DIFF_S3_PREFIX not configured"
             exit 1
           fi
+          # The wipe steps delete everything under the prefix, and the demo
+          # tables of the real-cloud-smoke leg live in the same bucket.
+          case "${DX_DIFF_S3_PREFIX%/}" in
+            s3://?*/?*) ;;
+            *)
+              echo "::error::CLOUD_DIFF_S3_PREFIX must be s3://bucket/prefix, not a bare bucket"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@v7
 
@@ -50,6 +65,12 @@ jobs:
 
       - name: Build
         run: cargo build --release
+
+      # Fresh mode overwrites the Delta tables, which leaves the data files
+      # of every previous run behind. The trailing slash keeps the delete
+      # from matching sibling prefixes.
+      - name: Wipe the S3 prefix
+        run: aws s3 rm --recursive --only-show-errors "${DX_DIFF_S3_PREFIX%/}/"
 
       - name: Start Spark
         run: docker compose up -d --no-deps spark
@@ -84,6 +105,10 @@ jobs:
         with:
           name: pruning-report
           path: report.html
+
+      - name: Wipe the S3 prefix after the run
+        if: always() && steps.gate.outcome == 'success'
+        run: aws s3 rm --recursive --only-show-errors "${DX_DIFF_S3_PREFIX%/}/"
 
   azurite-smoke:
     runs-on: ubuntu-latest
