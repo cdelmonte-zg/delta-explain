@@ -1,4 +1,4 @@
-# Differential-testing stack: MinIO (S3) + Spark, self-contained.
+# Differential-testing stack: RustFS (S3) + Spark, self-contained.
 #
 #   docker compose up -d          # or docker-compose up -d
 #   python run_differential.py    # from the host, delta-explain on PATH
@@ -7,43 +7,45 @@
 version: "3.8"
 
 services:
-  minio:
-    image: ghcr.io/cdelmonte-zg/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: dxdiff-minio
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: dxdiff-rustfs
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
     ports:
       - "9010:9000"
       - "9011:9001"
     volumes:
-      - dxdiff-minio-data:/data
+      - dxdiff-rustfs-data:/data
     networks: [dxdiff]
 
+  # one-shot: the server image ships curl, which signs the bucket PUT itself
   createbuckets:
-    image: ghcr.io/cdelmonte-zg/minio-mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on: [minio]
+    image: rustfs/rustfs:1.0.0
+    depends_on: [rustfs]
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do
-        echo 'waiting for minio...'; sleep 1;
+      until curl -sf -o /dev/null http://rustfs:9000/health; do
+        echo 'waiting for rustfs...'; sleep 1;
       done &&
-      mc mb -p local/diff &&
+      curl -sf -X PUT --user rustfsadmin:rustfsadmin
+      --aws-sigv4 'aws:amz:us-east-1:s3' http://rustfs:9000/diff &&
       echo 'bucket ready: diff'"
     networks: [dxdiff]
 
   spark:
     image: quay.io/jupyter/pyspark-notebook:spark-4.1.2
     container_name: dxdiff-spark
-    depends_on: [minio]
+    depends_on: [rustfs]
     ports:
       - "8890:8888"
     environment:
       JUPYTER_TOKEN: diff
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      MINIO_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      S3_ENDPOINT: http://rustfs:9000
     volumes:
       - ./work:/home/jovyan/work
     networks: [dxdiff]
@@ -52,4 +54,4 @@ networks:
   dxdiff:
 
 volumes:
-  dxdiff-minio-data:
+  dxdiff-rustfs-data:

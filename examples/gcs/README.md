@@ -1,7 +1,7 @@
 # delta-explain against a real Google Cloud Storage bucket
 
 Run `delta-explain` against `gs://` tables on an actual GCS bucket, a real
-remote example, no emulator. Like the [MinIO example](../minio-s3), it also
+remote example, no emulator. Like the [S3-compatible example](../s3-compatible), it also
 shows that the same data prunes very differently depending on physical layout.
 
 > ⚠️ This example talks to real GCS. It needs a GCP project, a bucket, and a
@@ -61,7 +61,7 @@ delta-explain "gs://$GCS_BUCKET/lake/users-flat" \
 ```
 
 Expect strong pruning on the partitioned table and ~none on the flat one
-(same shape as the MinIO example: roughly 79% vs 0%; exact counts vary).
+(same shape as the S3-compatible example: roughly 79% vs 0%; exact counts vary).
 
 ## 5. CI gate
 

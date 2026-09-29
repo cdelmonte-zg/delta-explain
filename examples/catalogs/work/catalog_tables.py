@@ -20,9 +20,9 @@ import os
 
 from pyspark.sql import SparkSession, functions as F
 
-AK = os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
-SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
-ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
+AK = os.environ.get("AWS_ACCESS_KEY_ID", "rustfsadmin")
+SK = os.environ.get("AWS_SECRET_ACCESS_KEY", "rustfsadmin")
+ENDPOINT = os.environ.get("S3_ENDPOINT", "http://rustfs:9000")
 METASTORE = os.environ.get("HIVE_METASTORE_URI", "thrift://metastore:9083")
 FRESH = os.environ.get("DX_CAT_FRESH", "") not in ("", "0")
 WORK = "/home/jovyan/work"

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- s3a access to the stack's MinIO, for the metastore's own filesystem
+<!-- s3a access to the stack's RustFS, for the metastore's own filesystem
      operations (warehouse and managed-table directories). -->
 <configuration>
   <property>
     <name>fs.s3a.endpoint</name>
-    <value>http://minio:9000</value>
+    <value>http://rustfs:9000</value>
   </property>
   <property>
     <name>fs.s3a.path.style.access</name>
@@ -16,11 +16,11 @@
   </property>
   <property>
     <name>fs.s3a.access.key</name>
-    <value>minioadmin</value>
+    <value>rustfsadmin</value>
   </property>
   <property>
     <name>fs.s3a.secret.key</name>
-    <value>minioadmin</value>
+    <value>rustfsadmin</value>
   </property>
   <property>
     <name>fs.s3a.aws.credentials.provider</name>

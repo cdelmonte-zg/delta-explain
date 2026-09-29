@@ -1,4 +1,4 @@
-# Catalog stack: MinIO (S3) + Hive Metastore + Unity Catalog OSS + Spark.
+# Catalog stack: RustFS (S3) + Hive Metastore + Unity Catalog OSS + Spark.
 #
 #   docker compose up -d          # or docker-compose up -d
 #   python run_catalogs.py        # from the host, delta-explain on PATH
@@ -8,27 +8,29 @@
 version: "3.8"
 
 services:
-  minio:
-    image: ghcr.io/cdelmonte-zg/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: dxcat-minio
-    command: server /data --console-address ":9001"
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: dxcat-rustfs
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
     ports:
       - "9020:9000"
       - "9021:9001"
     networks: [dxcat]
 
+  # one-shot: the server image ships curl, which signs the bucket PUT itself
   createbuckets:
-    image: ghcr.io/cdelmonte-zg/minio-mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on: [minio]
+    image: rustfs/rustfs:1.0.0
+    depends_on: [rustfs]
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 minioadmin minioadmin; do
-        echo 'waiting for minio...'; sleep 1;
+      until curl -sf -o /dev/null http://rustfs:9000/health; do
+        echo 'waiting for rustfs...'; sleep 1;
       done &&
-      mc mb -p local/cat &&
+      curl -sf -X PUT --user rustfsadmin:rustfsadmin
+      --aws-sigv4 'aws:amz:us-east-1:s3' http://rustfs:9000/cat &&
       echo 'bucket ready: cat'"
     networks: [dxcat]
 
@@ -42,7 +44,7 @@ services:
   metastore:
     image: apache/hive:3.1.3
     container_name: dxcat-metastore
-    depends_on: [minio]
+    depends_on: [rustfs]
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: derby
@@ -69,14 +71,14 @@ services:
   spark:
     image: quay.io/jupyter/pyspark-notebook:spark-4.1.2
     container_name: dxcat-spark
-    depends_on: [minio, metastore]
+    depends_on: [rustfs, metastore]
     ports:
       - "8891:8888"
     environment:
       JUPYTER_TOKEN: catalogs
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
-      MINIO_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      S3_ENDPOINT: http://rustfs:9000
       HIVE_METASTORE_URI: thrift://metastore:9083
     volumes:
       - ./work:/home/jovyan/work

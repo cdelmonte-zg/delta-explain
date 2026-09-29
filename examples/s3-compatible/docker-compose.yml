@@ -1,0 +1,52 @@
+# Minimal S3-compatible object store (RustFS) for trying delta-explain against
+# s3:// storage. No Spark, no Jupyter: just somewhere to put Delta tables.
+#
+#   docker compose up -d           # or: docker-compose up -d
+#   pip install -r requirements.txt
+#   python write_tables.py
+#   delta-explain s3://lake/users --option endpoint=http://localhost:9000 \
+#       --option allow_http=true --option access_key_id=rustfsadmin \
+#       --option secret_access_key=rustfsadmin \
+#       --option virtual_hosted_style_request=false --region us-east-1 \
+#       -w "country = 'DE' AND age > 55"
+version: "3.8"
+
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console, /rustfs/console/ (rustfsadmin / rustfsadmin)
+
+  # one-shot: wait for RustFS, then create the "lake" bucket. The server
+  # image ships curl, which signs the bucket PUT itself.
+  createbucket:
+    image: rustfs/rustfs:1.0.0
+    depends_on: [rustfs]
+    entrypoint: >
+      /bin/sh -c "
+      until curl -sf -o /dev/null http://rustfs:9000/health; do sleep 1; done &&
+      curl -sf -X PUT --user rustfsadmin:rustfsadmin
+      --aws-sigv4 'aws:amz:us-east-1:s3' http://rustfs:9000/lake &&
+      echo 'bucket ready: lake'"
+
+  # optional: write the tables from a notebook instead of host `write_tables.py`.
+  # no Spark here -- delta-rs (deltalake) writes s3:// directly. Port 8889 keeps
+  # it clear of the GCS example's Jupyter (8888), so both can run at once.
+  jupyter:
+    image: quay.io/jupyter/minimal-notebook:latest
+    depends_on: [createbucket]
+    ports:
+      - "8889:8888"
+    environment:
+      JUPYTER_TOKEN: delta
+      # inside the compose network RustFS is "rustfs", not localhost
+      AWS_ENDPOINT_URL: http://rustfs:9000
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+    volumes:
+      - ./:/home/jovyan/work

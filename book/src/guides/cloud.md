@@ -17,7 +17,7 @@ come in by environment, by profile, or by explicit options.
   eval $(aws configure export-credentials --profile corp --format env)
   delta-explain --env-creds s3://bucket/table -w "..."
   ```
-- **Static keys** (MinIO, local dev): pass them via repeated `--option
+- **Static keys** (S3-compatible stores, local dev): pass them via repeated `--option
   KEY=VALUE`, expanding from environment variables to keep secrets out of `argv`.
 
 ## Examples
@@ -37,7 +37,7 @@ delta-explain gs://bucket/table -w "day >= DATE '2026-01-01'"
 ```
 
 The end-to-end walkthroughs for
-[MinIO/S3](https://github.com/cdelmonte-zg/delta-explain/tree/main/examples/minio-s3)
+[S3-compatible storage](https://github.com/cdelmonte-zg/delta-explain/tree/main/examples/s3-compatible)
 and [GCS](https://github.com/cdelmonte-zg/delta-explain/tree/main/examples/gcs)
 live in `examples/`.
 

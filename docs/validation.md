@@ -39,7 +39,7 @@ timestamps, unknown writer features, and the catalog-managed refusal path.
 
 ## The differential oracle
 
-`examples/differential` runs Spark as ground truth over S3 (MinIO locally,
+`examples/differential` runs Spark as ground truth over S3 (RustFS locally,
 the real service in the weekly workflow), on
 two tables - a synthetic `users` table and a `taxi` table written by Spark
 from real NYC TLC data: for each of 29 predicates, Spark computes which files

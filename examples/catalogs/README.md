@@ -1,4 +1,4 @@
-# Catalog stack: Hive Metastore + Unity Catalog next to MinIO and Spark
+# Catalog stack: Hive Metastore + Unity Catalog next to RustFS and Spark
 
 `delta-explain` takes a path or an object-store URL. A table that lives in a
 catalog has one too; the catalog knows it, the user often does not. This
@@ -14,7 +14,7 @@ services rather than documentation:
   table twice: registered `EXTERNAL` over a path Spark wrote, and created
   `MANAGED` through the catalog's staging flow, where the server picks the
   location under its storage root;
-- **MinIO** as the object store both catalogs point into, and **Spark** as
+- **RustFS** as the object store both catalogs point into, and **Spark** as
   the writer.
 
 Then `delta-explain` runs on each resolved location, with the same
@@ -32,15 +32,10 @@ tables registered here.
 ## Run it
 
 ```bash
-docker compose up -d        # or docker-compose up -d; MinIO on :9020,
+docker compose up -d        # or docker-compose up -d; RustFS on :9020,
                             # metastore on :9083, Unity Catalog on :8080
 python3 run_catalogs.py     # delta-explain on PATH, or DX_BIN=/path/to/bin
 ```
-
-The MinIO images are a private mirror on `ghcr.io/cdelmonte-zg` (MinIO
-no longer publishes to any public registry); pulling them needs
-`docker login ghcr.io` with a token that has `read:packages` and access
-to the packages. See `examples/differential/README.md`.
 
 The first Spark run downloads the Delta and hadoop-aws jars (about a
 minute). The driver runs three phases, each skippable (`--skip-write`,
@@ -110,10 +105,10 @@ Facts worth keeping for the resolver design:
 
 | component | version | notes |
 |---|---|---|
-| MinIO | `ghcr.io/cdelmonte-zg/minio:RELEASE.2025-09-07T16-13-09Z` | bucket `cat`, ports 9020/9021; private mirror of the last community image (MinIO no longer publishes to any public registry) |
+| RustFS | `rustfs/rustfs:1.0.0` | bucket `cat`, ports 9020/9021; the same image creates the bucket with `curl` |
 | Hive Metastore | `apache/hive:3.1.3` | Hadoop 3.1.0 inside; `HADOOP_OPTIONAL_TOOLS=hadoop-aws` puts the bundled `hadoop-aws` and AWS SDK on the classpath; conf in `hive-metastore/conf` |
 | Unity Catalog | `unitycatalog/unitycatalog:v0.6.0` | only `uc/server.properties` is mounted; the image's conf directory also holds dev signing keys |
 | Spark | `quay.io/jupyter/pyspark-notebook:spark-4.1.2` | `io.delta:delta-spark_2.13:4.3.0`, `org.apache.hadoop:hadoop-aws:3.4.2`, same as the differential harness |
 
-Ports are offset from the other example stacks (`minio-s3` on 9000/9001,
+Ports are offset from the other example stacks (`s3-compatible` on 9000/9001,
 `differential` on 9010/9011) so all three can run side by side.

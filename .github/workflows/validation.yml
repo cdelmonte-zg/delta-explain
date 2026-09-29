@@ -3,9 +3,9 @@
 #
 # - differential: Spark ground truth vs delta-explain's survivor set over
 #   real S3 (the harness in examples/differential), fresh mode, under a
-#   dedicated prefix of the demo bucket. The compose stack's MinIO stays
-#   for local use only: no public registry still serves its images, so CI
-#   must not depend on one.
+#   dedicated prefix of the demo bucket. The compose stack's RustFS is
+#   for local runs only: the weekly oracle must not depend on a registry
+#   serving an object-store image.
 # - azurite-smoke: the az:// path end to end against the Azure emulator
 #   (the automated version of the manual check that caught the az://
 #   log-reader regression).
