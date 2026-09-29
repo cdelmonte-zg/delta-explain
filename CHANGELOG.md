@@ -14,6 +14,10 @@ follow SemVer relative to that field.
 - The example stacks run on RustFS instead of MinIO (#174): MinIO is
   archived and no public registry serves its images. `examples/minio-s3`
   moves to `examples/s3-compatible`; the old path keeps a pointer.
+- delta-kernel-rs 0.28 -> 0.29. Pruning results are unchanged. Two errors
+  that pass through from the kernel read differently: an empty
+  `_delta_log` now reports `No table version found`, and a table with row
+  tracking both enabled and suspended is refused at snapshot load.
 
 ## [0.7.0] - 2026-09-03
 

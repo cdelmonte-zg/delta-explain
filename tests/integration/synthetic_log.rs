@@ -136,5 +136,5 @@ fn empty_delta_log_directory_fails_cleanly() {
         .arg(dir.path().to_string_lossy().as_ref())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("No files in log segment"));
+        .stderr(predicate::str::contains("No table version found"));
 }
