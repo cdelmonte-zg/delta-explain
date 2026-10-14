@@ -30,6 +30,13 @@ services:
     user: "0"
     depends_on: [rustfs]
     entrypoint: ["/bin/sh", "/uc/bootstrap.sh"]
+    # Optional, from .env (see .env.example): a real ADLS Gen2 account the
+    # server vends user-delegation SAS tokens for. Empty = Azure not configured.
+    environment:
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
     volumes:
       - ./uc:/uc:ro
       - uc-bootstrap:/bootstrap

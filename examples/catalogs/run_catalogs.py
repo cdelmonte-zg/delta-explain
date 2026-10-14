@@ -33,6 +33,23 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 WORK = HERE / "work"
+
+
+def load_env():
+    """The optional .env docker compose reads for the stack; the host side
+    needs AZURE_TABLE_PATH from it too. Shell exports win."""
+    env_file = HERE / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+load_env()
 DX_BIN = os.environ.get("DX_BIN", "delta-explain")
 CONTAINER = "dxcat-spark"
 UC = os.environ.get("UC_URL", "http://localhost:8080/api/2.1/unity-catalog")
@@ -53,6 +70,18 @@ UC_TABLES = {
     "users_ext": ("EXTERNAL", "uc_external"),
     "users_mgd": ("MANAGED", "uc_managed"),
 }
+
+# Optional: a Delta table in a real ADLS Gen2 account (AZURE_TABLE_PATH in
+# .env), registered EXTERNAL and read only with what the catalog vends. The
+# schema is the one of the validation demo table (`lake/users`): the host
+# has no Azure credentials of its own to read the log with.
+AZURE_TABLE = "users_azure"
+AZURE_TABLE_PATH = os.environ.get("AZURE_TABLE_PATH")
+AZURE_SCHEMA = [
+    {"name": "name", "type": "string", "nullable": True, "metadata": {}},
+    {"name": "age", "type": "long", "nullable": True, "metadata": {}},
+    {"name": "country", "type": "string", "nullable": True, "metadata": {}},
+]
 
 # Spark type name -> Unity Catalog ColumnTypeName.
 UC_TYPES = {
@@ -208,6 +237,16 @@ def register_uc(locs):
             # issued its location: same id, same path, or it refuses.
             body["properties"] = {"io.unitycatalog.tableId": staging_id()}
         uc_create("/tables", body, f"{table_type} table {name} at {location}")
+    if AZURE_TABLE_PATH:
+        uc_create("/tables", {
+            "name": AZURE_TABLE,
+            "catalog_name": UC_CATALOG,
+            "schema_name": UC_SCHEMA,
+            "table_type": "EXTERNAL",
+            "data_source_format": "DELTA",
+            "columns": uc_columns(AZURE_SCHEMA, ["country"]),
+            "storage_location": AZURE_TABLE_PATH,
+        }, f"EXTERNAL table {AZURE_TABLE} at {AZURE_TABLE_PATH}")
 
 
 def uc_resolve(full_name):
@@ -229,6 +268,9 @@ def uc_vend(table_id):
 
 
 def vended_options(credentials):
+    if credentials.get("azure_user_delegation_sas"):
+        sas = credentials["azure_user_delegation_sas"]["sas_token"]
+        return ["--option", f"azure_storage_sas_key={sas}"]
     aws = credentials["aws_temp_credentials"]
     return [
         "--option", "aws_endpoint=http://localhost:9020",
@@ -239,6 +281,16 @@ def vended_options(credentials):
         "--option", "aws_virtual_hosted_style_request=false",
         "--option", "aws_region=us-east-1",
     ]
+
+
+def describe_vended(credentials):
+    expires = credentials.get("expiration_time")
+    expires = ("unreported" if expires is None else time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires / 1000)))
+    if credentials.get("azure_user_delegation_sas"):
+        return f"azure_user_delegation_sas, expiration {expires}"
+    key = credentials["aws_temp_credentials"]["access_key_id"]
+    return f"aws_temp_credentials, access key {key}, expiration {expires}"
 
 
 def explain(uri, options=DX_OPTIONS):
@@ -270,27 +322,25 @@ def resolve(locs):
     results.append((hive["reference"], hive["location"]))
 
     vended = {}
-    for name in UC_TABLES:
+    uc_names = list(UC_TABLES) + ([AZURE_TABLE] if AZURE_TABLE_PATH else [])
+    for name in uc_names:
         full_name = f"{UC_CATALOG}.{UC_SCHEMA}.{name}"
         info = uc_resolve(full_name)
         print(f"Unity Catalog: {full_name}")
         for key in ("table_type", "data_source_format", "storage_location",
                     "table_id"):
             print(f"  {key}: {info.get(key)}")
+        # The static S3 generator reports no expiration (null): the
+        # lifetime is the one RustFS gave the token at bootstrap.
         credentials = uc_vend(info["table_id"])
-        # The static generator reports no expiration (null): the lifetime
-        # is the one RustFS gave the token at bootstrap.
-        expires = credentials.get("expiration_time")
-        expires = ("unreported" if expires is None else time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires / 1000)))
-        print(f"  vended: aws_temp_credentials, access key "
-              f"{credentials['aws_temp_credentials']['access_key_id']}, "
-              f"expiration {expires}")
+        print(f"  vended: {describe_vended(credentials)}")
         results.append((full_name, info["storage_location"]))
         vended[full_name] = credentials
 
     print(f"\ndelta-explain on the resolved locations, -w \"{PREDICATE}\"")
     for reference, location in results:
+        if location.startswith("abfss://"):
+            continue  # the host holds no Azure credentials: vended only
         uri = to_delta_explain_uri(location)
         total, kept, pct = explain(uri)
         print(f"  {reference:<26} {uri}")

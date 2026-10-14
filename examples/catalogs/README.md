@@ -131,6 +131,52 @@ Facts worth keeping for the resolver design:
   is fine for a client that speaks its API; for this stack the writer
   decides.
 
+## Azure
+
+The same vending path against a real ADLS Gen2 account, optional: Unity
+Catalog signs a user-delegation SAS for the table path, which needs an
+account with the hierarchical namespace enabled and a service principal
+the server authenticates as. The stack registers the table as
+`lake.default.users_azure` and reads it only with what the catalog vends;
+the host itself holds no Azure credentials.
+
+```bash
+SCOPE=$(az storage account show -n <account> --query id -o tsv)
+az ad sp create-for-rbac --name delta-explain-catalogs \
+  --role "Storage Blob Data Reader" --scopes "$SCOPE"   # tenant, appId, password
+az role assignment create --assignee <appId> --role "Storage Blob Delegator" --scopes "$SCOPE"
+```
+
+Copy `.env.example` to `.env`, fill in the four `AZURE_*` values and the
+table's `abfss://container@account.dfs.core.windows.net/path`, then
+recreate the two containers that read them, so the bootstrap writes the
+`adls.*` configuration and the server starts on it:
+
+```bash
+docker compose up -d                       # recreates bootstrap and unitycatalog
+# docker-compose v1 cannot recreate in place:
+docker-compose rm -sf bootstrap unitycatalog && docker-compose up -d
+python3 run_catalogs.py                    # re-stages the MANAGED table too
+```
+
+The driver registers the table and prints:
+
+```
+Unity Catalog: lake.default.users_azure
+  table_type: EXTERNAL
+  data_source_format: DELTA
+  storage_location: abfss://lake@<account>.dfs.core.windows.net/users
+  table_id: <uuid>
+  vended: azure_user_delegation_sas, expiration <timestamp>
+...
+same, with the credentials Unity Catalog vended
+  lake.default.users_azure   15 files, 5 kept, 66.7% pruned
+```
+
+The SAS carries read and list on the table directory and lasts one hour;
+`abfss` is the only Azure scheme the server dispatches (`az://` and
+`https://` locations are not vended).
+
 ## Versions
 
 | component | version | notes |

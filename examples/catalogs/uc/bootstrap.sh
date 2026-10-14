@@ -56,6 +56,18 @@ fi
   printf 's3.accessKey.0=%s\n' "$KEY"
   printf 's3.secretKey.0=%s\n' "$SECRET"
   printf 's3.sessionToken.0=%s\n' "$TOKEN"
+  if [ -n "${AZURE_STORAGE_ACCOUNT:-}" ]; then
+    # Real ADLS Gen2 account: the server signs user-delegation SAS tokens
+    # with this service principal (needs Storage Blob Delegator and
+    # Storage Blob Data Reader on the account).
+    printf '\n# Appended by uc/bootstrap.sh: what the server vends for abfss://...@%s.dfs.core.windows.net\n' "$AZURE_STORAGE_ACCOUNT"
+    printf 'adls.storageAccountName.0=%s\n' "$AZURE_STORAGE_ACCOUNT"
+    printf 'adls.tenantId.0=%s\n' "$AZURE_TENANT_ID"
+    printf 'adls.clientId.0=%s\n' "$AZURE_CLIENT_ID"
+    printf 'adls.clientSecret.0=%s\n' "$AZURE_CLIENT_SECRET"
+  fi
 } > "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"
 echo "unity catalog config written; vended credentials expire at $EXPIRES"
+[ -n "${AZURE_STORAGE_ACCOUNT:-}" ] && echo "azure vending configured for account $AZURE_STORAGE_ACCOUNT"
+exit 0
