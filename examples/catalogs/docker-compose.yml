@@ -2,6 +2,7 @@
 #
 #   docker compose up -d          # or docker-compose up -d
 #   python run_catalogs.py        # from the host, delta-explain on PATH
+#   open http://localhost:3000    # Unity Catalog UI
 #
 # Ports are offset from the demo (9000/9001/8889) and differential
 # (9010/9011/8890) stacks so all three can run side by side.
@@ -50,6 +51,16 @@ services:
       DB_DRIVER: derby
       HADOOP_OPTIONAL_TOOLS: hadoop-aws
       HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+    # The image's entrypoint runs `schematool -initSchema` unconditionally
+    # unless IS_RESUME=true, and Derby refuses a second initialization: a
+    # stopped container could never start again. Ask Derby first.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        if /opt/hive/bin/schematool -dbType derby -info >/dev/null 2>&1;
+        then export IS_RESUME=true; fi;
+        exec /entrypoint.sh
     ports:
       - "9083:9083"
     volumes:
@@ -66,6 +77,20 @@ services:
       - "8080:8080"
     volumes:
       - ./uc/server.properties:/home/unitycatalog/etc/conf/server.properties:ro
+    networks:
+      dxcat:
+        # the UI image reaches the server at this host name
+        aliases: [server]
+
+  # Unity Catalog's web UI on 3000: catalogs, schemas, tables and their
+  # storage locations, the same answers the resolver gets over REST. The
+  # project publishes no versioned tag for it, only `main`.
+  ui:
+    image: unitycatalog/unitycatalog-ui:main
+    container_name: dxcat-ui
+    depends_on: [unitycatalog]
+    ports:
+      - "3000:3000"
     networks: [dxcat]
 
   spark:

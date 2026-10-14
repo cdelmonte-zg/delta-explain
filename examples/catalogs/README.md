@@ -37,6 +37,12 @@ docker compose up -d        # or docker-compose up -d; RustFS on :9020,
 python3 run_catalogs.py     # delta-explain on PATH, or DX_BIN=/path/to/bin
 ```
 
+Unity Catalog's own web UI runs on http://localhost:3000: it lists the
+catalogs, schemas and tables with their storage locations, the same answers
+the driver prints below. The RustFS console on http://localhost:9021/rustfs/console/
+(`rustfsadmin` / `rustfsadmin`) shows the bucket; Jupyter on :8891 (token
+`catalogs`) reaches the Spark session. The metastore has no UI.
+
 The first Spark run downloads the Delta and hadoop-aws jars (about a
 minute). The driver runs three phases, each skippable (`--skip-write`,
 `--skip-register`):
@@ -53,8 +59,9 @@ minute). The driver runs three phases, each skippable (`--skip-write`,
    `delta-explain` with `-w "country = 'DE'"` on every location.
 
 Tables are written once and reused; `DX_CAT_FRESH=1` forces a rewrite.
-`docker compose down` removes everything (no volumes): the next `up` starts
-from empty catalogs and an empty bucket.
+`docker compose stop` / `start` keeps the catalogs' state (both live inside
+their containers); `docker compose down` removes everything (no volumes):
+the next `up` starts from empty catalogs and an empty bucket.
 
 ## What the catalogs answer
 
@@ -106,8 +113,9 @@ Facts worth keeping for the resolver design:
 | component | version | notes |
 |---|---|---|
 | RustFS | `rustfs/rustfs:1.0.0` | bucket `cat`, ports 9020/9021; the same image creates the bucket with `curl` |
-| Hive Metastore | `apache/hive:3.1.3` | Hadoop 3.1.0 inside; `HADOOP_OPTIONAL_TOOLS=hadoop-aws` puts the bundled `hadoop-aws` and AWS SDK on the classpath; conf in `hive-metastore/conf` |
+| Hive Metastore | `apache/hive:3.1.3` | Hadoop 3.1.0 inside; `HADOOP_OPTIONAL_TOOLS=hadoop-aws` puts the bundled `hadoop-aws` and AWS SDK on the classpath; conf in `hive-metastore/conf`; the entrypoint is wrapped so a restarted container skips the Derby schema init it would otherwise fail on |
 | Unity Catalog | `unitycatalog/unitycatalog:v0.6.0` | only `uc/server.properties` is mounted; the image's conf directory also holds dev signing keys |
+| Unity Catalog UI | `unitycatalog/unitycatalog-ui:main` | no versioned tag is published; the image reaches the server at the host name `server`, an alias of the catalog service |
 | Spark | `quay.io/jupyter/pyspark-notebook:spark-4.1.2` | `io.delta:delta-spark_2.13:4.3.0`, `org.apache.hadoop:hadoop-aws:3.4.2`, same as the differential harness |
 
 Ports are offset from the other example stacks (`s3-compatible` on 9000/9001,
