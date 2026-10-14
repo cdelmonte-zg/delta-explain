@@ -217,9 +217,33 @@ def uc_resolve(full_name):
     return payload
 
 
-def explain(uri):
+def uc_vend(table_id):
+    """Temporary READ credentials for the table: the key, secret and session
+    token the server was configured with at start (RustFS's own, see
+    uc/bootstrap.sh), scoped by nothing but their 12-hour lifetime."""
+    status, payload = uc_request("POST", "/temporary-table-credentials",
+                                 {"table_id": table_id, "operation": "READ"})
+    if status != 200:
+        raise RuntimeError(f"POST /temporary-table-credentials: {status} {payload}")
+    return payload
+
+
+def vended_options(credentials):
+    aws = credentials["aws_temp_credentials"]
+    return [
+        "--option", "aws_endpoint=http://localhost:9020",
+        "--option", "aws_allow_http=true",
+        "--option", f"aws_access_key_id={aws['access_key_id']}",
+        "--option", f"aws_secret_access_key={aws['secret_access_key']}",
+        "--option", f"aws_session_token={aws['session_token']}",
+        "--option", "aws_virtual_hosted_style_request=false",
+        "--option", "aws_region=us-east-1",
+    ]
+
+
+def explain(uri, options=DX_OPTIONS):
     proc = subprocess.run(
-        [DX_BIN, uri, *DX_OPTIONS, "-w", PREDICATE, "--format", "json"],
+        [DX_BIN, uri, *options, "-w", PREDICATE, "--format", "json"],
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
@@ -245,6 +269,7 @@ def resolve(locs):
           f"partitioned by {hive['partition_columns']}")
     results.append((hive["reference"], hive["location"]))
 
+    vended = {}
     for name in UC_TABLES:
         full_name = f"{UC_CATALOG}.{UC_SCHEMA}.{name}"
         info = uc_resolve(full_name)
@@ -252,7 +277,17 @@ def resolve(locs):
         for key in ("table_type", "data_source_format", "storage_location",
                     "table_id"):
             print(f"  {key}: {info.get(key)}")
+        credentials = uc_vend(info["table_id"])
+        # The static generator reports no expiration (null): the lifetime
+        # is the one RustFS gave the token at bootstrap.
+        expires = credentials.get("expiration_time")
+        expires = ("unreported" if expires is None else time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires / 1000)))
+        print(f"  vended: aws_temp_credentials, access key "
+              f"{credentials['aws_temp_credentials']['access_key_id']}, "
+              f"expiration {expires}")
         results.append((full_name, info["storage_location"]))
+        vended[full_name] = credentials
 
     print(f"\ndelta-explain on the resolved locations, -w \"{PREDICATE}\"")
     for reference, location in results:
@@ -260,6 +295,14 @@ def resolve(locs):
         total, kept, pct = explain(uri)
         print(f"  {reference:<26} {uri}")
         print(f"  {'':<26} {total} files, {kept} kept, {pct:.1f}% pruned")
+
+    print("\nsame, with the credentials Unity Catalog vended")
+    for reference, location in results:
+        if reference not in vended:
+            continue
+        uri = to_delta_explain_uri(location)
+        total, kept, pct = explain(uri, vended_options(vended[reference]))
+        print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
     return results
 
 
