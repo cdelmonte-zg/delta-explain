@@ -17,7 +17,7 @@ use delta_explain::instrumentation::DebugIrObserver;
 
 #[derive(Clone, Debug, ValueEnum)]
 enum CatalogKind {
-    Unity, 
+    Unity,
 }
 
 #[derive(Parser)]
@@ -117,13 +117,11 @@ struct Cli {
 
     /// Catalog kind: e.g unity
     #[arg(long, value_enum)]
-    catalog: Option<CatalogKind>
+    catalog: Option<CatalogKind>,
 }
 
-
-#[tokio::main]
-async fn main() -> ExitCode {
-    match try_main().await {
+fn main() -> ExitCode {
+    match try_main() {
         Ok(exit_code) => exit_code,
 
         Err(err) => {
@@ -134,7 +132,7 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn try_main() -> Result<ExitCode> {
+fn try_main() -> Result<ExitCode> {
     let cli = Cli::parse();
 
     let start = std::time::Instant::now();
@@ -155,13 +153,15 @@ async fn try_main() -> Result<ExitCode> {
 
     let reference = match cli.catalog {
         None => TableReference::Path(cli.path.clone()),
-        Some(CatalogKind::Unity) => TableReference::UnityCatalog { name: cli.path.clone() }
+        Some(CatalogKind::Unity) => TableReference::UnityCatalog {
+            name: cli.path.clone(),
+        },
     };
 
     let catalog::ResolvedTable {
         location,
         storage: resolved_storage,
-    } = catalog::resolve(reference).await?;
+    } = catalog::resolve(reference)?;
 
     let runtime = match resolved_storage {
         ResolvedStorage::UserConfigured => {
@@ -170,11 +170,7 @@ async fn try_main() -> Result<ExitCode> {
         }
 
         ResolvedStorage::CatalogVended { credentials } => {
-            storage::open_with_catalog_credentials(
-                &location,
-                &storage_config,
-                credentials,
-            )?
+            storage::open_with_catalog_credentials(&location, &storage_config, credentials)?
         }
     };
 

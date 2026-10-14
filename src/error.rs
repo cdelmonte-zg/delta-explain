@@ -45,18 +45,14 @@ pub enum Error {
     /// this variant: the CLI layer swallows it and keeps the gate verdict.
     #[error("Cannot write output: {0}")]
     Output(std::io::Error),
-    
+
     /// Communication with an external catalog failed.
     #[error("Catalog request failed: {0}")]
     CatalogRequest(#[from] reqwest::Error),
 
-    /// Parsing of url failed.
-    #[error("Url cannot be parsed: {0}")]
-    Parse(#[from] url::ParseError),
-
     /// Communication with an external catalog failed.
     #[error("Catalog error {0}")]
-    Catalog(String)
+    Catalog(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

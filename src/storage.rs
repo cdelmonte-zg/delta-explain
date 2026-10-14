@@ -5,13 +5,15 @@ mod options;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use delta_kernel::Engine;
+use delta_kernel::{Engine, object_store::DynObjectStore};
 use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
-use object_store::DynObjectStore;
 use url::Url;
 
-use crate::{catalog::CatalogCredentials, error::{Error, Result}};
+use crate::{
+    catalog::CatalogCredentials,
+    error::{Error, Result},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageOption {
@@ -65,9 +67,7 @@ pub fn resolve(config: &StorageConfig) -> Result<Vec<StorageOption>> {
 pub fn open(url: &Url, options: Vec<StorageOption>) -> Result<StorageRuntime> {
     let store = store_from_url_opts(
         url,
-        options
-            .into_iter()
-            .map(|option| (option.key, option.value)),
+        options.into_iter().map(|option| (option.key, option.value)),
     )?;
 
     let engine = DefaultEngineBuilder::new(store.clone()).build();
@@ -83,9 +83,34 @@ pub fn open_with_catalog_credentials(
     config: &StorageConfig,
     credentials: CatalogCredentials,
 ) -> Result<StorageRuntime> {
-    todo!()
-}
+    let mut options = options::resolve_catalog(config)?;
 
+    match credentials {
+        CatalogCredentials::Aws {
+            access_key_id,
+            secret_access_key,
+            session_token,
+        } => {
+            options.push(StorageOption::new("access_key_id", access_key_id));
+
+            options.push(StorageOption::new("secret_access_key", secret_access_key));
+
+            options.push(StorageOption::new("session_token", session_token));
+        }
+
+        CatalogCredentials::Azure { sas_token } => {
+            options.push(StorageOption::new("sas_token", sas_token));
+        }
+
+        CatalogCredentials::Gcp { .. } => {
+            return Err(Error::Storage(
+                "Unity Catalog-vended GCP credentials are not yet supported".to_string(),
+            ));
+        }
+    }
+
+    open(url, options)
+}
 
 #[cfg(test)]
 mod tests {

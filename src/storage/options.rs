@@ -1,9 +1,27 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 use super::{StorageConfig, StorageOption, aws_profile, environment};
 
 pub(super) fn resolve(config: &StorageConfig) -> Result<Vec<StorageOption>> {
     resolve_with(config, environment::resolve, aws_profile::resolve)
+}
+
+pub(super) fn resolve_catalog(config: &StorageConfig) -> Result<Vec<StorageOption>> {
+    if config.env_credentials || config.profile.is_some() || config.public {
+        return Err(Error::Options(
+            "--env-creds, --profile and --public cannot be used with --catalog unity".to_string(),
+        ));
+    }
+
+    let mut resolved = Vec::new();
+
+    if let Some(region) = &config.region {
+        resolved.push(StorageOption::new("region", region.clone()));
+    };
+
+    resolved.extend(config.options.iter().cloned());
+
+    Ok(resolved)
 }
 
 fn resolve_with(

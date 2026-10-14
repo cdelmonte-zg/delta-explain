@@ -1,28 +1,21 @@
 mod unity;
 
-use serde::Deserialize;
-
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::table_uri;
-
 
 pub enum TableReference {
     Path(String),
-    UnityCatalog {
-        name: String,
-    }
+    UnityCatalog { name: String },
 }
 
 pub struct ResolvedTable {
     pub location: url::Url,
-    pub storage: ResolvedStorage
+    pub storage: ResolvedStorage,
 }
 
 pub enum ResolvedStorage {
     UserConfigured,
-    CatalogVended { 
-        credentials: CatalogCredentials,
-    },
+    CatalogVended { credentials: CatalogCredentials },
 }
 
 #[derive(Clone, Debug)]
@@ -40,21 +33,21 @@ pub enum CatalogCredentials {
     },
 }
 
-pub async fn resolve(reference: TableReference) -> Result<ResolvedTable> {
-
+pub fn resolve(reference: TableReference) -> Result<ResolvedTable> {
     match reference {
         TableReference::Path(path) => {
             let location = table_uri::parse(&path)?;
 
-            Ok(
-                ResolvedTable { 
-                location, 
-                storage: ResolvedStorage::UserConfigured, 
-                }
-            )
+            Ok(ResolvedTable {
+                location,
+                storage: ResolvedStorage::UserConfigured,
+            })
         }
-        TableReference::UnityCatalog {name} => {
-            unity::resolve(&name).await
+        TableReference::UnityCatalog { name } => {
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|err| Error::Catalog(format!("Cannot create catalog runtime: {}", err)))?;
+
+            runtime.block_on(unity::resolve(&name))
         }
     }
 }
