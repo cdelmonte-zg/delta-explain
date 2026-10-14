@@ -11,7 +11,8 @@ Delta table.
 
 Use it from the shell, through its versioned JSON contract and Python
 API, or in CI as a threshold-based guardrail. Point it at a local Delta
-table or an `s3://`, `az://`, or `gs://` location.
+table, an `s3://`, `az://`, or `gs://` location, or a Unity Catalog table
+name (`--catalog unity`), read with the credentials the catalog vends.
 
 delta-explain is strictly read-only: it reads Delta transaction-log
 metadata, not table rows, and performs no writes, locks, or telemetry.

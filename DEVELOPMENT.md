@@ -82,6 +82,7 @@ The pipeline is a chain of layers, each a directory (or single file) under
 
 ```
 CLI (main.rs)
+ -> catalog       table reference -> location + how to open storage
  -> storage       object-store + kernel engine construction
  -> table         snapshot open: log metadata, baseline scan, features
  -> execution     orchestrator: analysis + gates + report
@@ -91,11 +92,19 @@ CLI (main.rs)
  -> presentation  report + gates -> presentable model -> text/JSON
 ```
 
-- **`main.rs`**: the CLI layer and nothing else: parse args, `storage::open`,
-  `table::open`, `execution::execute`, `presentation::build`, render, exit
-  code (gate failures map to a nonzero exit; broken pipes exit clean).
+- **`main.rs`**: the CLI layer and nothing else: parse args,
+  `catalog::resolve`, `storage::open`, `table::open`, `execution::execute`,
+  `presentation::build`, render, exit code (gate failures map to a nonzero
+  exit; broken pipes exit clean).
 - **`table_uri.rs`**: path or URL -> the table `Url` handed to storage and
   the kernel.
+- **`catalog/`**: a `TableReference` (path, or a name in a catalog) ->
+  `ResolvedTable`: the location `Url`, how storage must be opened
+  (`UserConfigured`, or `CatalogVended` with typed `CatalogCredentials`),
+  and the provenance the report shows (ADR 0009). `unity.rs` is the Unity
+  Catalog REST client (table lookup, temporary credentials); the
+  translation of vended credentials into object-store options lives in
+  `storage`, not here.
 - **`storage/`**: resolves the object store and builds the kernel engine.
   `options.rs` merges the credential sources into `KEY=VALUE` options with
   explicit precedence (`--option` wins), `environment.rs` maps `--env-creds`

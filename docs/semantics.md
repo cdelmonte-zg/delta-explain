@@ -173,6 +173,30 @@ adjusted:
   checkpointed logs (no public kernel accessor for system metadata
   domains).
 
+## Catalog-resolved tables
+
+With `--catalog unity`, PATH is a table name (`catalog.schema.table`)
+and Unity Catalog, reached at `DATABRICKS_HOST` with `DATABRICKS_TOKEN`
+(Databricks or the open-source server), answers two questions: where the
+table lives and how to read it.
+
+- The location the catalog returns is the one analyzed, and the report
+  says so: a `Resolved:` line in the text, a `catalog` object (`kind`,
+  `name`, `location`) in the JSON, `null` for a path.
+- The catalog is authoritative for credentials. The table is read with
+  the temporary credentials it vends (AWS key/secret/session token, Azure
+  user-delegation SAS); `--env-creds`, `--profile` and `--public` are
+  rejected in this mode, while `--region` and `--option` still configure
+  the transport (endpoint, path style, region). A vended GCP OAuth token
+  is not yet mapped and fails the run.
+- A catalog that cannot answer fails the run with its own error: the
+  HTTP status plus the server's `error_code` and `message` (a table it
+  does not know, a bucket it cannot vend for), never a silent fallback to
+  other credentials.
+- Only Delta tables are analyzed (`data_source_format` must be `DELTA`).
+  Tables whose commits the catalog coordinates
+  (`delta.feature.catalogManaged`) stay refused as before.
+
 ## Engines may prune less than this report shows
 
 The report reflects what the metadata makes possible, computed with the
@@ -193,7 +217,7 @@ only, potentially, the pruning a specific engine will realize.
 |---|---|---|---|
 | Success (all gates pass or no gates) | 0 | report | empty |
 | Assertion failure (`--min-pruning`, `--assert-stats`) | 1 | report (with `result: "fail"`) | `ASSERTION FAILED: ...` |
-| Runtime error (bad predicate, unreadable table, storage) | 1 | **empty** | `Error: ...` |
+| Runtime error (bad predicate, unreadable table, storage, catalog) | 1 | **empty** | `Error: ...` |
 | Usage error (unknown flag value, missing required flag) | 2 | empty | clap diagnostics |
 
 Two properties are load-bearing for CI:

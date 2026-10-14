@@ -6,7 +6,8 @@ The complete flag list, as printed by `delta-explain --help`:
 delta-explain <PATH> [OPTIONS]
 
 Arguments:
-  <PATH>  Path to the Delta table (local path, s3://, az://, gs://)
+  <PATH>  Path to the Delta table (local path, s3://, az://, gs://), or with
+          --catalog the table's name in that catalog (catalog.schema.table)
 
 Options:
   -w, --where <PREDICATE>   Predicate (e.g. "age > 30 AND country = 'DE'")
@@ -24,9 +25,13 @@ Options:
       --option <KEY=VALUE>  Object store config (repeatable)
       --env-creds           Read cloud credentials from environment variables
       --public              Access a public bucket (skip auth)
+      --catalog <KIND>      Resolve PATH as a table name in this catalog
+                            (unity: Unity Catalog via DATABRICKS_HOST and
+                            DATABRICKS_TOKEN) and read it with the
+                            credentials the catalog vends
 ```
 
 Gate flags (`--min-pruning`, `--assert-stats`) are covered in
 [Gating pruning in CI](../guides/ci-gating.md); credential flags
-(`--env-creds`, `--profile`, `--option`, `--region`, `--public`) in
-[Cloud storage](../guides/cloud.md).
+(`--env-creds`, `--profile`, `--option`, `--region`, `--public`) and
+`--catalog` in [Cloud storage](../guides/cloud.md).
