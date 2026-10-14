@@ -28,7 +28,7 @@ STUB = Path(__file__).parent / "_argv_stub.py"
 
 def test_basic_report():
     r = explain(TABLE, where="country = 'DE' AND age > 40", binary=BINARY)
-    assert r.schema_version.startswith("0.5.")
+    assert r.schema_version.startswith("0.6.")
     assert r.total_files == 6
     assert r.final_files == 1
     assert r.passed and r.result is None
@@ -100,6 +100,7 @@ def test_every_kwarg_reaches_the_cli():
         region="eu-central-1",
         public=True,
         options={"endpoint": "http://x", "allow_http": "true"},
+        catalog="unity",
         binary=[sys.executable, str(STUB)],
     )
     argv = r["argv"]
@@ -118,6 +119,7 @@ def test_every_kwarg_reaches_the_cli():
         ["--public"],
         ["--option", "endpoint=http://x"],
         ["--option", "allow_http=true"],
+        ["--catalog", "unity"],
     ):
         joined = " ".join(argv)
         assert " ".join(expected) in joined, f"missing {expected} in {argv}"
@@ -141,6 +143,18 @@ def test_report_is_a_mapping_with_typed_accessors():
     assert r.schema_version == "0.2.0"
     assert not r.passed and r.result == "fail"
     assert r.files is None  # verbose-only field absent
+    assert r.catalog is None  # pre-0.6 report: no provenance field
+
+
+def test_catalog_provenance_accessor():
+    from delta_explain import Report
+
+    provenance = {"kind": "unity", "name": "lake.default.users",
+                  "location": "s3://cat/uc-external/users/"}
+    r = Report({"schema_version": "0.6.0", "total_files": 6, "final_files": 2,
+                "total_pruning_pct": 66.6, "result": None, "catalog": provenance})
+    assert r.catalog == provenance
+    assert explain(TABLE, binary=BINARY).catalog is None
 
 
 def test_options_mapping():

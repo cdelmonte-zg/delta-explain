@@ -5,18 +5,34 @@ mod options;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use delta_kernel::Engine;
+use delta_kernel::{Engine, object_store::DynObjectStore};
 use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
-use object_store::DynObjectStore;
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::{
+    catalog::CatalogCredentials,
+    error::{Error, Result},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageOption {
     pub key: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StorageConfig {
+    pub env_credentials: bool,
+    pub profile: Option<String>,
+    pub region: Option<String>,
+    pub public: bool,
+    pub options: Vec<StorageOption>,
+}
+
+pub struct StorageRuntime {
+    pub store: Arc<DynObjectStore>,
+    pub engine: Box<dyn Engine>,
 }
 
 impl FromStr for StorageOption {
@@ -44,42 +60,56 @@ impl StorageOption {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct StorageConfig {
-    pub env_credentials: bool,
-
-    pub profile: Option<String>,
-
-    pub region: Option<String>,
-
-    pub public: bool,
-
-    pub options: Vec<StorageOption>,
+pub fn resolve(config: &StorageConfig) -> Result<Vec<StorageOption>> {
+    options::resolve(config)
 }
 
-pub struct StorageRuntime {
-    pub store: Arc<DynObjectStore>,
-
-    pub engine: Box<dyn Engine>,
-}
-
-pub fn open(url: &Url, config: &StorageConfig) -> Result<StorageRuntime> {
-    let resolved = options::resolve(config)?;
-
+pub fn open(url: &Url, options: Vec<StorageOption>) -> Result<StorageRuntime> {
     let store = store_from_url_opts(
         url,
-        resolved
-            .into_iter()
-            .map(|option| (option.key, option.value)),
+        options.into_iter().map(|option| (option.key, option.value)),
     )?;
 
     let engine = DefaultEngineBuilder::new(store.clone()).build();
 
     Ok(StorageRuntime {
         store,
-
         engine: Box::new(engine),
     })
+}
+
+pub fn open_with_catalog_credentials(
+    url: &Url,
+    config: &StorageConfig,
+    credentials: CatalogCredentials,
+) -> Result<StorageRuntime> {
+    let mut options = options::resolve_catalog(config)?;
+
+    match credentials {
+        CatalogCredentials::Aws {
+            access_key_id,
+            secret_access_key,
+            session_token,
+        } => {
+            options.push(StorageOption::new("access_key_id", access_key_id));
+
+            options.push(StorageOption::new("secret_access_key", secret_access_key));
+
+            options.push(StorageOption::new("session_token", session_token));
+        }
+
+        CatalogCredentials::Azure { sas_token } => {
+            options.push(StorageOption::new("sas_token", sas_token));
+        }
+
+        CatalogCredentials::Gcp { .. } => {
+            return Err(Error::Storage(
+                "Unity Catalog-vended GCP credentials are not yet supported".to_string(),
+            ));
+        }
+    }
+
+    open(url, options)
 }
 
 #[cfg(test)]

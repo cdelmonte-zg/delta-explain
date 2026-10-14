@@ -42,12 +42,20 @@ pub struct PresentationOptions {
 #[derive(Debug, Clone)]
 pub struct TableView {
     pub path: String,
+    pub catalog: Option<CatalogView>,
     pub version: u64,
     pub total_files: usize,
 
     pub stats: StatsView,
 
     pub features: TableFeaturesView,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogView {
+    pub kind: String,
+    pub name: String,
+    pub location: String,
 }
 
 #[derive(Debug, Clone)]

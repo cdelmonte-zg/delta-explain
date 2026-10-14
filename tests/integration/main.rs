@@ -27,3 +27,4 @@ mod synthetic_log;
 mod taxi;
 mod temporal_coercions;
 mod time_travel;
+mod unity_catalog;

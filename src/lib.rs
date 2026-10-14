@@ -25,6 +25,7 @@
 )]
 
 pub mod analysis;
+pub mod catalog;
 pub mod diagnostics;
 pub mod error;
 pub mod execution;

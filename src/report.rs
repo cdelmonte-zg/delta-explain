@@ -26,11 +26,20 @@ pub struct Report {
 #[derive(Debug, Clone)]
 pub struct TableReport {
     pub path: String,
+    /// Set when `path` is a catalog name: where the catalog sent us.
+    pub catalog: Option<CatalogReport>,
     pub version: u64,
     pub total_files: usize,
     pub files_with_stats: usize,
     pub partition_columns: Vec<String>,
     pub features: TableFeatureReport,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogReport {
+    pub kind: String,
+    pub name: String,
+    pub location: String,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +64,7 @@ pub struct PredicateReport {
 
 pub fn build(
     table_path: &str,
+    catalog: Option<&CatalogReport>,
     predicate: Option<&str>,
     table: &TableState,
     result: Option<&AnalysisResult>,
@@ -64,6 +74,7 @@ pub fn build(
 
     let table_report = TableReport {
         path: table_path.to_string(),
+        catalog: catalog.cloned(),
         version: table.snapshot.version(),
         total_files: table.metadata.baseline.files.len(),
         files_with_stats: table.metadata.baseline.stats.len(),

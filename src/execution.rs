@@ -5,7 +5,7 @@ use crate::analysis::model::AnalysisResult;
 use crate::error::Result;
 use crate::gates::{self, GateConfig, GateOutcome};
 use crate::instrumentation::Instrumentation;
-use crate::report::{self, Report};
+use crate::report::{self, CatalogReport, Report};
 use crate::table::TableState;
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub struct ExecutionResult {
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionInput<'a> {
     pub table_path: &'a str,
+    pub catalog: Option<&'a CatalogReport>,
     pub predicate: Option<&'a str>,
     pub gate_config: GateConfig,
 }
@@ -33,7 +34,13 @@ pub fn execute(
 
     let gates = gates::evaluate(gate_context, input.gate_config);
 
-    let report = report::build(input.table_path, input.predicate, table, analysis.as_ref());
+    let report = report::build(
+        input.table_path,
+        input.catalog,
+        input.predicate,
+        table,
+        analysis.as_ref(),
+    );
 
     Ok(ExecutionResult { report, gates })
 }

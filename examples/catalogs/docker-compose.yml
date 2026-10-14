@@ -2,6 +2,7 @@
 #
 #   docker compose up -d          # or docker-compose up -d
 #   python run_catalogs.py        # from the host, delta-explain on PATH
+#   open http://localhost:3000    # Unity Catalog UI
 #
 # Ports are offset from the demo (9000/9001/8889) and differential
 # (9010/9011/8890) stacks so all three can run side by side.
@@ -20,18 +21,25 @@ services:
       - "9021:9001"
     networks: [dxcat]
 
-  # one-shot: the server image ships curl, which signs the bucket PUT itself
-  createbuckets:
+  # One-shot on the server image (it ships curl, which signs requests
+  # itself): creates the bucket and writes the Unity Catalog configuration
+  # with credentials to vend, see uc/bootstrap.sh. Runs as root so it can
+  # write the shared volume.
+  bootstrap:
     image: rustfs/rustfs:1.0.0
+    user: "0"
     depends_on: [rustfs]
-    entrypoint: >
-      /bin/sh -c "
-      until curl -sf -o /dev/null http://rustfs:9000/health; do
-        echo 'waiting for rustfs...'; sleep 1;
-      done &&
-      curl -sf -X PUT --user rustfsadmin:rustfsadmin
-      --aws-sigv4 'aws:amz:us-east-1:s3' http://rustfs:9000/cat &&
-      echo 'bucket ready: cat'"
+    entrypoint: ["/bin/sh", "/uc/bootstrap.sh"]
+    # Optional, from .env (see .env.example): a real ADLS Gen2 account the
+    # server vends user-delegation SAS tokens for. Empty = Azure not configured.
+    environment:
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+    volumes:
+      - ./uc:/uc:ro
+      - uc-bootstrap:/bootstrap
     networks: [dxcat]
 
   # Hive Metastore 3.1.3, embedded Derby (nothing to persist), Thrift on
@@ -50,6 +58,16 @@ services:
       DB_DRIVER: derby
       HADOOP_OPTIONAL_TOOLS: hadoop-aws
       HIVE_CUSTOM_CONF_DIR: /hive_custom_conf
+    # The image's entrypoint runs `schematool -initSchema` unconditionally
+    # unless IS_RESUME=true, and Derby refuses a second initialization: a
+    # stopped container could never start again. Ask Derby first.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        if /opt/hive/bin/schematool -dbType derby -info >/dev/null 2>&1;
+        then export IS_RESUME=true; fi;
+        exec /entrypoint.sh
     ports:
       - "9083:9083"
     volumes:
@@ -57,15 +75,41 @@ services:
     networks: [dxcat]
 
   # Unity Catalog OSS server, REST on 8080, no authorization. Only
-  # server.properties is overridden: the image's conf directory also holds
-  # dev signing keys that have no business in this repository.
+  # server.properties is written into the image's conf directory (it also
+  # holds dev signing keys that have no business in this repository), and
+  # it comes from the bootstrap service: the server reads it once at start,
+  # so ask for a fresh one and wait for it (handshake in uc/bootstrap.sh).
   unitycatalog:
     image: unitycatalog/unitycatalog:v0.6.0
     container_name: dxcat-unitycatalog
+    depends_on: [bootstrap]
     ports:
       - "8080:8080"
     volumes:
-      - ./uc/server.properties:/home/unitycatalog/etc/conf/server.properties:ro
+      - uc-bootstrap:/bootstrap
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        until rm -f /bootstrap/server.properties 2>/dev/null
+        && touch /bootstrap/request 2>/dev/null; do sleep 1; done;
+        until [ -s /bootstrap/server.properties ]; do sleep 1; done;
+        cp /bootstrap/server.properties etc/conf/server.properties;
+        exec ./bin/start-uc-server
+    networks:
+      dxcat:
+        # the UI image reaches the server at this host name
+        aliases: [server]
+
+  # Unity Catalog's web UI on 3000: catalogs, schemas, tables and their
+  # storage locations, the same answers the resolver gets over REST. The
+  # project publishes no versioned tag for it, only `main`.
+  ui:
+    image: unitycatalog/unitycatalog-ui:main
+    container_name: dxcat-ui
+    depends_on: [unitycatalog]
+    ports:
+      - "3000:3000"
     networks: [dxcat]
 
   spark:
@@ -86,3 +130,6 @@ services:
 
 networks:
   dxcat:
+
+volumes:
+  uc-bootstrap:

@@ -83,6 +83,13 @@ class Report(Mapping[str, Any]):
         return self._raw["result"] != "fail"
 
     @property
+    def catalog(self) -> Optional[dict]:
+        """With catalog=..., which catalog resolved the table name and the
+        storage location it returned (kind, name, location); None for a
+        path, and absent from reports older than schema 0.6."""
+        return self._raw.get("catalog")
+
+    @property
     def files(self) -> Optional[list]:
         """Per-file outcomes; present only when verbose=True was requested."""
         return self._raw.get("files")
@@ -135,12 +142,16 @@ def explain(
     region: Optional[str] = None,
     public: bool = False,
     options: Optional[Mapping[str, str]] = None,
+    catalog: Optional[str] = None,
     binary: Optional[Union[str, Sequence[str]]] = None,
 ) -> Report:
     """Run delta-explain against `table` and return the JSON report.
 
     Keyword arguments mirror the CLI flags one to one; `options` becomes
-    repeated `--option KEY=VALUE` pairs. Gate failures return a Report with
+    repeated `--option KEY=VALUE` pairs. With `catalog="unity"`, `table` is
+    a `catalog.schema.table` name resolved through Unity Catalog
+    (DATABRICKS_HOST and DATABRICKS_TOKEN in the environment) and read with
+    the credentials the catalog vends. Gate failures return a Report with
     `passed == False`; runtime errors raise DeltaExplainError with the
     CLI's stderr message.
     """
@@ -176,6 +187,8 @@ def explain(
         argv += ["--public"]
     for key, value in (options or {}).items():
         argv += ["--option", f"{key}={value}"]
+    if catalog is not None:
+        argv += ["--catalog", catalog]
 
     proc = subprocess.run(argv, capture_output=True, text=True)
 

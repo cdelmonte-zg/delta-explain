@@ -41,6 +41,29 @@ The end-to-end walkthroughs for
 and [GCS](https://github.com/cdelmonte-zg/delta-explain/tree/main/examples/gcs)
 live in `examples/`.
 
+## Unity Catalog
+
+A table that lives in Unity Catalog (Databricks, or the open-source
+server) can be named instead of located:
+
+```bash
+export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
+export DATABRICKS_TOKEN=<personal access token>
+delta-explain --catalog unity sales.events.orders -w "day = DATE '2026-10-01'"
+```
+
+The catalog answers with the table's storage location and vends temporary
+credentials for it, which is what the table is read with: no cloud
+credentials of your own are involved, and `--env-creds`, `--profile` and
+`--public` are rejected in this mode. `--region` and `--option` still
+configure the transport, which matters for S3-compatible stores (endpoint,
+path style). The report shows the resolved location (`Resolved:` in the
+text, `catalog` in the JSON). AWS and Azure credentials are supported;
+vended GCP tokens are not mapped yet. The
+[catalog stack](https://github.com/cdelmonte-zg/delta-explain/tree/main/examples/catalogs)
+in `examples/` runs the whole flow locally against the open-source
+server, RustFS and (optionally) a real ADLS Gen2 account.
+
 Valid `--option` keys pass through to the
 [`object_store`](https://docs.rs/object_store/) builders; see upstream for the
 per-backend list.

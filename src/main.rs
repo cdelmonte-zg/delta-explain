@@ -1,19 +1,25 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
+use delta_explain::catalog::{self, ResolvedStorage, TableReference};
 use delta_explain::error::{Error, Result};
 use delta_explain::execution::{self, ExecutionInput};
 use delta_explain::gates::GateConfig;
 use delta_explain::instrumentation::{Instrumentation, NoOpInstrumentation};
 use delta_explain::presentation::{self, OutputFormat, PresentationOptions};
+use delta_explain::report::CatalogReport;
 use delta_explain::storage::{self, StorageConfig, StorageOption};
 use delta_explain::table;
-use delta_explain::table_uri;
 
 #[cfg(feature = "debug-ir")]
 use delta_explain::instrumentation::DebugIrObserver;
+
+#[derive(Clone, Debug, ValueEnum)]
+enum CatalogKind {
+    Unity,
+}
 
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
@@ -28,6 +34,9 @@ Examples:
     delta-explain ./my-table --assert-stats
     delta-explain ./my-table -w \"age > 30\" --format json
 
+  Unity Catalog (DATABRICKS_HOST, DATABRICKS_TOKEN):
+    delta-explain --catalog unity catalog.schema.table -w \"age > 30\"
+
   Cloud:
     delta-explain --env-creds s3://bucket/table -w \"age > 30\"
     delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
@@ -36,7 +45,8 @@ Examples:
     delta-explain ./my-table -w \"age > 30\" --at-version 3
 ")]
 struct Cli {
-    /// Path to the Delta table (local path, s3://, az://, gs://)
+    /// Path to the Delta table (local path, s3://, az://, gs://), or with
+    /// --catalog the table's name in that catalog (catalog.schema.table)
     path: String,
 
     /// Predicate expression (e.g. "age > 30 AND country = 'DE'")
@@ -106,6 +116,12 @@ struct Cli {
     /// Access a public bucket (S3: skip signature)
     #[arg(long)]
     public: bool,
+
+    /// Resolve PATH as a table name in this catalog (unity: Unity
+    /// Catalog, DATABRICKS_HOST and DATABRICKS_TOKEN); the table is read
+    /// with the credentials the catalog vends
+    #[arg(long, value_enum, value_name = "KIND")]
+    catalog: Option<CatalogKind>,
 }
 
 fn main() -> ExitCode {
@@ -125,35 +141,56 @@ fn try_main() -> Result<ExitCode> {
 
     let start = std::time::Instant::now();
 
-    let table_url = table_uri::parse(&cli.path)?;
-
     let custom_options = cli
         .options
         .iter()
         .map(|raw| raw.parse::<StorageOption>())
         .collect::<Result<Vec<_>>>()?;
 
-    let runtime = storage::open(
-        &table_url,
-        &StorageConfig {
-            env_credentials: cli.env_creds,
+    let storage_config = StorageConfig {
+        env_credentials: cli.env_creds,
+        profile: cli.profile.clone(),
+        region: cli.region.clone(),
+        public: cli.public,
+        options: custom_options,
+    };
 
-            profile: cli.profile.clone(),
-
-            region: cli.region.clone(),
-
-            public: cli.public,
-
-            options: custom_options,
+    let reference = match cli.catalog {
+        None => TableReference::Path(cli.path.clone()),
+        Some(CatalogKind::Unity) => TableReference::UnityCatalog {
+            name: cli.path.clone(),
         },
-    )?;
+    };
+
+    let catalog::ResolvedTable {
+        location,
+        storage: resolved_storage,
+        catalog: provenance,
+    } = catalog::resolve(reference)?;
+
+    let catalog_report = provenance.map(|provenance| CatalogReport {
+        kind: provenance.kind.to_string(),
+        name: provenance.name,
+        location: location.to_string(),
+    });
+
+    let runtime = match resolved_storage {
+        ResolvedStorage::UserConfigured => {
+            let options = storage::resolve(&storage_config)?;
+            storage::open(&location, options)?
+        }
+
+        ResolvedStorage::CatalogVended { credentials } => {
+            storage::open_with_catalog_credentials(&location, &storage_config, credentials)?
+        }
+    };
 
     let mut instrumentation = build_instrumentation(&cli)?;
 
     instrumentation.invocation(&cli.path, cli.predicate.as_deref())?;
 
     let table = table::open(
-        &table_url,
+        &location,
         &runtime.store,
         runtime.engine.as_ref(),
         table::OpenOptions {
@@ -165,6 +202,8 @@ fn try_main() -> Result<ExitCode> {
     let result = execution::execute(
         ExecutionInput {
             table_path: &cli.path,
+
+            catalog: catalog_report.as_ref(),
 
             predicate: cli.predicate.as_deref(),
 

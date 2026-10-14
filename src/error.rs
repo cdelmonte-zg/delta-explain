@@ -45,6 +45,31 @@ pub enum Error {
     /// this variant: the CLI layer swallows it and keeps the gate verdict.
     #[error("Cannot write output: {0}")]
     Output(std::io::Error),
+
+    /// The HTTP exchange with the catalog failed before a response could be
+    /// read: connection, TLS, timeout. Carries the full cause chain, since
+    /// reqwest's top-level message alone ("error sending request") says
+    /// nothing about why.
+    #[error("Catalog request failed: {0}")]
+    CatalogRequest(String),
+
+    /// The catalog answered with an error (its body is kept verbatim), or
+    /// with a response this tool cannot interpret.
+    #[error("Catalog error {0}")]
+    Catalog(String),
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        let mut message = err.to_string();
+        let mut source = std::error::Error::source(&err);
+        while let Some(cause) = source {
+            message.push_str(": ");
+            message.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        Error::CatalogRequest(message)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

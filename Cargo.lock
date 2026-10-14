@@ -811,9 +811,10 @@ dependencies = [
  "futures",
  "jsonschema",
  "num-format",
- "object_store",
  "predicates",
+ "reqwest 0.13.5",
  "rstest",
+ "serde",
  "serde_json",
  "sqlparser",
  "tempfile",
@@ -843,7 +844,7 @@ dependencies = [
  "parquet",
  "percent-encoding",
  "rand 0.9.4",
- "reqwest 0.13.2",
+ "reqwest 0.13.5",
  "roaring",
  "rustc_version",
  "serde",
@@ -870,7 +871,7 @@ dependencies = [
  "delta_kernel",
  "futures",
  "itertools",
- "reqwest 0.13.2",
+ "reqwest 0.13.5",
  "serde_json",
  "tokio",
  "tracing",
@@ -2544,11 +2545,11 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.13.2"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
+checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -2569,6 +2570,7 @@ dependencies = [
  "rustls-pki-types",
  "rustls-platform-verifier",
  "serde",
+ "serde_json",
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",

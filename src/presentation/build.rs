@@ -4,8 +4,9 @@ use super::diagnostics::{
 use super::files;
 use super::labels::{confidence_label, phase_name};
 use super::model::{
-    AnalysisView, AssertionView, DiagnosticScope, ExplanationView, PhaseView, Presentation,
-    PresentationOptions, StatsView, StatusView, TableFeaturesView, TableView, WarningView,
+    AnalysisView, AssertionView, CatalogView, DiagnosticScope, ExplanationView, PhaseView,
+    Presentation, PresentationOptions, StatsView, StatusView, TableFeaturesView, TableView,
+    WarningView,
 };
 
 use crate::analysis::model::{
@@ -97,6 +98,12 @@ pub fn build(
 
     let table = TableView {
         path: report.table.path.clone(),
+
+        catalog: report.table.catalog.as_ref().map(|catalog| CatalogView {
+            kind: catalog.kind.clone(),
+            name: catalog.name.clone(),
+            location: catalog.location.clone(),
+        }),
 
         version: report.table.version,
 
