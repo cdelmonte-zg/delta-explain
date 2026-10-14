@@ -1,8 +1,9 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
+use delta_explain::catalog::{self, ResolvedStorage, TableReference};
 use delta_explain::error::{Error, Result};
 use delta_explain::execution::{self, ExecutionInput};
 use delta_explain::gates::GateConfig;
@@ -10,10 +11,14 @@ use delta_explain::instrumentation::{Instrumentation, NoOpInstrumentation};
 use delta_explain::presentation::{self, OutputFormat, PresentationOptions};
 use delta_explain::storage::{self, StorageConfig, StorageOption};
 use delta_explain::table;
-use delta_explain::table_uri;
 
 #[cfg(feature = "debug-ir")]
 use delta_explain::instrumentation::DebugIrObserver;
+
+#[derive(Clone, Debug, ValueEnum)]
+enum CatalogKind {
+    Unity, 
+}
 
 #[derive(Parser)]
 #[command(name = "delta-explain", version, about = "Make Delta pruning visible")]
@@ -28,6 +33,9 @@ Examples:
     delta-explain ./my-table --assert-stats
     delta-explain ./my-table -w \"age > 30\" --format json
 
+  Unity Catalog:
+    delta-explain --catalog unity namespace.schema.table -w \"age > 30\"
+  
   Cloud:
     delta-explain --env-creds s3://bucket/table -w \"age > 30\"
     delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
@@ -106,10 +114,16 @@ struct Cli {
     /// Access a public bucket (S3: skip signature)
     #[arg(long)]
     public: bool,
+
+    /// Catalog kind: e.g unity
+    #[arg(long, value_enum)]
+    catalog: Option<CatalogKind>
 }
 
-fn main() -> ExitCode {
-    match try_main() {
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    match try_main().await {
         Ok(exit_code) => exit_code,
 
         Err(err) => {
@@ -120,12 +134,10 @@ fn main() -> ExitCode {
     }
 }
 
-fn try_main() -> Result<ExitCode> {
+async fn try_main() -> Result<ExitCode> {
     let cli = Cli::parse();
 
     let start = std::time::Instant::now();
-
-    let table_url = table_uri::parse(&cli.path)?;
 
     let custom_options = cli
         .options
@@ -133,27 +145,45 @@ fn try_main() -> Result<ExitCode> {
         .map(|raw| raw.parse::<StorageOption>())
         .collect::<Result<Vec<_>>>()?;
 
-    let runtime = storage::open(
-        &table_url,
-        &StorageConfig {
-            env_credentials: cli.env_creds,
+    let storage_config = StorageConfig {
+        env_credentials: cli.env_creds,
+        profile: cli.profile.clone(),
+        region: cli.region.clone(),
+        public: cli.public,
+        options: custom_options,
+    };
 
-            profile: cli.profile.clone(),
+    let reference = match cli.catalog {
+        None => TableReference::Path(cli.path.clone()),
+        Some(CatalogKind::Unity) => TableReference::UnityCatalog { name: cli.path.clone() }
+    };
 
-            region: cli.region.clone(),
+    let catalog::ResolvedTable {
+        location,
+        storage: resolved_storage,
+    } = catalog::resolve(reference).await?;
 
-            public: cli.public,
+    let runtime = match resolved_storage {
+        ResolvedStorage::UserConfigured => {
+            let options = storage::resolve(&storage_config)?;
+            storage::open(&location, options)?
+        }
 
-            options: custom_options,
-        },
-    )?;
+        ResolvedStorage::CatalogVended { credentials } => {
+            storage::open_with_catalog_credentials(
+                &location,
+                &storage_config,
+                credentials,
+            )?
+        }
+    };
 
     let mut instrumentation = build_instrumentation(&cli)?;
 
     instrumentation.invocation(&cli.path, cli.predicate.as_deref())?;
 
     let table = table::open(
-        &table_url,
+        &location,
         &runtime.store,
         runtime.engine.as_ref(),
         table::OpenOptions {

@@ -11,12 +11,26 @@ use delta_kernel_default_engine::storage::store_from_url_opts;
 use object_store::DynObjectStore;
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::{catalog::CatalogCredentials, error::{Error, Result}};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageOption {
     pub key: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StorageConfig {
+    pub env_credentials: bool,
+    pub profile: Option<String>,
+    pub region: Option<String>,
+    pub public: bool,
+    pub options: Vec<StorageOption>,
+}
+
+pub struct StorageRuntime {
+    pub store: Arc<DynObjectStore>,
+    pub engine: Box<dyn Engine>,
 }
 
 impl FromStr for StorageOption {
@@ -44,31 +58,14 @@ impl StorageOption {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct StorageConfig {
-    pub env_credentials: bool,
-
-    pub profile: Option<String>,
-
-    pub region: Option<String>,
-
-    pub public: bool,
-
-    pub options: Vec<StorageOption>,
+pub fn resolve(config: &StorageConfig) -> Result<Vec<StorageOption>> {
+    options::resolve(config)
 }
 
-pub struct StorageRuntime {
-    pub store: Arc<DynObjectStore>,
-
-    pub engine: Box<dyn Engine>,
-}
-
-pub fn open(url: &Url, config: &StorageConfig) -> Result<StorageRuntime> {
-    let resolved = options::resolve(config)?;
-
+pub fn open(url: &Url, options: Vec<StorageOption>) -> Result<StorageRuntime> {
     let store = store_from_url_opts(
         url,
-        resolved
+        options
             .into_iter()
             .map(|option| (option.key, option.value)),
     )?;
@@ -77,10 +74,18 @@ pub fn open(url: &Url, config: &StorageConfig) -> Result<StorageRuntime> {
 
     Ok(StorageRuntime {
         store,
-
         engine: Box::new(engine),
     })
 }
+
+pub fn open_with_catalog_credentials(
+    url: &Url,
+    config: &StorageConfig,
+    credentials: CatalogCredentials,
+) -> Result<StorageRuntime> {
+    todo!()
+}
+
 
 #[cfg(test)]
 mod tests {
