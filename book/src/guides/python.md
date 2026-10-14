@@ -17,7 +17,11 @@ report["analysis"]["confidence"]   # the report is also a Mapping
 ```
 
 Keyword arguments mirror the CLI flags one to one (`verbose`, `limit`,
-`explain_why`, `at_version`, `profile`, `region`, `public`, `options`, ...).
+`explain_why`, `at_version`, `profile`, `region`, `public`, `options`,
+`catalog`, ...). With `catalog="unity"` the table is a `catalog.schema.table`
+name, resolved through Unity Catalog (`DATABRICKS_HOST` and
+`DATABRICKS_TOKEN` in the environment) and read with the credentials the
+catalog vends; `report.catalog` then carries the resolved location.
 
 ## Outcomes
 
@@ -31,5 +35,6 @@ Keyword arguments mirror the CLI flags one to one (`verbose`, `limit`,
 
 `Report` is a read-only `Mapping` (so `report["analysis"]["confidence"]` works)
 plus convenience properties: `schema_version`, `total_files`, `final_files`,
-`total_pruning_pct`, `result`, `passed`, `files` (with `verbose=True`), and
+`total_pruning_pct`, `result`, `passed`, `catalog` (with `catalog=...`),
+`files` (with `verbose=True`), and
 `explain` (with `explain_why=True`).
