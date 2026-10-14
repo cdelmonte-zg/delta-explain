@@ -115,7 +115,7 @@ Output is the dimension to manage on large tables: the compact JSON stays summar
 
 ## The report viewer
 
-Reports are also emitted as versioned JSON (`--format json`) under a formal, CI-enforced contract - [the schema](schemas/report-v0.5.schema.json) and [the field-by-field reference](docs/json-schema.md). Any saved report can be visualized as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
+Reports are also emitted as versioned JSON (`--format json`) under a formal, CI-enforced contract - [the schema](schemas/report-v0.6.schema.json) and [the field-by-field reference](docs/json-schema.md). Any saved report can be visualized as a self-contained HTML page - pruning funnel, analysis, per-file table - with [one drop or one command](viewer/README.md); attach it to a CI run so a failed gate shows *which* phase did not prune, not just an exit code:
 
 <img src="https://raw.githubusercontent.com/cdelmonte-zg/delta-explain/main/viewer/screenshot.png" alt="The report viewer rendering a pruning report: funnel, predicate analysis with stats coverage, diagnoses, per-file table" width="720">
 

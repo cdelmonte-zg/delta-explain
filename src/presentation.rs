@@ -7,8 +7,8 @@ mod render;
 
 pub use build::build;
 pub use model::{
-    AnalysisView, AssertionView, ColumnStatsView, DiagnosticScope, ExplanationView, FilePhaseState,
-    FileView, FilesView, PhaseView, Presentation, PresentationOptions, StatsView, StatusView,
-    TableFeaturesView, TableView, WarningView,
+    AnalysisView, AssertionView, CatalogView, ColumnStatsView, DiagnosticScope, ExplanationView,
+    FilePhaseState, FileView, FilesView, PhaseView, Presentation, PresentationOptions, StatsView,
+    StatusView, TableFeaturesView, TableView, WarningView,
 };
 pub use render::{OutputFormat, gate_failures};

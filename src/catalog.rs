@@ -11,6 +11,14 @@ pub enum TableReference {
 pub struct ResolvedTable {
     pub location: url::Url,
     pub storage: ResolvedStorage,
+    /// Which catalog answered, and for which name; `None` for a path.
+    pub catalog: Option<CatalogProvenance>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatalogProvenance {
+    pub kind: &'static str,
+    pub name: String,
 }
 
 pub enum ResolvedStorage {
@@ -41,6 +49,7 @@ pub fn resolve(reference: TableReference) -> Result<ResolvedTable> {
             Ok(ResolvedTable {
                 location,
                 storage: ResolvedStorage::UserConfigured,
+                catalog: None,
             })
         }
         TableReference::UnityCatalog { name } => {

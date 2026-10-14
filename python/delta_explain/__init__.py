@@ -83,6 +83,13 @@ class Report(Mapping[str, Any]):
         return self._raw["result"] != "fail"
 
     @property
+    def catalog(self) -> Optional[dict]:
+        """With catalog=..., which catalog resolved the table name and the
+        storage location it returned (kind, name, location); None for a
+        path, and absent from reports older than schema 0.6."""
+        return self._raw.get("catalog")
+
+    @property
     def files(self) -> Optional[list]:
         """Per-file outcomes; present only when verbose=True was requested."""
         return self._raw.get("files")

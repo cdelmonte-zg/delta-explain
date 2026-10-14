@@ -12,6 +12,14 @@ pub(super) fn render(presentation: &Presentation) -> String {
 
     let _ = writeln!(out, "Delta table: {}", presentation.table.path);
 
+    if let Some(catalog) = &presentation.table.catalog {
+        let _ = writeln!(
+            out,
+            "Resolved:    {} ({} catalog)",
+            catalog.location, catalog.kind
+        );
+    }
+
     let _ = writeln!(out, "Version:     {}", presentation.table.version);
 
     if let Some(predicate) = &presentation.predicate {

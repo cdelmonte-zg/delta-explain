@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{CatalogCredentials, ResolvedStorage, ResolvedTable};
+use crate::catalog::{CatalogCredentials, CatalogProvenance, ResolvedStorage, ResolvedTable};
 use crate::error::{Error, Result};
 use crate::table_uri;
 
@@ -42,6 +42,12 @@ impl CatalogConfig {
         })?;
 
         Ok(Self { host, token })
+    }
+}
+
+impl std::fmt::Display for UnityTableName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.catalog, self.schema, self.table)
     }
 }
 
@@ -123,8 +129,7 @@ impl UnityCatalogClient {
     }
 
     async fn get_table(&self, name: &UnityTableName) -> Result<TableInfo> {
-        let full_name = format!("{}.{}.{}", name.catalog, name.schema, name.table);
-        let request = self.http.get(self.endpoint(&format!("tables/{full_name}")));
+        let request = self.http.get(self.endpoint(&format!("tables/{name}")));
 
         self.send(request).await
     }
@@ -172,8 +177,8 @@ pub async fn resolve(name: &str) -> Result<ResolvedTable> {
 
     if table.data_source_format != "DELTA" {
         return Err(Error::UnsupportedTable(format!(
-            "table '{:?}' is not a Delta table",
-            name
+            "table '{name}' is not a Delta table (data_source_format = {})",
+            table.data_source_format
         )));
     }
 
@@ -186,6 +191,10 @@ pub async fn resolve(name: &str) -> Result<ResolvedTable> {
         storage: ResolvedStorage::CatalogVended {
             credentials: temporary.credentials,
         },
+        catalog: Some(CatalogProvenance {
+            kind: "unity",
+            name: name.to_string(),
+        }),
     })
 }
 

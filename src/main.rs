@@ -9,6 +9,7 @@ use delta_explain::execution::{self, ExecutionInput};
 use delta_explain::gates::GateConfig;
 use delta_explain::instrumentation::{Instrumentation, NoOpInstrumentation};
 use delta_explain::presentation::{self, OutputFormat, PresentationOptions};
+use delta_explain::report::CatalogReport;
 use delta_explain::storage::{self, StorageConfig, StorageOption};
 use delta_explain::table;
 
@@ -33,9 +34,9 @@ Examples:
     delta-explain ./my-table --assert-stats
     delta-explain ./my-table -w \"age > 30\" --format json
 
-  Unity Catalog:
-    delta-explain --catalog unity namespace.schema.table -w \"age > 30\"
-  
+  Unity Catalog (DATABRICKS_HOST, DATABRICKS_TOKEN):
+    delta-explain --catalog unity catalog.schema.table -w \"age > 30\"
+
   Cloud:
     delta-explain --env-creds s3://bucket/table -w \"age > 30\"
     delta-explain --region us-east-1 --public s3://bucket/table -w \"id = 42\"
@@ -44,7 +45,8 @@ Examples:
     delta-explain ./my-table -w \"age > 30\" --at-version 3
 ")]
 struct Cli {
-    /// Path to the Delta table (local path, s3://, az://, gs://)
+    /// Path to the Delta table (local path, s3://, az://, gs://), or with
+    /// --catalog the table's name in that catalog (catalog.schema.table)
     path: String,
 
     /// Predicate expression (e.g. "age > 30 AND country = 'DE'")
@@ -115,8 +117,10 @@ struct Cli {
     #[arg(long)]
     public: bool,
 
-    /// Catalog kind: e.g unity
-    #[arg(long, value_enum)]
+    /// Resolve PATH as a table name in this catalog (unity: Unity
+    /// Catalog, DATABRICKS_HOST and DATABRICKS_TOKEN); the table is read
+    /// with the credentials the catalog vends
+    #[arg(long, value_enum, value_name = "KIND")]
     catalog: Option<CatalogKind>,
 }
 
@@ -161,7 +165,14 @@ fn try_main() -> Result<ExitCode> {
     let catalog::ResolvedTable {
         location,
         storage: resolved_storage,
+        catalog: provenance,
     } = catalog::resolve(reference)?;
+
+    let catalog_report = provenance.map(|provenance| CatalogReport {
+        kind: provenance.kind.to_string(),
+        name: provenance.name,
+        location: location.to_string(),
+    });
 
     let runtime = match resolved_storage {
         ResolvedStorage::UserConfigured => {
@@ -191,6 +202,8 @@ fn try_main() -> Result<ExitCode> {
     let result = execution::execute(
         ExecutionInput {
             table_path: &cli.path,
+
+            catalog: catalog_report.as_ref(),
 
             predicate: cli.predicate.as_deref(),
 

@@ -2,7 +2,7 @@
 
 The goal of this page: **a consumer can trust the JSON without reading the
 code**. The formal schema lives at
-[`schemas/report-v0.5.schema.json`](https://github.com/cdelmonte-zg/delta-explain/blob/main/schemas/report-v0.5.schema.json) and
+[`schemas/report-v0.6.schema.json`](https://github.com/cdelmonte-zg/delta-explain/blob/main/schemas/report-v0.6.schema.json) and
 the integration suite validates every emitted document against it; this
 page explains what the fields mean.
 
@@ -20,10 +20,11 @@ changes bump the major. Consumers should:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema_version` | string | Schema of this document (`0.5.x`) |
+| `schema_version` | string | Schema of this document (`0.6.x`) |
 | `tool_version` | string | delta-explain release |
 | `elapsed_ms` | integer | Wall-clock analysis duration |
-| `table` | string | Table path/URI as given |
+| `table` | string | Table path/URI as given, or the catalog table name with `--catalog` |
+| `catalog` | object \| null | With `--catalog`: `kind` (`unity`), `name` (`catalog.schema.table`), `location` (the storage URL the catalog returned); null for a path |
 | `version` | integer | Delta snapshot version analyzed |
 | `predicate` | string \| null | The `--where` input, null without one |
 | `total_files` | integer | Files before pruning |

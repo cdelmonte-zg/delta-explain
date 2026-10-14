@@ -1155,7 +1155,11 @@ fn run_json(args: &[&str]) -> serde_json::Value {
 #[test]
 fn json_carries_schema_and_tool_version() {
     let json = run_json(&[&test_table(), "--format", "json"]);
-    assert_eq!(json["schema_version"], "0.5.0");
+    assert_eq!(json["schema_version"], "0.6.0");
+    assert!(
+        json["catalog"].is_null(),
+        "a path has no catalog provenance"
+    );
     assert_eq!(json["tool_version"], env!("CARGO_PKG_VERSION"));
 }
 

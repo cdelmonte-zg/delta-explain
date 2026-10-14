@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use crate::error::Result;
 use crate::presentation::{AssertionView, DiagnosticScope, ExplanationView, Presentation};
 
-pub const SCHEMA_VERSION: &str = "0.5.0";
+pub const SCHEMA_VERSION: &str = "0.6.0";
 
 pub(super) fn render(presentation: &Presentation) -> Result<String> {
     let analysis_notes = presentation
@@ -137,6 +137,17 @@ pub(super) fn render(presentation: &Presentation) -> Result<String> {
             presentation
                 .table
                 .path,
+
+        "catalog":
+            presentation
+                .table
+                .catalog
+                .as_ref()
+                .map(|catalog| json!({
+                    "kind": catalog.kind,
+                    "name": catalog.name,
+                    "location": catalog.location,
+                })),
 
         "version":
             presentation
