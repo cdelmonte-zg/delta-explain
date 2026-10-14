@@ -44,8 +44,12 @@ pub fn resolve(reference: TableReference) -> Result<ResolvedTable> {
             })
         }
         TableReference::UnityCatalog { name } => {
-            let runtime = tokio::runtime::Runtime::new()
-                .map_err(|err| Error::Catalog(format!("Cannot create catalog runtime: {}", err)))?;
+            // Two serial HTTP calls: a current-thread runtime is enough,
+            // and it does not compete with the pool the kernel engine owns.
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|err| Error::Catalog(format!("Cannot create catalog runtime: {err}")))?;
 
             runtime.block_on(unity::resolve(&name))
         }

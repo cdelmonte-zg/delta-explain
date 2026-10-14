@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::catalog::{CatalogCredentials, ResolvedStorage, ResolvedTable};
@@ -97,54 +100,55 @@ struct GcpCredentialResponse {
     oauth_token: Option<String>,
 }
 
+// A catalog that never answers must not hang the command: the kernel's
+// own object-store reads have their timeouts, this covers the two REST
+// calls made before any of that starts.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
 impl UnityCatalogClient {
-    fn new(config: CatalogConfig) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            config,
-        }
+    fn new(config: CatalogConfig) -> Result<Self> {
+        let http = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .map_err(|err| Error::Catalog(format!("Cannot build HTTP client: {err}")))?;
+
+        Ok(Self { http, config })
+    }
+
+    fn endpoint(&self, path: &str) -> String {
+        format!(
+            "{}/api/2.1/unity-catalog/{path}",
+            self.config.host.trim_end_matches('/')
+        )
     }
 
     async fn get_table(&self, name: &UnityTableName) -> Result<TableInfo> {
         let full_name = format!("{}.{}.{}", name.catalog, name.schema, name.table);
+        let request = self.http.get(self.endpoint(&format!("tables/{full_name}")));
 
-        let url = format!(
-            "{}/api/2.1/unity-catalog/tables/{}",
-            self.config.host.trim_end_matches('/'),
-            full_name
-        );
-
-        let response = self
-            .http
-            .get(url)
-            .bearer_auth(&self.config.token)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let table = response.json::<TableInfo>().await?;
-
-        Ok(table)
+        self.send(request).await
     }
 
     async fn get_temporary_credentials(&self, table_id: &str) -> Result<TemporaryCredentials> {
-        let url = format!(
-            "{}/api/2.1/unity-catalog/temporary-table-credentials",
-            self.config.host.trim_end_matches('/')
-        );
-
-        let request = TemporaryCredentialsRequest {
-            table_id,
-            operation: "READ",
-        };
-
-        let response = self
+        let request = self
             .http
-            .post(url)
-            .bearer_auth(&self.config.token)
-            .json(&request)
-            .send()
-            .await?;
+            .post(self.endpoint("temporary-table-credentials"))
+            .json(&TemporaryCredentialsRequest {
+                table_id,
+                operation: "READ",
+            });
+
+        self.send::<TemporaryCredentialsResponse>(request)
+            .await?
+            .try_into()
+    }
+
+    // Every call shares one error contract: transport failures surface as
+    // `CatalogRequest`; an error status keeps the server's own body, which
+    // carries the `error_code` and `message` the user needs (a bucket the
+    // server cannot vend for, a table it does not know).
+    async fn send<T: DeserializeOwned>(&self, request: reqwest::RequestBuilder) -> Result<T> {
+        let response = request.bearer_auth(&self.config.token).send().await?;
 
         let status = response.status();
         let body = response.text().await?;
@@ -155,17 +159,15 @@ impl UnityCatalogClient {
             )));
         }
 
-        let response = serde_json::from_str::<TemporaryCredentialsResponse>(&body)
-            .map_err(|err| Error::Catalog(format!("invalid Unity Catalog response: {err}")))?;
-
-        response.try_into()
+        serde_json::from_str(&body)
+            .map_err(|err| Error::Catalog(format!("invalid Unity Catalog response: {err}")))
     }
 }
 
 pub async fn resolve(name: &str) -> Result<ResolvedTable> {
     let config = CatalogConfig::from_env()?;
     let name = UnityTableName::try_from(name)?;
-    let client = UnityCatalogClient::new(config);
+    let client = UnityCatalogClient::new(config)?;
     let table = client.get_table(&name).await?;
 
     if table.data_source_format != "DELTA" {
@@ -246,5 +248,95 @@ impl TryFrom<TemporaryCredentialsResponse> for TemporaryCredentials {
         };
 
         Ok(Self { credentials })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn credentials(json: &str) -> Result<CatalogCredentials> {
+        let response: TemporaryCredentialsResponse = serde_json::from_str(json).unwrap();
+        TemporaryCredentials::try_from(response).map(|temporary| temporary.credentials)
+    }
+
+    #[test]
+    fn table_name_has_three_non_empty_parts() {
+        let name = UnityTableName::try_from("lake.default.users").unwrap();
+        assert_eq!(
+            (
+                name.catalog.as_str(),
+                name.schema.as_str(),
+                name.table.as_str()
+            ),
+            ("lake", "default", "users")
+        );
+
+        for raw in [
+            "users",
+            "lake.users",
+            "lake.default.users.extra",
+            "lake..users",
+            "",
+        ] {
+            let err = UnityTableName::try_from(raw).unwrap_err();
+            assert!(matches!(err, Error::TableUri(_)), "{raw}: {err}");
+        }
+    }
+
+    #[test]
+    fn aws_credentials_are_mapped_and_optional_fields_ignored() {
+        // The shape Unity Catalog OSS returns for statically configured
+        // credentials: no expiration, the table's own url.
+        let json = r#"{
+            "aws_temp_credentials": {
+                "access_key_id": "AKIA", "secret_access_key": "secret",
+                "session_token": "token"
+            },
+            "azure_user_delegation_sas": null, "gcp_oauth_token": null,
+            "expiration_time": null, "url": "s3://cat/uc-external/users"
+        }"#;
+
+        match credentials(json).unwrap() {
+            CatalogCredentials::Aws {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => {
+                assert_eq!(access_key_id, "AKIA");
+                assert_eq!(secret_access_key, "secret");
+                assert_eq!(session_token, "token");
+            }
+            other => panic!("expected AWS credentials, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn azure_and_gcp_credentials_are_mapped() {
+        let azure = credentials(r#"{"azure_user_delegation_sas": {"sas_token": "sv=2024"}}"#);
+        assert!(
+            matches!(azure.unwrap(), CatalogCredentials::Azure { sas_token } if sas_token == "sv=2024")
+        );
+
+        let gcp = credentials(r#"{"gcp_oauth_token": {"oauth_token": "ya29"}}"#);
+        assert!(
+            matches!(gcp.unwrap(), CatalogCredentials::Gcp { oauth_token } if oauth_token == "ya29")
+        );
+    }
+
+    #[test]
+    fn missing_or_ambiguous_credentials_are_rejected() {
+        let cases = [
+            r#"{}"#,
+            r#"{"aws_temp_credentials": {"access_key_id": "AKIA", "secret_access_key": "s"}}"#,
+            r#"{"azure_user_delegation_sas": {}}"#,
+            r#"{"aws_temp_credentials": {"access_key_id": "a", "secret_access_key": "s", "session_token": "t"},
+                "azure_user_delegation_sas": {"sas_token": "x"}}"#,
+        ];
+
+        for json in cases {
+            let err = credentials(json).unwrap_err();
+            assert!(matches!(err, Error::Credentials(_)), "{json}: {err}");
+        }
     }
 }

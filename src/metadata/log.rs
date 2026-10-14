@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use delta_kernel::object_store::path::Path as ObjectPath;
+use delta_kernel::object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
 use futures::TryStreamExt;
-use object_store::path::Path as ObjectPath;
-use object_store::{DynObjectStore, ObjectStore, ObjectStoreExt};
 use serde_json::Value;
 use url::Url;
 

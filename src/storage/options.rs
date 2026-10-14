@@ -121,4 +121,48 @@ mod tests {
 
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn catalog_mode_rejects_user_credential_sources() {
+        let sources = [
+            StorageConfig {
+                env_credentials: true,
+                ..Default::default()
+            },
+            StorageConfig {
+                profile: Some("dev".to_string()),
+                ..Default::default()
+            },
+            StorageConfig {
+                public: true,
+                ..Default::default()
+            },
+        ];
+
+        for config in sources {
+            let err = resolve_catalog(&config).unwrap_err();
+            assert!(matches!(err, Error::Options(_)), "{config:?}: {err}");
+        }
+    }
+
+    #[test]
+    fn catalog_mode_keeps_region_and_options_in_precedence_order() {
+        let config = StorageConfig {
+            region: Some("eu-west-1".to_string()),
+            options: vec![
+                StorageOption::new("region", "ap-south-1"),
+                StorageOption::new("aws_endpoint", "http://localhost:9020"),
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_catalog(&config).unwrap(),
+            vec![
+                StorageOption::new("region", "eu-west-1"),
+                StorageOption::new("region", "ap-south-1"),
+                StorageOption::new("aws_endpoint", "http://localhost:9020"),
+            ]
+        );
+    }
 }

@@ -811,7 +811,6 @@ dependencies = [
  "futures",
  "jsonschema",
  "num-format",
- "object_store",
  "predicates",
  "reqwest 0.13.5",
  "rstest",

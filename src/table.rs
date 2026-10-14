@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use delta_kernel::object_store::DynObjectStore;
 use delta_kernel::{Engine, Snapshot};
-use object_store::DynObjectStore;
 use url::Url;
 
 use super::error::{Error, Result};
