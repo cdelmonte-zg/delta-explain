@@ -98,6 +98,23 @@ A composite action wraps the CLI with matching inputs. Pin the release tag:
     min-pruning: "80"
 ```
 
+With `catalog: unity` the `table` input is a `catalog.schema.table` name;
+the step reads `DATABRICKS_HOST` and `DATABRICKS_TOKEN` from its `env` and
+the table with the credentials the catalog vends, so no cloud credentials
+are configured on the runner:
+
+```yaml
+- uses: cdelmonte-zg/delta-explain@v0.7.0
+  with:
+    table: sales.events.orders
+    catalog: unity
+    where: "region = 'eu'"
+    min-pruning: "80"
+  env:
+    DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+    DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+```
+
 ## Docker in a pipeline
 
 The same gate without the composite action, from any CI system that can run a

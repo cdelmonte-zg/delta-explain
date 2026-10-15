@@ -19,6 +19,7 @@ follow SemVer relative to that field.
   report gains a `Resolved:` line and the JSON a
   `catalog` object (`kind`, `name`, `location`), null for a path:
   `schema_version` 0.5.0 -> 0.6.0, new `schemas/report-v0.6.schema.json`.
+  The GitHub Action gains the matching `catalog` input.
 
 ### Changed
 

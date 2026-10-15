@@ -9,8 +9,12 @@ branding:
 
 inputs:
   table:
-    description: "Path or URI of the Delta table (local, s3://, az://, gs://)"
+    description: "Path or URI of the Delta table (local, s3://, az://, gs://), or its name with `catalog`"
     required: true
+  catalog:
+    description: "Resolve `table` as a catalog.schema.table name in this catalog (unity: DATABRICKS_HOST and DATABRICKS_TOKEN from the step env)"
+    required: false
+    default: ""
   where:
     description: "SQL WHERE predicate to analyze"
     required: false
@@ -85,6 +89,7 @@ runs:
       # quotes, $(), or newlines in an input stay data instead of code.
       env:
         DX_TABLE: ${{ inputs.table }}
+        DX_CATALOG: ${{ inputs.catalog }}
         DX_WHERE: ${{ inputs.where }}
         DX_MIN_PRUNING: ${{ inputs.min-pruning }}
         DX_ASSERT_STATS: ${{ inputs.assert-stats }}
@@ -95,6 +100,7 @@ runs:
       run: |
         set -uo pipefail
         args=("$DX_TABLE" --format json)
+        [ -n "$DX_CATALOG" ] && args+=(--catalog "$DX_CATALOG")
         [ -n "$DX_WHERE" ] && args+=(-w "$DX_WHERE")
         [ -n "$DX_MIN_PRUNING" ] && args+=(--min-pruning "$DX_MIN_PRUNING")
         [ "$DX_ASSERT_STATS" = "true" ] && args+=(--assert-stats)
