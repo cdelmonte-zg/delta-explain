@@ -32,6 +32,8 @@ follow SemVer relative to that field.
   `--catalog unity` as well. The bootstrap handshake survives a request
   left by a previous container and RustFS answering `/health` before its
   S3 API is up.
+- GitHub releases carry this changelog's section for the version as
+  their notes, ahead of the generated list of merged PRs.
 - delta-kernel-rs 0.28 -> 0.29. Pruning results are unchanged. Two errors
   that pass through from the kernel read differently: an empty
   `_delta_log` now reports `No table version found`, and a table with row
