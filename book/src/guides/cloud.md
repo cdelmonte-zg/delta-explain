@@ -49,7 +49,7 @@ server) can be named instead of located:
 ```bash
 export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com
 export DATABRICKS_TOKEN=<personal access token>
-delta-explain --catalog unity sales.events.orders -w "day = DATE '2026-10-01'"
+delta-explain --catalog unity sales.events.orders -w "country = 'DE' AND age > 40"
 ```
 
 The catalog answers with the table's storage location and vends temporary
