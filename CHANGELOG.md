@@ -7,7 +7,7 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
-## [Unreleased]
+## [0.8.0] - 2026-10-15
 
 ### Added
 
