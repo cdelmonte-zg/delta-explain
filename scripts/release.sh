@@ -262,7 +262,7 @@ cmd_prepare() {
   pin_docs "$version"
 
   local changed
-  changed=$(git diff --name-only | sort | tr '\n' ' ')
+  changed=$(git diff --name-only | LC_ALL=C sort | tr '\n' ' ')
   [ "$changed" = "CHANGELOG.md Cargo.lock Cargo.toml README.md book/src/guides/ci-gating.md " ] \
     || die "unexpected set of files changed by the bump: $changed"
 

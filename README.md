@@ -56,15 +56,12 @@ A table in Unity Catalog can be named instead of located. The catalog answers wi
 
 ```bash
 export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com DATABRICKS_TOKEN=<token>
-delta-explain --catalog unity sales.events.orders --where "day = DATE '2026-10-01'"
+delta-explain --catalog unity sales.events.orders --where "age > 40 AND country = 'DE'"
 ```
 
-```
-Delta table: sales.events.orders
-Resolved:    s3://warehouse/events/orders/ (unity catalog)
-```
+<img src="assets/readme/cli-catalog.png" alt="delta-explain --catalog unity on a table named sales.events.orders: a Resolved line shows the storage location the catalog answered with, then the same predicate analysis and pruning phases as for a path" width="700">
 
-The rest of the report is the same, and the JSON carries the resolution in a `catalog` object. The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
+The `Resolved:` line is the only addition; the JSON carries the resolution in a `catalog` object. The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
 
 ### From Python
 
@@ -79,7 +76,7 @@ report = explain("s3://warehouse/events",
 report.passed              # gate outcome; False means the CLI would exit 1
 report.total_pruning_pct
 
-report = explain("sales.events.orders", catalog="unity", where="day = DATE '2026-10-01'")
+report = explain("sales.events.orders", catalog="unity", where="country = 'DE' AND age > 40")
 report.catalog["location"]  # what the catalog resolved the name to
 ```
 
@@ -96,7 +93,7 @@ delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90 --
 The repo doubles as a composite GitHub Action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.7.0
+- uses: cdelmonte-zg/delta-explain@v0.8.0
   with:
     table: s3://warehouse/events
     where: "country = 'DE' AND age > 40"
@@ -108,17 +105,17 @@ The repo doubles as a composite GitHub Action, so the gate is one step. Pin the 
 Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. With `catalog: unity` the `table` input is a name, and the step reads `DATABRICKS_HOST` and `DATABRICKS_TOKEN` from its `env`:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.7.0
+- uses: cdelmonte-zg/delta-explain@v0.8.0
   with:
     table: sales.events.orders
     catalog: unity
-    where: "day = DATE '2026-10-01'"
-    min-pruning: "90"
+    where: "country = 'DE' AND age > 40"
+    min-pruning: "60"
   env:
     DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
     DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
 ```
- How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
+How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
 
 ### Examples
 
