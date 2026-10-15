@@ -56,9 +56,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The curated notes: this version's section of CHANGELOG.md. The
+      # action prepends it to the generated notes (merged PRs, full diff).
+      - name: Extract the changelog section
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            if [[ "$VERSION" == *-* ]]; then
+              echo "Prerelease: no CHANGELOG section for $VERSION." > release-notes.md
+            else
+              echo "ERROR: CHANGELOG.md has no section for $VERSION"
+              exit 1
+            fi
+          fi
+          cat release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          body_path: release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 

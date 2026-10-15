@@ -5,13 +5,20 @@ The release itself is automated (pushing a `v*` tag triggers
 targets, `.deb` packages, Homebrew tap and Scoop bucket bumps; `docker.yml`
 builds and pushes the image). This checklist is everything around that
 automation: what to verify before the tag, and what the automation does
-not verify for you afterwards.
+not verify for you afterwards. `scripts/release.sh` drives the manual
+part (`status`, `prepare`, `tag`, `verify`); the items below say which
+step covers what, and what stays by hand.
 
 ## 1. Pre-flight, on a release branch
 
-- [ ] `cargo fmt --check`
-- [ ] `cargo clippy --all-targets -- -D warnings`
-- [ ] `cargo test`
+- [ ] `scripts/release.sh prepare X.Y.Z` (from a clean, up-to-date main):
+      creates `release/X.Y.Z`, bumps `Cargo.toml` and `Cargo.lock`, dates
+      the `[Unreleased]` section of CHANGELOG.md, pins
+      `cdelmonte-zg/delta-explain@vX.Y.Z` in README and the CI guide, runs
+      `cargo fmt --check`, `clippy`, `test`, `cargo publish --dry-run`, the
+      release build and the maturin wheel with a clean-venv install, then
+      commits `chore: release as X.Y.Z` and opens the PR (`--dry-run`
+      stops before the push, `--skip-checks` leaves the checks to CI).
 - [ ] Differential harness, fresh mode (the survivor-set oracle):
 
   ```bash
@@ -22,55 +29,50 @@ not verify for you afterwards.
 
 - [ ] **Review README.md and docs/.** crates.io freezes the README at
       publish time; whatever is wrong in it stays wrong for this version
-      forever. Check in particular: the action example pins the tag being
-      released (`cdelmonte-zg/delta-explain@vX.Y.Z`, not `@main`), the
-      *Current limitations* section reflects reality, performance numbers
-      are not stale.
-- [ ] **CHANGELOG.md**: move `[Unreleased]` under the new version heading
-      with the date. If the JSON output changed, state the
-      `schema_version` implication explicitly (additive = minor, breaking
-      = major) and confirm `render::SCHEMA_VERSION`,
-      `schemas/report-vX.Y.schema.json`, and the docs agree.
-- [ ] Bump `version` in `Cargo.toml`; `cargo build` to refresh
-      `Cargo.lock`; commit as `chore: release as X.Y.Z`.
+      forever. Check in particular that performance numbers are not stale
+      and that every example still matches the output of the bumped build.
+- [ ] **CHANGELOG.md**: read the section `prepare` just dated. If the JSON
+      output changed, state the `schema_version` implication explicitly
+      (additive = minor, breaking = major) and confirm
+      `render::SCHEMA_VERSION`, `schemas/report-vX.Y.schema.json`, and the
+      docs agree. The section becomes the release notes: `release.yml`
+      prepends it to the generated ones.
 - [ ] If the release changed the CLI output or the report shape,
       regenerate the committed artifacts that carry captured output and
-      the tool version: re-execute `examples/taxi-optimization` (its
-      README run instructions) and refresh `viewer/screenshot.png` and
-      the README terminal shots (`assets/readme/cli-*.png`, real output
-      rendered in a terminal frame), all against the bumped build, so
-      the banners match the released version.
-- [ ] `cargo publish --dry-run`
-- [ ] `maturin build --release` locally: the wheel builds and installs in a
-      clean venv, `import delta_explain` and the bundled binary both work
-- [ ] Open the PR, wait for full CI (including `docker-smoke`), merge.
+      the tool version, all against the bumped build so the banners match
+      the released version: `python3 scripts/render_readme_shots.py` for
+      the README terminal shots (`assets/readme/cli-*.png`; the catalog
+      shot reads `sales.events.orders` from the `examples/catalogs` stack,
+      prepared by `scripts/register_shot_table.sh`), then re-execute
+      `examples/taxi-optimization` (its README run instructions) and
+      refresh `viewer/screenshot.png` by hand. Commit them on the release
+      branch.
+- [ ] Wait for full CI (including `docker-smoke`), merge.
 
 ## 2. Tag
 
-- [ ] Tag the merge commit on main and push it:
-
-  ```bash
-  git tag vX.Y.Z <merge-commit> && git push origin vX.Y.Z
-  ```
-
-- [ ] Watch the release and docker workflows to completion.
+- [ ] `scripts/release.sh tag X.Y.Z`: checks that main carries the bump
+      and the dated changelog, tags it, pushes the tag, watches
+      `release.yml` and `docker.yml` to completion and runs `verify`
+      (`--no-watch` returns right after the push, `--dry-run` stops before
+      the tag).
 
 ## 3. Post-release verification (the automation fails silently here)
 
-- [ ] GitHub release exists with all assets: six target archives, `.deb`
-      amd64+arm64, `sha256` sums.
+- [ ] `scripts/release.sh verify X.Y.Z` (also run by `tag`) checks: the
+      GitHub release with all assets (six target archives with `sha256`
+      sums, `.deb` amd64+arm64); the Homebrew formula and the Scoop
+      manifest at the new version *with the published checksums*, not
+      placeholders; crates.io and PyPI; the ghcr image with both amd64 and
+      arm64 manifests; the linux x86_64 tarball (checksum, `--version`,
+      a run on the fixture) and `pip install delta-explain==X.Y.Z` in a
+      clean venv. Re-run it if PyPI was still propagating.
 - [ ] External-user check, from a machine or directory with no repo
-      checkout: download the *pinned* asset URL and the *latest* shortcut
-      URL, verify `sha256sum`, run `delta-explain --version`.
+      checkout: download the *latest* shortcut URL, verify `sha256sum`,
+      run `delta-explain --version`.
 - [ ] `cargo install delta-explain --version X.Y.Z` succeeds and
       `--version` matches.
-- [ ] `pip install delta-explain==X.Y.Z` in a clean venv: `delta-explain
-      --version` matches and `python -c "import delta_explain"` works
-      (first release only: the PyPI trusted publisher must be configured
-      before the tag, see the repository settings note in the PR that
-      introduced the wheels).
-- [ ] Docker image: `docker run --rm ghcr.io/cdelmonte-zg/delta-explain:X.Y.Z --version`
-      (both amd64 and arm64 manifests present).
+- [ ] Docker: `docker run --rm ghcr.io/cdelmonte-zg/delta-explain:X.Y.Z --version`.
 - [ ] GitHub Action smoke: a workflow using
       `cdelmonte-zg/delta-explain@vX.Y.Z` with `version: X.Y.Z` passes.
 - [ ] **Marketplace listing points at the new tag.** Releases created by
@@ -92,9 +94,9 @@ not verify for you afterwards.
       description must stay under 125 characters or the publication is
       rejected.
 - [ ] **homebrew-tap and scoop-bucket really got bumped**: the bots update
-      them but fail silently. Open both repos and check the formula and
-      manifest carry the new version *and real checksums*, not
-      placeholders (this has happened before).
+      them but fail silently (placeholder checksums have happened before).
+      `verify` compares both against the published `sha256` assets; if it
+      warned, fix the formula or manifest by hand.
 - [ ] **Documentation site deployed and current.** Cutting the CHANGELOG
       to the new version is a docs change, so `pages.yml` redeploys the
       mdBook site on the merge to main. Open
@@ -109,6 +111,7 @@ not verify for you afterwards.
 ## 4. Aftermath
 
 - [ ] The README example and docs referencing a pinned tag point at the
-      version just released.
+      version just released (`prepare` did it; confirm nothing was added
+      since).
 - [ ] If the release narrative matters (webinar, article), write it from
       the CHANGELOG section, not the other way around.
