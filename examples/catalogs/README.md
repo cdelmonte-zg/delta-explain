@@ -23,10 +23,14 @@ answers, one table.
 
 Credential vending is exercised too: the driver asks Unity Catalog for
 temporary `READ` credentials on each table and runs `delta-explain` with
-them. The server never touches storage for the tables registered here, and
-its own vending goes through AWS STS, which has no endpoint setting for an
+them, first as explicit `--option` keys, then by name through
+`--catalog unity`, where the resolver makes the same two calls itself. The
+server never touches storage for the tables registered here, and its own
+vending goes through AWS STS, which has no endpoint setting for an
 S3-compatible store; what it hands out are temporary credentials RustFS
 issued at startup (`uc/bootstrap.sh`), configured as static ones to vend.
+Optionally, the same server vends for a real ADLS Gen2 account and a real
+GCS bucket (see below).
 
 Tables whose commits are coordinated by the catalog
 (`delta.feature.catalogManaged`, Unity Catalog's own "managed tables" since
@@ -98,9 +102,24 @@ delta-explain on the resolved locations, -w "country = 'DE'"
   lake.default.users_mgd     s3://cat/uc-managed/__unitystorage/tables/<uuid>
                              17 files, 5 kept, 70.6% pruned
 
-same, with the credentials Unity Catalog vended
+same, with the credentials Unity Catalog vended, as --option
   lake.default.users_ext     17 files, 5 kept, 70.6% pruned
   lake.default.users_mgd     17 files, 5 kept, 70.6% pruned
+
+same, by name through --catalog unity
+  lake.default.users_ext     17 files, 5 kept, 70.6% pruned
+  lake.default.users_mgd     17 files, 5 kept, 70.6% pruned
+```
+
+The last block is what a user runs; the driver only sets the two variables
+the resolver reads and keeps the RustFS transport options, which stay
+user-controlled in catalog mode:
+
+```bash
+DATABRICKS_HOST=http://localhost:8080 DATABRICKS_TOKEN=unused \
+  delta-explain --catalog unity lake.default.users_ext -w "country = 'DE'" \
+  --option aws_endpoint=http://localhost:9020 --option aws_allow_http=true \
+  --option aws_virtual_hosted_style_request=false --option aws_region=us-east-1
 ```
 
 Facts worth keeping for the resolver design:
@@ -169,13 +188,56 @@ Unity Catalog: lake.default.users_azure
   table_id: <uuid>
   vended: azure_user_delegation_sas, expiration <timestamp>
 ...
-same, with the credentials Unity Catalog vended
+same, with the credentials Unity Catalog vended, as --option
+  lake.default.users_azure   15 files, 5 kept, 66.7% pruned
+
+same, by name through --catalog unity
   lake.default.users_azure   15 files, 5 kept, 66.7% pruned
 ```
 
 The SAS carries read and list on the table directory and lasts one hour;
 `abfss` is the only Azure scheme the server dispatches (`az://` and
 `https://` locations are not vended).
+
+## GCS
+
+The same again for a real GCS bucket: the server holds a service-account
+key and exchanges its token for one downscoped to the table path (Google's
+credential access boundary, `roles/storage.objectViewer` for `READ`, one
+hour). The key needs read access on the bucket, nothing more; the
+`examples/gcs` service account qualifies. The stack registers the table as
+`lake.default.users_gcs` and, as for Azure, the host holds no GCS
+credentials of its own.
+
+Add to `.env` the host path of the key and the table location, then
+recreate the two containers as above:
+
+```bash
+GOOGLE_SERVICE_ACCOUNT=/path/to/key.json
+GCS_TABLE_PATH=gs://bucket/lake/users
+```
+
+The driver prints:
+
+```
+Unity Catalog: lake.default.users_gcs
+  table_type: EXTERNAL
+  data_source_format: DELTA
+  storage_location: gs://<bucket>/lake/users
+  table_id: <uuid>
+  vended: gcp_oauth_token, expiration <timestamp>
+...
+same, with the credentials Unity Catalog vended, as --option
+  lake.default.users_gcs     no --option key for a GCS OAuth token
+
+same, by name through --catalog unity
+  lake.default.users_gcs     14 files, 5 kept, 64.3% pruned
+```
+
+The `--option` row is empty by construction: the `object_store` release the
+kernel pins has no key for a bearer token, so a vended GCS token only
+travels through `--catalog unity`, which installs it on the store as a
+credential provider.
 
 ## Versions
 

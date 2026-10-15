@@ -20,15 +20,22 @@ set -eu
 RUSTFS=http://rustfs:9000
 ROOT=rustfsadmin:rustfsadmin
 OUT=/bootstrap/server.properties
+GCS_KEY=/bootstrap/gcs-key.json
 
 # The volume is created root-owned; the unitycatalog service (uid 100)
 # must be able to write its request and remove a stale file.
 chmod 0777 /bootstrap
+# A request or file left by a previous run would be answered before the
+# current unitycatalog container asks (it keeps asking until served).
+rm -f /bootstrap/request /bootstrap/server.properties
 
 until curl -sf -o /dev/null "$RUSTFS/health"; do
   echo 'waiting for rustfs...'; sleep 1
 done
-curl -sf -X PUT --user "$ROOT" --aws-sigv4 'aws:amz:us-east-1:s3' "$RUSTFS/cat"
+# /health answers before the S3 API does: retry the bucket creation.
+until curl -sf -o /dev/null -X PUT --user "$ROOT" --aws-sigv4 'aws:amz:us-east-1:s3' "$RUSTFS/cat"; do
+  echo 'waiting for the rustfs s3 api...'; sleep 1
+done
 echo 'bucket ready: cat'
 
 until [ -f /bootstrap/request ]; do
@@ -46,6 +53,14 @@ EXPIRES=$(field Expiration)
 if [ -z "$KEY" ] || [ -z "$SECRET" ] || [ -z "$TOKEN" ]; then
   echo "unexpected AssumeRole response: $STS" >&2
   exit 1
+fi
+
+if [ -n "${GCS_TABLE_PATH:-}" ]; then
+  # The key is private on the host and the server runs as uid 100: it
+  # gets a readable copy on the shared volume, next to server.properties.
+  cp /gcs-key.json "$GCS_KEY"
+  chmod 0644 "$GCS_KEY"
+  GCS_BUCKET=$(printf '%s' "$GCS_TABLE_PATH" | sed 's|^\(gs://[^/]*\).*|\1|')
 fi
 
 {
@@ -66,8 +81,16 @@ fi
     printf 'adls.clientId.0=%s\n' "$AZURE_CLIENT_ID"
     printf 'adls.clientSecret.0=%s\n' "$AZURE_CLIENT_SECRET"
   fi
+  if [ -n "${GCS_TABLE_PATH:-}" ]; then
+    # Real GCS bucket: the server exchanges this service account's token
+    # for one downscoped to the table path (objectViewer for READ).
+    printf '\n# Appended by uc/bootstrap.sh: what the server vends for %s\n' "$GCS_BUCKET"
+    printf 'gcs.bucketPath.0=%s\n' "$GCS_BUCKET"
+    printf 'gcs.jsonKeyFilePath.0=%s\n' "$GCS_KEY"
+  fi
 } > "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"
 echo "unity catalog config written; vended credentials expire at $EXPIRES"
 [ -n "${AZURE_STORAGE_ACCOUNT:-}" ] && echo "azure vending configured for account $AZURE_STORAGE_ACCOUNT"
+[ -n "${GCS_TABLE_PATH:-}" ] && echo "gcs vending configured for $GCS_BUCKET"
 exit 0

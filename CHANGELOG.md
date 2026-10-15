@@ -14,17 +14,24 @@ follow SemVer relative to that field.
 - `--catalog unity`: PATH is a Unity Catalog table name
   (`catalog.schema.table`), resolved through the catalog's REST API
   (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`) and read with the temporary
-  credentials the catalog vends (AWS and Azure; GCP tokens are not yet
-  mapped). `--env-creds`, `--profile` and `--public` are rejected in
-  catalog mode. The text report gains a `Resolved:` line and the JSON a
+  credentials the catalog vends (AWS, Azure and GCP). `--env-creds`,
+  `--profile` and `--public` are rejected in catalog mode. The text
+  report gains a `Resolved:` line and the JSON a
   `catalog` object (`kind`, `name`, `location`), null for a path:
   `schema_version` 0.5.0 -> 0.6.0, new `schemas/report-v0.6.schema.json`.
+  The GitHub Action gains the matching `catalog` input.
 
 ### Changed
 
 - The example stacks run on RustFS instead of MinIO (#174): MinIO is
   archived and no public registry serves its images. `examples/minio-s3`
   moves to `examples/s3-compatible`.
+- `examples/catalogs`: the Unity Catalog stack also vends downscoped
+  tokens for a real GCS bucket (`GCS_TABLE_PATH`, `GOOGLE_SERVICE_ACCOUNT`
+  in `.env`), and the driver reads every catalog table by name through
+  `--catalog unity` as well. The bootstrap handshake survives a request
+  left by a previous container and RustFS answering `/health` before its
+  S3 API is up.
 - delta-kernel-rs 0.28 -> 0.29. Pruning results are unchanged. Two errors
   that pass through from the kernel read differently: an empty
   `_delta_log` now reports `No table version found`, and a table with row

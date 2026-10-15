@@ -50,7 +50,21 @@ With `--verbose`, the per-file view - which files were kept or dropped, and why:
 
 <img src="assets/readme/cli-verbose.png" alt="delta-explain --verbose - the per-file listing: four files DROPPED and two KEPT by partition pruning, each with size, records, partition values and stats ranges">
 
-Cloud tables authenticate through the provider's ambient credential chain, environment variables (`--env-creds`), AWS profiles (`--profile`), or explicit `--option` pairs; the per-provider recipes are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html). The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
+Cloud tables authenticate through the provider's ambient credential chain, environment variables (`--env-creds`), AWS profiles (`--profile`), or explicit `--option` pairs; the per-provider recipes are in the [cloud storage guide](https://cdelmonte-zg.github.io/delta-explain/guides/cloud.html).
+
+A table in Unity Catalog can be named instead of located. The catalog answers with the storage location and vends temporary credentials for it, so no cloud credentials of your own are involved:
+
+```bash
+export DATABRICKS_HOST=https://<workspace>.cloud.databricks.com DATABRICKS_TOKEN=<token>
+delta-explain --catalog unity sales.events.orders --where "day = DATE '2026-10-01'"
+```
+
+```
+Delta table: sales.events.orders
+Resolved:    s3://warehouse/events/orders/ (unity catalog)
+```
+
+The rest of the report is the same, and the JSON carries the resolution in a `catalog` object. The full flag list is `delta-explain --help`, or the [CLI reference](https://cdelmonte-zg.github.io/delta-explain/reference/cli.html). Predicates are standard SQL WHERE syntax; the supported constructs, with what each one can prune, are in the [predicate syntax reference](https://cdelmonte-zg.github.io/delta-explain/reference/predicate-syntax.html).
 
 ### From Python
 
@@ -64,6 +78,9 @@ report = explain("s3://warehouse/events",
                  min_pruning=80, env_creds=True)
 report.passed              # gate outcome; False means the CLI would exit 1
 report.total_pruning_pct
+
+report = explain("sales.events.orders", catalog="unity", where="day = DATE '2026-10-01'")
+report.catalog["location"]  # what the catalog resolved the name to
 ```
 
 Gate failures come back as a report with `passed == False`; runtime errors raise `DeltaExplainError` with the CLI's message: the same exit-code contract as the command line, in Python types. More in the [Python guide](https://cdelmonte-zg.github.io/delta-explain/guides/python.html).
@@ -88,7 +105,20 @@ The repo doubles as a composite GitHub Action, so the gate is one step. Pin the 
     env-creds: "true"
 ```
 
-Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
+Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. With `catalog: unity` the `table` input is a name, and the step reads `DATABRICKS_HOST` and `DATABRICKS_TOKEN` from its `env`:
+
+```yaml
+- uses: cdelmonte-zg/delta-explain@v0.7.0
+  with:
+    table: sales.events.orders
+    catalog: unity
+    where: "day = DATE '2026-10-01'"
+    min-pruning: "90"
+  env:
+    DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+    DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+```
+ How to calibrate the threshold, keep the CI predicate semantically equivalent to the runtime query, and run the same gate from Docker: [gating pruning in CI](https://cdelmonte-zg.github.io/delta-explain/guides/ci-gating.html).
 
 ### Examples
 
@@ -97,6 +127,7 @@ Every example in [`examples/`](examples/) is executable and runs against real ta
 - [The three-minute quickstart](examples/quickstart/) - one script, five beats, each one thing delta-explain does.
 - [Tuning a Delta table](examples/taxi-optimization/) - a notebook that uses delta-explain to measure four layouts of real NYC-taxi data, from unpartitioned pile to date partitions plus fare-sorted files.
 - [S3-compatible storage (RustFS)](examples/s3-compatible/) and [a real GCS bucket](examples/gcs/) - the same data pruning very differently depending on physical layout, on `s3://` and `gs://` tables.
+- [Catalog resolution](examples/catalogs/) - a Hive Metastore and a Unity Catalog server next to RustFS and Spark: what each catalog answers for a table name, and `delta-explain` reading by name with the credentials Unity Catalog vends, on RustFS, ADLS Gen2 and GCS.
 
 ## Performance
 

@@ -37,7 +37,7 @@ WORK = HERE / "work"
 
 def load_env():
     """The optional .env docker compose reads for the stack; the host side
-    needs AZURE_TABLE_PATH from it too. Shell exports win."""
+    needs the *_TABLE_PATH entries from it too. Shell exports win."""
     env_file = HERE / ".env"
     if not env_file.exists():
         return
@@ -52,14 +52,19 @@ def load_env():
 load_env()
 DX_BIN = os.environ.get("DX_BIN", "delta-explain")
 CONTAINER = "dxcat-spark"
-UC = os.environ.get("UC_URL", "http://localhost:8080/api/2.1/unity-catalog")
-DX_OPTIONS = [
+UC_HOST = os.environ.get("UC_HOST", "http://localhost:8080")
+UC = f"{UC_HOST}/api/2.1/unity-catalog"
+# How to reach RustFS from the host; credentials are a separate matter.
+RUSTFS_TRANSPORT = [
     "--option", "aws_endpoint=http://localhost:9020",
     "--option", "aws_allow_http=true",
-    "--option", "aws_access_key_id=rustfsadmin",
-    "--option", "aws_secret_access_key=rustfsadmin",
     "--option", "aws_virtual_hosted_style_request=false",
     "--option", "aws_region=us-east-1",
+]
+DX_OPTIONS = [
+    *RUSTFS_TRANSPORT,
+    "--option", "aws_access_key_id=rustfsadmin",
+    "--option", "aws_secret_access_key=rustfsadmin",
 ]
 PREDICATE = "country = 'DE'"
 
@@ -71,13 +76,18 @@ UC_TABLES = {
     "users_mgd": ("MANAGED", "uc_managed"),
 }
 
-# Optional: a Delta table in a real ADLS Gen2 account (AZURE_TABLE_PATH in
-# .env), registered EXTERNAL and read only with what the catalog vends. The
-# schema is the one of the validation demo table (`lake/users`): the host
-# has no Azure credentials of its own to read the log with.
-AZURE_TABLE = "users_azure"
-AZURE_TABLE_PATH = os.environ.get("AZURE_TABLE_PATH")
-AZURE_SCHEMA = [
+# Optional: Delta tables in a real ADLS Gen2 account and a real GCS bucket
+# (AZURE_TABLE_PATH, GCS_TABLE_PATH in .env), registered EXTERNAL and read
+# only with what the catalog vends. The schema is the one of the validation
+# demo table (`lake/users`): the host has no cloud credentials of its own
+# to read the log with.
+CLOUD_TABLES = {
+    name: path for name, path in (
+        ("users_azure", os.environ.get("AZURE_TABLE_PATH")),
+        ("users_gcs", os.environ.get("GCS_TABLE_PATH")),
+    ) if path
+}
+DEMO_SCHEMA = [
     {"name": "name", "type": "string", "nullable": True, "metadata": {}},
     {"name": "age", "type": "long", "nullable": True, "metadata": {}},
     {"name": "country", "type": "string", "nullable": True, "metadata": {}},
@@ -237,16 +247,16 @@ def register_uc(locs):
             # issued its location: same id, same path, or it refuses.
             body["properties"] = {"io.unitycatalog.tableId": staging_id()}
         uc_create("/tables", body, f"{table_type} table {name} at {location}")
-    if AZURE_TABLE_PATH:
+    for name, path in CLOUD_TABLES.items():
         uc_create("/tables", {
-            "name": AZURE_TABLE,
+            "name": name,
             "catalog_name": UC_CATALOG,
             "schema_name": UC_SCHEMA,
             "table_type": "EXTERNAL",
             "data_source_format": "DELTA",
-            "columns": uc_columns(AZURE_SCHEMA, ["country"]),
-            "storage_location": AZURE_TABLE_PATH,
-        }, f"EXTERNAL table {AZURE_TABLE} at {AZURE_TABLE_PATH}")
+            "columns": uc_columns(DEMO_SCHEMA, ["country"]),
+            "storage_location": path,
+        }, f"EXTERNAL table {name} at {path}")
 
 
 def uc_resolve(full_name):
@@ -268,18 +278,20 @@ def uc_vend(table_id):
 
 
 def vended_options(credentials):
+    """The vended credentials as `--option` keys, or None when object_store
+    has no key for them: a GCS OAuth token only travels through
+    `--catalog unity`, where it is installed as a credential provider."""
+    if credentials.get("gcp_oauth_token"):
+        return None
     if credentials.get("azure_user_delegation_sas"):
         sas = credentials["azure_user_delegation_sas"]["sas_token"]
         return ["--option", f"azure_storage_sas_key={sas}"]
     aws = credentials["aws_temp_credentials"]
     return [
-        "--option", "aws_endpoint=http://localhost:9020",
-        "--option", "aws_allow_http=true",
+        *RUSTFS_TRANSPORT,
         "--option", f"aws_access_key_id={aws['access_key_id']}",
         "--option", f"aws_secret_access_key={aws['secret_access_key']}",
         "--option", f"aws_session_token={aws['session_token']}",
-        "--option", "aws_virtual_hosted_style_request=false",
-        "--option", "aws_region=us-east-1",
     ]
 
 
@@ -289,19 +301,32 @@ def describe_vended(credentials):
         "%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires / 1000)))
     if credentials.get("azure_user_delegation_sas"):
         return f"azure_user_delegation_sas, expiration {expires}"
+    if credentials.get("gcp_oauth_token"):
+        return f"gcp_oauth_token, expiration {expires}"
     key = credentials["aws_temp_credentials"]["access_key_id"]
     return f"aws_temp_credentials, access key {key}, expiration {expires}"
 
 
-def explain(uri, options=DX_OPTIONS):
+def explain(uri, options=DX_OPTIONS, env=None):
     proc = subprocess.run(
         [DX_BIN, uri, *options, "-w", PREDICATE, "--format", "json"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"delta-explain failed on {uri}:\n{proc.stderr}")
     report = json.loads(proc.stdout)
     return report["total_files"], report["final_files"], report["total_pruning_pct"]
+
+
+def explain_by_name(full_name, location):
+    """`--catalog unity`: the resolver does the two REST calls above and
+    reads with what the catalog vends. The server has authorization
+    disabled, so any token satisfies the CLI's requirement. The RustFS
+    transport is user-controlled in catalog mode; other backends drop
+    keys they do not own."""
+    env = {**os.environ, "DATABRICKS_HOST": UC_HOST, "DATABRICKS_TOKEN": "unused"}
+    options = RUSTFS_TRANSPORT if location.startswith("s3://") else []
+    return explain(full_name, ["--catalog", "unity", *options], env)
 
 
 def to_delta_explain_uri(location):
@@ -322,7 +347,7 @@ def resolve(locs):
     results.append((hive["reference"], hive["location"]))
 
     vended = {}
-    uc_names = list(UC_TABLES) + ([AZURE_TABLE] if AZURE_TABLE_PATH else [])
+    uc_names = list(UC_TABLES) + list(CLOUD_TABLES)
     for name in uc_names:
         full_name = f"{UC_CATALOG}.{UC_SCHEMA}.{name}"
         info = uc_resolve(full_name)
@@ -339,19 +364,30 @@ def resolve(locs):
 
     print(f"\ndelta-explain on the resolved locations, -w \"{PREDICATE}\"")
     for reference, location in results:
-        if location.startswith("abfss://"):
-            continue  # the host holds no Azure credentials: vended only
+        if location.startswith(("abfss://", "gs://")):
+            continue  # the host holds no cloud credentials: vended only
         uri = to_delta_explain_uri(location)
         total, kept, pct = explain(uri)
         print(f"  {reference:<26} {uri}")
         print(f"  {'':<26} {total} files, {kept} kept, {pct:.1f}% pruned")
 
-    print("\nsame, with the credentials Unity Catalog vended")
+    print("\nsame, with the credentials Unity Catalog vended, as --option")
     for reference, location in results:
         if reference not in vended:
             continue
+        options = vended_options(vended[reference])
+        if options is None:
+            print(f"  {reference:<26} no --option key for a GCS OAuth token")
+            continue
         uri = to_delta_explain_uri(location)
-        total, kept, pct = explain(uri, vended_options(vended[reference]))
+        total, kept, pct = explain(uri, options)
+        print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
+
+    print("\nsame, by name through --catalog unity")
+    for reference, location in results:
+        if reference not in vended:
+            continue
+        total, kept, pct = explain_by_name(reference, location)
         print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
     return results
 

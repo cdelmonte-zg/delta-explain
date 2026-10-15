@@ -185,10 +185,10 @@ table lives and how to read it.
   `name`, `location`) in the JSON, `null` for a path.
 - The catalog is authoritative for credentials. The table is read with
   the temporary credentials it vends (AWS key/secret/session token, Azure
-  user-delegation SAS); `--env-creds`, `--profile` and `--public` are
-  rejected in this mode, while `--region` and `--option` still configure
-  the transport (endpoint, path style, region). A vended GCP OAuth token
-  is not yet mapped and fails the run.
+  user-delegation SAS, GCP OAuth token); `--env-creds`, `--profile` and
+  `--public` are rejected in this mode, while `--option` still configures
+  the transport (endpoint, path style) and `--region` applies when the
+  vended credentials are AWS ones.
 - A catalog that cannot answer fails the run with its own error: the
   HTTP status plus the server's `error_code` and `message` (a table it
   does not know, a bucket it cannot vend for), never a silent fallback to

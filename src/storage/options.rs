@@ -15,10 +15,6 @@ pub(super) fn resolve_catalog(config: &StorageConfig) -> Result<Vec<StorageOptio
 
     let mut resolved = Vec::new();
 
-    if let Some(region) = &config.region {
-        resolved.push(StorageOption::new("region", region.clone()));
-    };
-
     resolved.extend(config.options.iter().cloned());
 
     Ok(resolved)
@@ -146,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_mode_keeps_region_and_options_in_precedence_order() {
+    fn catalog_mode_keeps_only_explicit_storage_options() {
         let config = StorageConfig {
             region: Some("eu-west-1".to_string()),
             options: vec![
@@ -159,7 +155,6 @@ mod tests {
         assert_eq!(
             resolve_catalog(&config).unwrap(),
             vec![
-                StorageOption::new("region", "eu-west-1"),
                 StorageOption::new("region", "ap-south-1"),
                 StorageOption::new("aws_endpoint", "http://localhost:9020"),
             ]

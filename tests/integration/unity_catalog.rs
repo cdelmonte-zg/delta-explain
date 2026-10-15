@@ -320,24 +320,40 @@ fn non_delta_table_is_refused_before_vending() {
 }
 
 #[test]
-fn gcp_credentials_are_declared_unsupported() {
-    let location = fixture("test-table");
+fn gcp_token_is_sent_as_bearer_to_the_object_store() {
+    // The vended OAuth token has no key/value form in object_store 0.13,
+    // so the GCS store is built with a credential provider. A second fake
+    // server plays GCS through `base_url` and records what the kernel's
+    // first request carries.
+    let gcs = FakeCatalog::spawn(|_| (404, serde_json::json!({"error": "no such object"})));
     let catalog = FakeCatalog::spawn(move |request| match request.method.as_str() {
-        "GET" => (200, table_info(&location, "DELTA")),
+        "GET" => (200, table_info("gs://lakebucket/users", "DELTA")),
         _ => (
             200,
-            serde_json::json!({"gcp_oauth_token": {"oauth_token": "ya29"}}),
+            serde_json::json!({"gcp_oauth_token": {"oauth_token": "ya29.vended"}}),
         ),
     });
 
     catalog
         .cmd()
         .args([TABLE])
+        .args(["--option", &format!("base_url={}", gcs.host)])
+        .args(["--option", "allow_http=true"])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "GCP credentials are not yet supported",
-        ));
+        .stderr(predicate::str::contains("not yet supported").not());
+
+    let requests = gcs.requests();
+    let first = requests
+        .iter()
+        .find(|request| request.path.contains("_delta_log"))
+        .unwrap_or_else(|| panic!("no log request reached the fake GCS: {requests:?}"));
+    assert_eq!(first.authorization.as_deref(), Some("Bearer ya29.vended"));
+    assert!(
+        first.path.contains("lakebucket"),
+        "bucket taken from the catalog location: {}",
+        first.path
+    );
 }
 
 #[test]
