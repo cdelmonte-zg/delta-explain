@@ -95,9 +95,11 @@ pub fn open_with_catalog_credentials(
             secret_access_key,
             session_token,
         } => {
+            // Least explicit layer first: an `--option region=...` already
+            // in the list must win, and the last key wins downstream.
             if let Some(region) = &config.region {
-                options.push(StorageOption::new("region", region.clone()));
-            };
+                options.insert(0, StorageOption::new("region", region.clone()));
+            }
 
             options.push(StorageOption::new("access_key_id", access_key_id));
             options.push(StorageOption::new("secret_access_key", secret_access_key));
