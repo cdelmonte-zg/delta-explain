@@ -82,10 +82,11 @@ describe.
 
 - The local catalog stack (`examples/catalogs/`) exercises the full path
   on RustFS, whose STS credentials the Unity Catalog server is configured
-  to vend, and on a real ADLS Gen2 account; the integration suite covers
-  the CLI flow against a fake catalog server, and the GCP route against a
-  fake GCS endpoint that checks the bearer token, so `cargo test` needs
-  no cloud.
+  to vend, on a real ADLS Gen2 account and on a real GCS bucket, whose
+  downscoped OAuth tokens only `--catalog unity` can carry; the
+  integration suite covers the CLI flow against a fake catalog server,
+  and the GCP route against a fake GCS endpoint that checks the bearer
+  token, so `cargo test` needs no cloud.
 - The GCP credential provider is a workaround with an expiry date:
   object_store 0.14 adds a `bearer_token` key, and once the kernel moves
   to it the token becomes one more option like the AWS and Azure ones.

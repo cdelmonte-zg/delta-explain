@@ -95,6 +95,10 @@ pub fn open_with_catalog_credentials(
             secret_access_key,
             session_token,
         } => {
+            if let Some(region) = &config.region {
+                options.push(StorageOption::new("region", region.clone()));
+            };
+
             options.push(StorageOption::new("access_key_id", access_key_id));
             options.push(StorageOption::new("secret_access_key", secret_access_key));
             options.push(StorageOption::new("session_token", session_token));
@@ -137,13 +141,12 @@ fn gcs_store_with_token(
         .with_url(url.as_str())
         .with_credentials(credentials);
 
+    // Same tolerance as `parse_url_opts`: a key another backend owns
+    // (`region`, `aws_endpoint`) is dropped, not an error.
     for option in options {
-        let key = option
-            .key
-            .parse::<GoogleConfigKey>()
-            .map_err(|err| Error::Kernel(err.into()))?;
-
-        builder = builder.with_config(key, option.value);
+        if let Ok(key) = option.key.parse::<GoogleConfigKey>() {
+            builder = builder.with_config(key, option.value);
+        }
     }
 
     let store = builder.build().map_err(|err| Error::Kernel(err.into()))?;
