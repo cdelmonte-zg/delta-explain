@@ -278,11 +278,10 @@ def uc_vend(table_id):
 
 
 def vended_options(credentials):
-    """The vended credentials as `--option` keys, or None when object_store
-    has no key for them: a GCS OAuth token only travels through
-    `--catalog unity`, where it is installed as a credential provider."""
+    """The vended credentials as the `--option` keys object_store accepts."""
     if credentials.get("gcp_oauth_token"):
-        return None
+        token = credentials["gcp_oauth_token"]["oauth_token"]
+        return ["--option", f"bearer_token={token}"]
     if credentials.get("azure_user_delegation_sas"):
         sas = credentials["azure_user_delegation_sas"]["sas_token"]
         return ["--option", f"azure_storage_sas_key={sas}"]
@@ -376,9 +375,6 @@ def resolve(locs):
         if reference not in vended:
             continue
         options = vended_options(vended[reference])
-        if options is None:
-            print(f"  {reference:<26} no --option key for a GCS OAuth token")
-            continue
         uri = to_delta_explain_uri(location)
         total, kept, pct = explain(uri, options)
         print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
