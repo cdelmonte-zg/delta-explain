@@ -100,6 +100,9 @@ jobs:
       - name: Create the multi-arch manifest
         working-directory: /tmp/digests
         run: |
+          # Word splitting is the point: both substitutions expand to a list
+          # of arguments (one -t per tag, one digest reference per file).
+          # shellcheck disable=SC2046
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
