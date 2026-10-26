@@ -5,13 +5,7 @@ mod options;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use delta_kernel::{
-    Engine,
-    object_store::{
-        DynObjectStore, StaticCredentialProvider,
-        gcp::{GcpCredential, GoogleCloudStorageBuilder, GoogleConfigKey},
-    },
-};
+use delta_kernel::{Engine, object_store::DynObjectStore};
 use delta_kernel_default_engine::DefaultEngineBuilder;
 use delta_kernel_default_engine::storage::store_from_url_opts;
 use url::Url;
@@ -114,7 +108,11 @@ pub fn open_with_catalog_credentials(
             store_from_options(url, options)?
         }
 
-        CatalogCredentials::Gcp { oauth_token } => gcs_store_with_token(url, options, oauth_token)?,
+        CatalogCredentials::Gcp { oauth_token } => {
+            options.push(StorageOption::new("bearer_token", oauth_token));
+
+            store_from_options(url, options)?
+        }
     };
 
     Ok(runtime_from_store(store))
@@ -125,35 +123,6 @@ fn store_from_options(url: &Url, options: Vec<StorageOption>) -> Result<Arc<DynO
         url,
         options.into_iter().map(|option| (option.key, option.value)),
     )?)
-}
-
-// object_store 0.13 (pinned by the kernel) has no configuration key for a
-// GCS bearer token, so the vended OAuth token goes in as a credential
-// provider; 0.14 adds `bearer_token` and this becomes one more option.
-fn gcs_store_with_token(
-    url: &Url,
-    options: Vec<StorageOption>,
-    oauth_token: String,
-) -> Result<Arc<DynObjectStore>> {
-    let credentials = Arc::new(StaticCredentialProvider::new(GcpCredential {
-        bearer: oauth_token,
-    }));
-
-    let mut builder = GoogleCloudStorageBuilder::new()
-        .with_url(url.as_str())
-        .with_credentials(credentials);
-
-    // Same tolerance as `parse_url_opts`: a key another backend owns
-    // (`region`, `aws_endpoint`) is dropped, not an error.
-    for option in options {
-        if let Ok(key) = option.key.parse::<GoogleConfigKey>() {
-            builder = builder.with_config(key, option.value);
-        }
-    }
-
-    let store = builder.build().map_err(|err| Error::Kernel(err.into()))?;
-
-    Ok(Arc::new(store))
 }
 
 #[cfg(test)]

@@ -7,6 +7,16 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
+## [Unreleased]
+
+### Changed
+
+- Upgraded delta_kernel to 0.30 (arrow 60, object_store 0.14). The
+  `cargo audit` ignores for quick-xml (RUSTSEC-2026-0194, -0195) are gone
+  with it, and the Unity Catalog GCP token now reaches the store as the
+  `bearer_token` option instead of a credential provider; behavior is
+  unchanged.
+
 ## [0.8.0] - 2026-10-15
 
 ### Added

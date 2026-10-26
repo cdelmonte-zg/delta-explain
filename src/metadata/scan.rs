@@ -2,7 +2,7 @@ use delta_kernel::engine_data::{FilteredRowVisitor, TypedGetData};
 use delta_kernel::expressions::ColumnName;
 use delta_kernel::scan::{ScanBuilder, StatsOptions, state::ScanFile};
 use delta_kernel::schema::DataType;
-use delta_kernel::{DeltaResult, Engine, GetData, RowIndexIterator, Snapshot};
+use delta_kernel::{Engine, GetData, KernelError, KernelResult, RowIndexIterator, Snapshot};
 use std::{
     collections::HashMap,
     sync::{Arc, LazyLock},
@@ -84,13 +84,13 @@ impl FilteredRowVisitor for StatsVisitor {
         &mut self,
         getters: &[&'a dyn GetData<'a>],
         rows: RowIndexIterator<'_>,
-    ) -> DeltaResult<()> {
+    ) -> KernelResult<()> {
         // The getter arity mirrors selected_column_names_and_types; if the
         // kernel ever hands us fewer, fail the scan instead of panicking.
         let (path_getter, stats_getter) = match getters {
             [path, stats, ..] => (path, stats),
             _ => {
-                return Err(delta_kernel::Error::generic(
+                return Err(KernelError::generic(
                     "scan row visitor received fewer getters than requested columns",
                 ));
             }

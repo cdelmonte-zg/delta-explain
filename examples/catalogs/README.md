@@ -228,16 +228,14 @@ Unity Catalog: lake.default.users_gcs
   vended: gcp_oauth_token, expiration <timestamp>
 ...
 same, with the credentials Unity Catalog vended, as --option
-  lake.default.users_gcs     no --option key for a GCS OAuth token
+  lake.default.users_gcs     14 files, 5 kept, 64.3% pruned
 
 same, by name through --catalog unity
   lake.default.users_gcs     14 files, 5 kept, 64.3% pruned
 ```
 
-The `--option` row is empty by construction: the `object_store` release the
-kernel pins has no key for a bearer token, so a vended GCS token only
-travels through `--catalog unity`, which installs it on the store as a
-credential provider.
+The vended token travels as `--option bearer_token=...`, the same key
+`--catalog unity` sets for itself.
 
 ## Versions
 

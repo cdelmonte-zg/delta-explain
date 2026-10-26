@@ -321,10 +321,9 @@ fn non_delta_table_is_refused_before_vending() {
 
 #[test]
 fn gcp_token_is_sent_as_bearer_to_the_object_store() {
-    // The vended OAuth token has no key/value form in object_store 0.13,
-    // so the GCS store is built with a credential provider. A second fake
-    // server plays GCS through `base_url` and records what the kernel's
-    // first request carries.
+    // The vended OAuth token goes in as the `bearer_token` option. A second
+    // fake server plays GCS through `base_url` and records what the
+    // kernel's first request carries.
     let gcs = FakeCatalog::spawn(|_| (404, serde_json::json!({"error": "no such object"})));
     let catalog = FakeCatalog::spawn(move |request| match request.method.as_str() {
         "GET" => (200, table_info("gs://lakebucket/users", "DELTA")),
