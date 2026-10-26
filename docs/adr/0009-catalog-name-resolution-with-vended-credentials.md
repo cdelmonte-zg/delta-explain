@@ -45,12 +45,10 @@ object-store configuration, merged over the user's `--region` and
 
 In catalog mode the catalog is authoritative for credentials: `--env-creds`,
 `--profile` and `--public` are rejected, and a vending failure is an
-error that keeps the server's own `error_code` and `message`. GCP tokens
-take a different route inside storage: object_store 0.13, the version
-the kernel pins, has no configuration key for a bearer token, so the
-vended OAuth token is installed on the GCS store as a static credential
-provider instead of a key/value option. The resolver does not see the
-difference.
+error that keeps the server's own `error_code` and `message`. The three
+cloud credentials all travel the same way: AWS keys, the Azure SAS token
+and the GCP OAuth token (object_store's `bearer_token` key) are appended
+to the option list the resolver produced.
 
 The report shows what the resolution decided: a `Resolved:` line in the
 text and an additive `catalog` object (`kind`, `name`, `location`) in the
@@ -87,9 +85,10 @@ describe.
   integration suite covers the CLI flow against a fake catalog server,
   and the GCP route against a fake GCS endpoint that checks the bearer
   token, so `cargo test` needs no cloud.
-- The GCP credential provider is a workaround with an expiry date:
-  object_store 0.14 adds a `bearer_token` key, and once the kernel moves
-  to it the token becomes one more option like the AWS and Azure ones.
+- The GCP token was first installed as a static credential provider,
+  because object_store 0.13 had no key for a bearer token; the kernel's
+  move to object_store 0.14 (delta_kernel 0.30) turned it into the
+  `bearer_token` option, one more entry like the AWS and Azure ones.
 - Vended credentials are used for one invocation and never refreshed;
   the tool is a CLI, not a service, and their lifetime (an hour on Azure,
   twelve on the local stack) far exceeds a run.

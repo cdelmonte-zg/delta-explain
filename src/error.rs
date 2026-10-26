@@ -3,7 +3,7 @@ pub enum Error {
     /// Errors surfaced by delta-kernel-rs: log replay, metadata scans,
     /// snapshot resolution, object-store access made through the kernel.
     #[error(transparent)]
-    Kernel(#[from] delta_kernel::Error),
+    Kernel(#[from] delta_kernel::KernelError),
 
     /// The predicate could not be classified or lowered: invalid SQL, an
     /// unsupported construct, or a literal that cannot be typed.
