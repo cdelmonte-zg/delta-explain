@@ -91,6 +91,7 @@ fi
 } > "$OUT.tmp"
 mv "$OUT.tmp" "$OUT"
 echo "unity catalog config written; vended credentials expire at $EXPIRES"
-[ -n "${AZURE_STORAGE_ACCOUNT:-}" ] && echo "azure vending configured for account $AZURE_STORAGE_ACCOUNT"
-[ -n "${GCS_TABLE_PATH:-}" ] && echo "gcs vending configured for $GCS_BUCKET"
+# No account or bucket names here: these lines end up in CI logs.
+[ -n "${AZURE_STORAGE_ACCOUNT:-}" ] && echo "azure vending configured"
+[ -n "${GCS_TABLE_PATH:-}" ] && echo "gcs vending configured"
 exit 0

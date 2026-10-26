@@ -244,6 +244,9 @@ jobs:
           if [ -n "$GOOGLE_SERVICE_ACCOUNT_KEY" ] && [ -n "$GCS_TABLE_PATH" ]; then
             printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > "$RUNNER_TEMP/gcs-key.json"
             echo "GOOGLE_SERVICE_ACCOUNT=$RUNNER_TEMP/gcs-key.json" >> "$GITHUB_ENV"
+            # GitHub masks the full secret only; the bucket alone would
+            # still show in Spark or server logs on a failure.
+            echo "::add-mask::$(printf '%s' "$GCS_TABLE_PATH" | sed 's|^gs://\([^/]*\).*|\1|')"
           else
             echo "GCS_TABLE_PATH=" >> "$GITHUB_ENV"
             echo "no GCS key configured, RustFS vending only"
