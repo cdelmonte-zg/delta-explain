@@ -14,6 +14,11 @@
 #   this leg validates what they cannot: real authentication, endpoints,
 #   and regions (the class of the two 0.4.0 cloud bugs, which no emulator
 #   caught). A leg skips itself when its secrets are not configured.
+# - catalog-vending: `--catalog unity` end to end on the catalogs stack
+#   (examples/catalogs): tables resolved by name and read with what the
+#   catalog vends must report the same survivors as the path reads. RustFS
+#   vending needs no secrets; the real GCS table joins when the key is
+#   configured, with the host's own key as the path baseline.
 name: Validation
 
 on:
@@ -56,6 +61,8 @@ jobs:
               exit 1
               ;;
           esac
+          # GitHub masks the full secret only; Spark logs the s3a:// form.
+          echo "::add-mask::$(printf '%s' "$DX_DIFF_S3_PREFIX" | sed 's|^s3://\([^/]*\).*|\1|')"
 
       - uses: actions/checkout@v7
 
@@ -212,3 +219,57 @@ jobs:
           PY
           }
           run_smoke || { echo "first attempt failed, retrying once"; sleep 30; run_smoke; }
+
+  catalog-vending:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # The table path is a secret only because it names the demo bucket;
+    # the key itself is written in its own step below, and only when set.
+    env:
+      GCS_TABLE_PATH: ${{ secrets.CLOUD_SMOKE_GS_URI }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      # The stack mounts the key into the Unity Catalog server, which vends
+      # tokens downscoped to the table; the driver reads the table by path
+      # with the same key as the baseline. Without a key the GCS table is
+      # simply not registered and the RustFS tables carry the check.
+      - name: Write the GCS service-account key
+        run: |
+          if [ -n "$GOOGLE_SERVICE_ACCOUNT_KEY" ] && [ -n "$GCS_TABLE_PATH" ]; then
+            printf '%s' "$GOOGLE_SERVICE_ACCOUNT_KEY" > "$RUNNER_TEMP/gcs-key.json"
+            echo "GOOGLE_SERVICE_ACCOUNT=$RUNNER_TEMP/gcs-key.json" >> "$GITHUB_ENV"
+            # GitHub masks the full secret only; the bucket alone would
+            # still show in Spark or server logs on a failure.
+            echo "::add-mask::$(printf '%s' "$GCS_TABLE_PATH" | sed 's|^gs://\([^/]*\).*|\1|')"
+          else
+            echo "GCS_TABLE_PATH=" >> "$GITHUB_ENV"
+            echo "no GCS key configured, RustFS vending only"
+          fi
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
+      # Everything but the catalog UI, which nothing here reads. Spark runs
+      # as uid 1000 inside its container and writes locations.json into the
+      # bind-mounted work/, which the runner's checkout owns as uid 1001.
+      - name: Start the catalogs stack
+        working-directory: examples/catalogs
+        run: |
+          chmod a+rwx work
+          docker compose up -d rustfs bootstrap metastore unitycatalog spark
+
+      - name: Write, register, resolve and read by name
+        run: DX_BIN=$PWD/target/release/delta-explain python3 examples/catalogs/run_catalogs.py --check
+
+      - name: Stack logs
+        if: failure()
+        working-directory: examples/catalogs
+        run: docker compose logs --no-color --tail 200 bootstrap unitycatalog
+

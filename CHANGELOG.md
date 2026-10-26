@@ -9,6 +9,13 @@ follow SemVer relative to that field.
 
 ## [Unreleased]
 
+### Added
+
+- The weekly validation workflow now covers `--catalog unity`: the
+  catalogs stack (`examples/catalogs`) is brought up, tables are resolved
+  by name and read with vended credentials, and the driver's new `--check`
+  fails unless every route reports the same survivors.
+
 ### Changed
 
 - Upgraded delta_kernel to 0.30 (arrow 60, object_store 0.14). The
