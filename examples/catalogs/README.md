@@ -67,6 +67,11 @@ minute). The driver runs three phases, each skippable (`--skip-write`,
    `delta-explain` with `-w "country = 'DE'"` on every location.
 
 Tables are written once and reused; `DX_CAT_FRESH=1` forces a rewrite.
+`--check` turns the printout into an assertion: every route to a table
+(path, vended credentials as `--option`, by name through `--catalog
+unity`) must report the same survivors, and the predicate must prune.
+The weekly validation workflow runs the stack this way, RustFS vending
+plus the real GCS table when the key is configured.
 `docker compose stop` / `start` keeps the catalogs' state (both live inside
 their containers) and renews the vended credentials, which RustFS limits
 to 12 hours; restart the whole stack, not `unitycatalog` alone, which
@@ -206,8 +211,10 @@ key and exchanges its token for one downscoped to the table path (Google's
 credential access boundary, `roles/storage.objectViewer` for `READ`, one
 hour). The key needs read access on the bucket, nothing more; the
 `examples/gcs` service account qualifies. The stack registers the table as
-`lake.default.users_gcs` and, as for Azure, the host holds no GCS
-credentials of its own.
+`lake.default.users_gcs`. When the host holds the key as well
+(`GOOGLE_SERVICE_ACCOUNT` in `.env` is also what `--env-creds` reads), the
+driver reads the table by path too, as the baseline the vended reads
+must match.
 
 Add to `.env` the host path of the key and the table location, then
 recreate the two containers as above:

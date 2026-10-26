@@ -328,6 +328,41 @@ def explain_by_name(full_name, location):
     return explain(full_name, ["--catalog", "unity", *options], env)
 
 
+def host_credentials(location):
+    """`--env-creds` when the host can read a cloud location on its own
+    (the weekly validation holds the GCS key; a laptop may hold either),
+    else None: the table is then read with vended credentials only."""
+    if location.startswith("gs://"):
+        has = os.environ.get("GOOGLE_SERVICE_ACCOUNT") or os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS")
+    elif location.startswith("abfss://"):
+        has = os.environ.get("AZURE_STORAGE_ACCOUNT_NAME") and os.environ.get(
+            "AZURE_STORAGE_ACCOUNT_KEY")
+    else:
+        return DX_OPTIONS
+    return ["--env-creds"] if has else None
+
+
+def check_agreement(observed):
+    """Every route to a table must report the same survivor set, and the
+    predicate must actually prune: a resolver or vending regression that
+    still returns a report would otherwise pass unnoticed."""
+    failures = []
+    for reference, routes in observed.items():
+        counts = {route: (total, kept) for route, (total, kept, _) in routes.items()}
+        distinct = set(counts.values())
+        if len(distinct) != 1:
+            failures.append(f"{reference}: routes disagree {counts}")
+            continue
+        (total, kept), = distinct
+        if not 0 < kept < total:
+            failures.append(f"{reference}: {kept} of {total} files kept, no pruning observed")
+    if failures:
+        raise RuntimeError("check failed:\n  " + "\n  ".join(failures))
+    routes = sum(len(r) for r in observed.values())
+    print(f"\ncheck: {len(observed)} tables agree across {routes} reads")
+
+
 def to_delta_explain_uri(location):
     # Both catalogs hand back what the writer stored: s3a:// from Spark and
     # the metastore, s3:// from the Unity Catalog registration. delta-explain
@@ -335,8 +370,14 @@ def to_delta_explain_uri(location):
     return location.replace("s3a://", "s3://", 1)
 
 
-def resolve(locs):
+def resolve(locs, check=False):
     results = []
+    observed = {}  # reference -> route -> (total, kept, pct)
+
+    def record(reference, route, counts):
+        observed.setdefault(reference, {})[route] = counts
+        total, kept, pct = counts
+        print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
     hive = locs["hive"]
     print(f"Hive Metastore: {hive['reference']}")
     print(f"  location (via Spark's Hive client): {hive['location']}")
@@ -363,11 +404,14 @@ def resolve(locs):
 
     print(f"\ndelta-explain on the resolved locations, -w \"{PREDICATE}\"")
     for reference, location in results:
-        if location.startswith(("abfss://", "gs://")):
-            continue  # the host holds no cloud credentials: vended only
+        options = host_credentials(location)
+        if options is None:
+            continue  # the host holds no credentials for this cloud: vended only
         uri = to_delta_explain_uri(location)
-        total, kept, pct = explain(uri)
         print(f"  {reference:<26} {uri}")
+        counts = explain(uri, options)
+        observed.setdefault(reference, {})["path"] = counts
+        total, kept, pct = counts
         print(f"  {'':<26} {total} files, {kept} kept, {pct:.1f}% pruned")
 
     print("\nsame, with the credentials Unity Catalog vended, as --option")
@@ -376,15 +420,16 @@ def resolve(locs):
             continue
         options = vended_options(vended[reference])
         uri = to_delta_explain_uri(location)
-        total, kept, pct = explain(uri, options)
-        print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
+        record(reference, "vended --option", explain(uri, options))
 
     print("\nsame, by name through --catalog unity")
     for reference, location in results:
         if reference not in vended:
             continue
-        total, kept, pct = explain_by_name(reference, location)
-        print(f"  {reference:<26} {total} files, {kept} kept, {pct:.1f}% pruned")
+        record(reference, "--catalog unity", explain_by_name(reference, location))
+
+    if check:
+        check_agreement(observed)
     return results
 
 
@@ -394,6 +439,9 @@ def main():
                         help="reuse work/locations.json, do not run Spark")
     parser.add_argument("--skip-register", action="store_true",
                         help="do not (re)register the Unity Catalog tables")
+    parser.add_argument("--check", action="store_true",
+                        help="fail unless every route to a table reports the "
+                             "same survivors (the weekly validation runs this)")
     args = parser.parse_args()
     wait_for_stack()
     if not args.skip_write:
@@ -401,7 +449,7 @@ def main():
     locs = locations()
     if not args.skip_register:
         register_uc(locs)
-    resolve(locs)
+    resolve(locs, check=args.check)
 
 
 if __name__ == "__main__":
