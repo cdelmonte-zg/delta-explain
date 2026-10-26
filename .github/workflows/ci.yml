@@ -106,6 +106,15 @@ jobs:
       - name: Audit
         run: cargo audit
 
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The image bundles shellcheck and pyflakes, so `run:` scripts are
+      # checked too; the tag pins the linter version.
+      - name: Lint the workflow files
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
   docker-smoke:
     runs-on: ubuntu-latest
     steps:
