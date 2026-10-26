@@ -61,6 +61,8 @@ jobs:
               exit 1
               ;;
           esac
+          # GitHub masks the full secret only; Spark logs the s3a:// form.
+          echo "::add-mask::$(printf '%s' "$DX_DIFF_S3_PREFIX" | sed 's|^s3://\([^/]*\).*|\1|')"
 
       - uses: actions/checkout@v7
 

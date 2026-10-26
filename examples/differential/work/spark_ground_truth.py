@@ -75,7 +75,7 @@ def table_exists(uri):
 
 def build_users(uri):
     if table_exists(uri):
-        print(f"{uri} exists, reusing")
+        print(f"{table_name(uri)} exists, reusing")
         return
     N = 60000
     df = (
@@ -92,12 +92,17 @@ def build_users(uri):
     (df.orderBy("country", "age").write.format("delta")
        .partitionBy("country").option("maxRecordsPerFile", 4000)
        .mode("overwrite").save(uri))
-    print("wrote", uri)
+    print("wrote", table_name(uri))
+
+
+def table_name(uri):
+    # Logs are public in CI: name the table, not the bucket it lives in.
+    return uri.rstrip("/").rsplit("/", 1)[-1]
 
 
 def build_taxi(uri):
     if table_exists(uri):
-        print(f"{uri} exists, reusing")
+        print(f"{table_name(uri)} exists, reusing")
         return
     cols = ["tpep_pickup_datetime", "trip_distance", "PULocationID",
             "DOLocationID", "payment_type", "fare_amount", "tip_amount", "total_amount"]
@@ -114,7 +119,7 @@ def build_taxi(uri):
     (df.orderBy("pickup_date", "fare_amount").write.format("delta")
        .partitionBy("pickup_date").option("maxRecordsPerFile", 20000)
        .mode("overwrite").save(uri))
-    print("wrote", uri)
+    print("wrote", table_name(uri))
 
 
 BUILDERS = {"users": build_users, "taxi": build_taxi}
