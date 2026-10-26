@@ -251,10 +251,14 @@ jobs:
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
 
-      # Everything but the catalog UI, which nothing here reads.
+      # Everything but the catalog UI, which nothing here reads. Spark runs
+      # as uid 1000 inside its container and writes locations.json into the
+      # bind-mounted work/, which the runner's checkout owns as uid 1001.
       - name: Start the catalogs stack
         working-directory: examples/catalogs
-        run: docker compose up -d rustfs bootstrap metastore unitycatalog spark
+        run: |
+          chmod a+rwx work
+          docker compose up -d rustfs bootstrap metastore unitycatalog spark
 
       - name: Write, register, resolve and read by name
         run: DX_BIN=$PWD/target/release/delta-explain python3 examples/catalogs/run_catalogs.py --check
