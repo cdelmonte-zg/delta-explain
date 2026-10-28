@@ -4,6 +4,7 @@
 //! formats. Detection never changes how pruning is computed.
 
 use predicates::prelude::*;
+use rstest::rstest;
 
 use crate::common::{LogBuilder, cmd, fixture, int_range_stats};
 
@@ -163,8 +164,8 @@ fn table_warnings_and_analysis_warnings_share_the_text_section() {
 
 #[test]
 fn catalog_managed_table_fails_with_a_clear_explanation() {
-    // The kernel refuses these tables with API jargon; the tool must say
-    // it in user words before the kernel gets the chance.
+    // The kernel refuses these tables at snapshot build with API jargon
+    // (MaxCatalogVersion); the tool must translate it into user words.
     let table = LogBuilder::new()
         .column("age", "integer")
         .property("delta.enableInCommitTimestamps", "true")
@@ -174,6 +175,18 @@ fn catalog_managed_table_fails_with_a_clear_explanation() {
         .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
         .build();
     cmd().arg(table.path()).assert().failure().stderr(
+        predicate::str::contains("catalog-managed")
+            .and(predicate::str::contains("does not support")),
+    );
+}
+
+#[rstest]
+#[case("test-table-checkpointed-catalog-managed")]
+#[case("test-table-checkpointed-catalog-owned")]
+fn catalog_managed_checkpoint_only_log_fails_with_a_clear_explanation(#[case] name: &str) {
+    // No JSON commit remains: the protocol lives only in the checkpoint,
+    // so the refusal can only come from the kernel snapshot.
+    cmd().arg(fixture(name)).assert().failure().stderr(
         predicate::str::contains("catalog-managed")
             .and(predicate::str::contains("does not support")),
     );

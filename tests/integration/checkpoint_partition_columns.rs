@@ -1,11 +1,11 @@
 //! Integration tests for the `test-table-checkpointed-part` fixture.
 //!
 //! A partitioned table whose log is fully checkpointed: no JSON commits
-//! remain, so no `metaData` action is readable and partition columns must be
-//! derived from the `partitionValues` keys the kernel replays out of the
-//! checkpoint. Before that fallback existed the predicate was classified
-//! entirely stats-safe and the two-phase attribution collapsed into a single
-//! data-skipping phase (total counts stayed correct).
+//! remain, so the `metaData` action is only reachable through the kernel's
+//! replay of the checkpoint. Without the partition columns the predicate
+//! would be classified entirely stats-safe and the two-phase attribution
+//! would collapse into a single data-skipping phase (total counts stay
+//! correct either way).
 
 use crate::common::{cmd, fixture};
 use predicates::prelude::*;

@@ -24,8 +24,9 @@ Produces (next to this script):
                              ranges on TIMESTAMP, TIMESTAMP_NTZ, DECIMAL(9,2),
                              INT16, INT8; exercises literal coercion
 - ./test-table-checkpointed-part  the canonical partitioned layout with a
-                             checkpoint-only log: partition columns must be
-                             derived from the kernel-replayed partitionValues
+                             checkpoint-only log: partition columns come from
+                             the metaData the kernel replays out of the
+                             checkpoint
 - ./test-table-checkpointed-struct  same shape, but the checkpoint carries
                              stats only as the structured `stats_parsed`
                              column (add.stats JSON nulled out), the
@@ -37,6 +38,10 @@ Produces (next to this script):
                              the writer, allowColumnDefaults added by hand):
                              features must come from the kernel snapshot,
                              the JSON protocol action is gone
+- ./test-table-checkpointed-catalog-managed / -catalog-owned  checkpoint-only
+                             logs whose protocol (hand-rewritten) declares
+                             catalogManaged / catalogOwned-preview: the
+                             refusal must fire with no JSON commit around
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
@@ -351,9 +356,8 @@ if not already_exists(BUDGET_TABLE_PATH):
 # `delta.logRetentionDuration` cleanup produces. All surviving `add` actions
 # (and their stats) live only inside the checkpoint Parquet, so per-file
 # statistics are only reachable through the kernel's log replay; reading the
-# JSON commits directly finds nothing. Unpartitioned on purpose: partition
-# columns are still read from the JSON metaData action, which this fixture
-# no longer has.
+# JSON commits directly finds nothing. Unpartitioned on purpose:
+# test-table-checkpointed-part covers the partitioned shape.
 
 
 def checkpointed_batch(names, ages):
@@ -489,24 +493,31 @@ if not already_exists(CHECKPOINTED_STRUCT_TABLE_PATH):
 CHECKPOINTED_FEATURES_TABLE_PATH = str(HERE / "test-table-checkpointed-features")
 
 
-def add_writer_feature_to_checkpoint(table_path: str, feature: str):
+def patch_checkpoint(table_path: str, **patches):
+    """Rewrite struct columns of the checkpoint in place.
+
+    Each keyword is a column name ("protocol", "metaData", ...) mapped to a
+    function that receives the non-null row as a dict and returns the new row.
+    """
     import pyarrow.parquet as pq
 
     cp_path = next((Path(table_path) / "_delta_log").glob("*.checkpoint.parquet"))
     tbl = pq.read_table(cp_path)
-    protocol = tbl.column("protocol").combine_chunks()
+    for column, patch in patches.items():
+        old = tbl.column(column).combine_chunks()
+        rows = [None if old[i].as_py() is None else patch(dict(old[i].as_py()))
+                for i in range(len(old))]
+        idx = tbl.schema.get_field_index(column)
+        tbl = tbl.set_column(idx, tbl.schema.field(idx), pa.array(rows, type=old.type))
+    pq.write_table(tbl, cp_path)
 
-    new_rows = []
-    for i in range(len(protocol)):
-        row = protocol[i].as_py()
-        if row is not None:
-            row = dict(row)
-            row["writerFeatures"] = sorted(set(row["writerFeatures"] or []) | {feature})
-        new_rows.append(row)
 
-    new_protocol = pa.array(new_rows, type=protocol.type)
-    idx = tbl.schema.get_field_index("protocol")
-    pq.write_table(tbl.set_column(idx, tbl.schema.field(idx), new_protocol), cp_path)
+def add_writer_feature_to_checkpoint(table_path: str, feature: str):
+    def with_feature(row):
+        row["writerFeatures"] = sorted(set(row["writerFeatures"] or []) | {feature})
+        return row
+
+    patch_checkpoint(table_path, protocol=with_feature)
 
 
 if not already_exists(CHECKPOINTED_FEATURES_TABLE_PATH):
@@ -541,10 +552,10 @@ if not already_exists(CHECKPOINTED_FEATURES_TABLE_PATH):
 
 # === test-table-checkpointed-part (partitioned, checkpoint-only log) ======
 # The canonical partitioned layout (6 files, DE/US/IT, distinct age ranges)
-# after log cleanup: checkpoint at v5, every JSON commit deleted. With no
-# metaData action left in JSON commits, partition columns must be derived
-# from the partitionValues keys the kernel replays out of the checkpoint,
-# or the two-phase attribution collapses into a single data-skipping phase.
+# after log cleanup: checkpoint at v5, every JSON commit deleted. The
+# metaData action survives only inside the checkpoint; the kernel replays it,
+# so partition columns must still be known and the two-phase attribution must
+# not collapse into a single data-skipping phase.
 
 CHECKPOINTED_PART_TABLE_PATH = str(HERE / "test-table-checkpointed-part")
 
@@ -626,3 +637,62 @@ if not already_exists(TEMPORAL_TABLE_PATH):
         )
     print(f"Temporal table created at {TEMPORAL_TABLE_PATH}")
     print(f"  6 files across 2026-07-01/02/03; ts, ts_ntz, decimal(9,2), int16, int8 ranges per file")
+
+
+# === test-table-checkpointed-catalog-managed / -catalog-owned ==============
+# Checkpoint-only logs whose protocol declares a catalog-managed feature
+# (catalogManaged, or its preview name catalogOwned-preview). No writer in
+# reach produces these, so the protocol row of the checkpoint is rewritten by
+# hand: reader 3 / writer 7, the feature in both lists, plus inCommitTimestamp
+# and its table property, which the kernel requires alongside. With every JSON
+# commit gone, the refusal can only come from the kernel snapshot.
+
+CATALOG_MANAGED_FIXTURES = [
+    (str(HERE / "test-table-checkpointed-catalog-managed"), "catalogManaged"),
+    (str(HERE / "test-table-checkpointed-catalog-owned"), "catalogOwned-preview"),
+]
+
+
+def make_catalog_managed_checkpoint(table_path: str, feature: str):
+    def protocol(row):
+        row.update({
+            "minReaderVersion": 3,
+            "minWriterVersion": 7,
+            "readerFeatures": [feature],
+            "writerFeatures": sorted({feature, "inCommitTimestamp"}),
+        })
+        return row
+
+    def metadata(row):
+        row["configuration"] = {
+            **(row["configuration"] or {}),
+            "delta.enableInCommitTimestamps": "true",
+        }
+        return row
+
+    patch_checkpoint(table_path, protocol=protocol, metaData=metadata)
+
+
+for table_path, feature in CATALOG_MANAGED_FIXTURES:
+    if already_exists(table_path):
+        continue
+    from deltalake import DeltaTable
+
+    write_deltalake(
+        table_path,
+        checkpointed_batch(["Hans", "Greta"], [20, 30]),
+        mode="overwrite",
+    )
+    write_deltalake(
+        table_path,
+        checkpointed_batch(["Dieter", "Helga"], [40, 50]),
+        mode="append",
+    )
+    DeltaTable(table_path).create_checkpoint()
+    removed = 0
+    for f in (Path(table_path) / "_delta_log").glob("*.json"):
+        f.unlink()
+        removed += 1
+    make_catalog_managed_checkpoint(table_path, feature)
+    print(f"Catalog-managed checkpoint-only table created at {table_path}")
+    print(f"  2 files, checkpoint at v1, {removed} JSON commits removed, reader feature {feature}")
