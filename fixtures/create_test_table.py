@@ -32,6 +32,11 @@ Produces (next to this script):
                              delta.checkpoint.writeStatsAsJson=false layout.
                              Hand-crafted: deltalake always writes JSON stats,
                              so the checkpoint is rewritten post-hoc
+- ./test-table-checkpointed-features  checkpoint-only log whose protocol
+                             declares table features (deletionVectors from
+                             the writer, allowColumnDefaults added by hand):
+                             features must come from the kernel snapshot,
+                             the JSON protocol action is gone
 
 Each table is regenerated only if its directory does not already exist,
 so re-running this script after adding a new fixture is safe. Delete
@@ -468,6 +473,70 @@ if not already_exists(CHECKPOINTED_STRUCT_TABLE_PATH):
     rewrite_checkpoint_stats_as_struct(CHECKPOINTED_STRUCT_TABLE_PATH)
     print(f"Checkpointed-struct table created at {CHECKPOINTED_STRUCT_TABLE_PATH}")
     print(f"  3 files, checkpoint at v2, {removed} JSON commits removed, stats moved to stats_parsed")
+
+
+# === test-table-checkpointed-features (protocol features, checkpoint-only) ==
+# Same shape again, with deletion vectors enabled so the writer emits a
+# reader 3 / writer 7 protocol with `deletionVectors` in both feature lists.
+# After the checkpoint the JSON commits are deleted, so the protocol action
+# survives only inside the checkpoint Parquet. deltalake can only declare
+# features delta-explain treats as benign, which never show in the output,
+# so `allowColumnDefaults` (a real writer-only Delta feature that
+# delta-explain does not list) is appended to writerFeatures by hand: it
+# must surface as an unrecognized writer feature, which proves the features
+# were read from the checkpoint and not from the missing JSON.
+
+CHECKPOINTED_FEATURES_TABLE_PATH = str(HERE / "test-table-checkpointed-features")
+
+
+def add_writer_feature_to_checkpoint(table_path: str, feature: str):
+    import pyarrow.parquet as pq
+
+    cp_path = next((Path(table_path) / "_delta_log").glob("*.checkpoint.parquet"))
+    tbl = pq.read_table(cp_path)
+    protocol = tbl.column("protocol").combine_chunks()
+
+    new_rows = []
+    for i in range(len(protocol)):
+        row = protocol[i].as_py()
+        if row is not None:
+            row = dict(row)
+            row["writerFeatures"] = sorted(set(row["writerFeatures"] or []) | {feature})
+        new_rows.append(row)
+
+    new_protocol = pa.array(new_rows, type=protocol.type)
+    idx = tbl.schema.get_field_index("protocol")
+    pq.write_table(tbl.set_column(idx, tbl.schema.field(idx), new_protocol), cp_path)
+
+
+if not already_exists(CHECKPOINTED_FEATURES_TABLE_PATH):
+    from deltalake import DeltaTable
+
+    write_deltalake(
+        CHECKPOINTED_FEATURES_TABLE_PATH,
+        checkpointed_batch(["Hans", "Greta"], [20, 30]),
+        mode="overwrite",
+        configuration={"delta.enableDeletionVectors": "true"},
+    )
+    write_deltalake(
+        CHECKPOINTED_FEATURES_TABLE_PATH,
+        checkpointed_batch(["Dieter", "Helga"], [40, 50]),
+        mode="append",
+    )
+    write_deltalake(
+        CHECKPOINTED_FEATURES_TABLE_PATH,
+        checkpointed_batch(["Alice", "Bob"], [60, 70]),
+        mode="append",
+    )
+    DeltaTable(CHECKPOINTED_FEATURES_TABLE_PATH).create_checkpoint()
+    removed = 0
+    for f in (Path(CHECKPOINTED_FEATURES_TABLE_PATH) / "_delta_log").glob("*.json"):
+        f.unlink()
+        removed += 1
+    add_writer_feature_to_checkpoint(CHECKPOINTED_FEATURES_TABLE_PATH, "allowColumnDefaults")
+    print(f"Checkpointed-features table created at {CHECKPOINTED_FEATURES_TABLE_PATH}")
+    print(f"  3 files, checkpoint at v2, {removed} JSON commits removed,"
+          " protocol 3/7 with deletionVectors + allowColumnDefaults")
 
 
 # === test-table-checkpointed-part (partitioned, checkpoint-only log) ======

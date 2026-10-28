@@ -44,16 +44,6 @@ pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<Bas
     })
 }
 
-pub fn partition_columns_from_files(files: &[FileInfo]) -> Vec<String> {
-    let mut columns: Vec<String> = files
-        .iter()
-        .flat_map(|f| f.partition_values.keys().cloned())
-        .collect();
-    columns.sort();
-    columns.dedup();
-    columns
-}
-
 fn push_file_info(files: &mut Vec<FileInfo>, file: ScanFile) {
     files.push(FileInfo {
         path: file.path.clone(),

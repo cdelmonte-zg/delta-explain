@@ -31,7 +31,6 @@ pub struct StorageConfig {
 }
 
 pub struct StorageRuntime {
-    pub store: Arc<DynObjectStore>,
     pub engine: Box<dyn Engine>,
 }
 
@@ -60,10 +59,9 @@ impl StorageOption {
 }
 
 fn runtime_from_store(store: Arc<DynObjectStore>) -> StorageRuntime {
-    let engine = DefaultEngineBuilder::new(store.clone()).build();
+    let engine = DefaultEngineBuilder::new(store).build();
 
     StorageRuntime {
-        store,
         engine: Box::new(engine),
     }
 }

@@ -56,6 +56,11 @@ not part of the public CLI surface; its output format is unstable by design.
 `cargo test --features debug-ir` includes its test module, and CI runs one
 leg with the feature enabled.
 
+`delta_kernel` and `delta_kernel_default_engine` are pinned to an exact
+version and move together. The table metadata comes through the kernel's
+`internal-api` feature, which has no stability promise (ADR 0010): a kernel
+bump is judged by build and tests, never by its version number.
+
 One package, two targets: the
 `delta_explain` library (analysis machinery) and the `delta-explain` binary
 (CLI layer). The Rust API is internal and unstable; the stable contracts are
@@ -110,18 +115,18 @@ CLI (main.rs)
   explicit precedence (`--option` wins), `environment.rs` maps `--env-creds`
   environment variables, `aws_profile.rs` resolves static AWS profile
   credentials (SSO and `credential_process` produce an actionable error).
-- **`table.rs`**: opens the snapshot into a `TableState`: reads the JSON log
-  metadata, refuses catalog-managed tables (their truth lives outside the
-  filesystem log), runs the baseline scan, resolves partition columns
-  (log `metaData` primary, scan fallback for checkpoint-only logs), and
-  detects protocol features.
-- **`metadata/`**: what the Delta log says about the table. `log.rs` reads
-  the JSON commits (`partitionColumns`, reader/writer features, the
-  `delta.clustering` domain; the kernel exposes no public accessor for
-  system domains). `scan.rs` is the kernel-backed baseline: one
-  `scan_metadata` pass collecting the file listing and per-file stats
-  (checkpoint Parquet included). `stats.rs` owns `FileStats`, stats-JSON
-  parsing and nested flattening to dotted leaf keys. `features.rs` is
+- **`table.rs`**: opens the snapshot into a `TableState`: builds the kernel
+  snapshot, reads its metadata, refuses catalog-managed tables (the kernel
+  refuses them at build; `error.rs` says it in user words), runs the
+  baseline scan and detects protocol features.
+- **`metadata/`**: what the Delta log says about the table. `snapshot.rs`
+  reads it from the kernel `Snapshot` (`partitionColumns`, reader/writer
+  features, the `delta.clustering` domain) through the kernel's
+  `internal-api` feature (ADR 0010). `scan.rs` is the kernel-backed
+  baseline: one `scan_metadata` pass collecting the file listing and
+  per-file stats (checkpoint Parquet included). `stats.rs` owns
+  `FileStats`, stats-JSON parsing and nested flattening to dotted leaf
+  keys. `features.rs` is
   detect-and-declare for features that distort or reframe the numbers
   (deletion vectors, column mapping, liquid clustering); it feeds the JSON
   `table_features` block and table-level warnings, never how pruning is

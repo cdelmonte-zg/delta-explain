@@ -166,13 +166,13 @@ fn catalog_managed_table_fails_with_a_clear_explanation() {
     // The kernel refuses these tables with API jargon; the tool must say
     // it in user words before the kernel gets the chance.
     let table = LogBuilder::new()
-    .column("age", "integer")
-    .property("delta.enableInCommitTimestamps", "true")
-    .reader_feature("catalogOwned-preview")
-    .writer_feature("catalogOwned-preview")
-    .writer_feature("inCommitTimestamp")
-    .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
-    .build();
+        .column("age", "integer")
+        .property("delta.enableInCommitTimestamps", "true")
+        .reader_feature("catalogOwned-preview")
+        .writer_feature("catalogOwned-preview")
+        .writer_feature("inCommitTimestamp")
+        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+        .build();
     cmd().arg(table.path()).assert().failure().stderr(
         predicate::str::contains("catalog-managed")
             .and(predicate::str::contains("does not support")),
@@ -190,6 +190,21 @@ fn in_commit_timestamps_declare_in_json_without_warning() {
     let json = run_json(&[&table.path(), "--format", "json"]);
     assert_eq!(json["table_features"]["in_commit_timestamps"], true);
     assert_eq!(json["table_features"]["notes"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn checkpoint_only_log_still_declares_protocol_features() {
+    // The JSON commits are gone, so the protocol action lives only in the
+    // checkpoint Parquet: the features must come from the kernel snapshot.
+    let json = run_json(&[
+        &fixture("test-table-checkpointed-features"),
+        "--format",
+        "json",
+    ]);
+    let tf = &json["table_features"];
+    assert_eq!(tf["deletion_vectors"]["enabled"], true);
+    assert_eq!(tf["unrecognized_writer_features"][0], "allowColumnDefaults");
+    assert_eq!(tf["notes"][0]["code"], "UNRECOGNIZED_TABLE_FEATURE");
 }
 
 #[test]

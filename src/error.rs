@@ -75,13 +75,11 @@ impl From<reqwest::Error> for Error {
 impl Error {
     pub fn from_filesystem_snapshot(err: delta_kernel::KernelError) -> Self {
         match err {
-            delta_kernel::KernelError::MaxCatalogVersion(_) => {
-                Self::UnsupportedTable(
-                    "table is catalog-managed: delta-explain does not support \
+            delta_kernel::KernelError::MaxCatalogVersion(_) => Self::UnsupportedTable(
+                "table is catalog-managed: delta-explain does not support \
                      catalog-managed tables yet"
-                        .to_owned(),
-                )
-            }
+                    .to_owned(),
+            ),
             other => Self::Kernel(other),
         }
     }

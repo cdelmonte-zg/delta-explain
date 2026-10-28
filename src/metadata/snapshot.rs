@@ -17,10 +17,20 @@ pub fn read_snapshot_metadata(
     let config = snapshot.table_configuration();
     let protocol = config.protocol();
 
+    let has_clustering = protocol.writer_features().is_some_and(|feature| {
+        feature.contains(&delta_kernel::table_features::TableFeature::ClusteredTable)
+    });
+
+    let clustering_domain = if has_clustering {
+        snapshot.get_domain_metadata_internal("delta.clustering", engine)?
+    } else {
+        None
+    };
+
     Ok(SnapshotMetadata {
         partition_columns: config.metadata().partition_columns().to_vec(),
 
-        clustering_domain: snapshot.get_domain_metadata_internal("delta.clustering", engine)?,
+        clustering_domain,
 
         reader_features: protocol
             .reader_features()
