@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use delta_kernel::object_store::DynObjectStore;
 use delta_kernel::{Engine, Snapshot};
 use url::Url;
 
@@ -20,12 +19,19 @@ pub struct OpenOptions {
 
 pub fn open(
     table_url: &Url,
-    store: &Arc<DynObjectStore>,
     engine: &dyn Engine,
     options: OpenOptions,
     instrumentation: &mut dyn Instrumentation,
 ) -> Result<TableState> {
-    let log = metadata::log::read_log_metadata(table_url, store, options.version)?;
+    
+    let mut snapshot_builder = Snapshot::builder_for(table_url.clone());
+    if let Some(version) = options.version {
+        snapshot_builder = snapshot_builder.at_version(version);
+    }
+    let snapshot = snapshot_builder.build(engine)
+        .map_err(Error::from_filesystem_snapshot)?;
+
+    let log = metadata::snapshot::read_snapshot_metadata(&snapshot, engine)?;
 
     if let Some(feature) = metadata::features::catalog_managed_feature(&log.reader_features) {
         return Err(Error::UnsupportedTable(format!(
@@ -39,15 +45,6 @@ pub fn open(
                      tables yet"
         )));
     }
-
-    let mut snapshot_builder = Snapshot::builder_for(table_url.clone());
-
-    if let Some(version) = options.version {
-        snapshot_builder = snapshot_builder.at_version(version);
-    }
-
-    let snapshot = snapshot_builder.build(engine)?;
-
     let baseline = metadata::scan::scan_baseline(snapshot.clone(), engine)?;
 
     let partition_columns = metadata::resolve_partition_columns(&log, &baseline);

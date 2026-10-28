@@ -166,11 +166,13 @@ fn catalog_managed_table_fails_with_a_clear_explanation() {
     // The kernel refuses these tables with API jargon; the tool must say
     // it in user words before the kernel gets the chance.
     let table = LogBuilder::new()
-        .column("age", "integer")
-        .reader_feature("catalogOwned-preview")
-        .writer_feature("catalogOwned-preview")
-        .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
-        .build();
+    .column("age", "integer")
+    .property("delta.enableInCommitTimestamps", "true")
+    .reader_feature("catalogOwned-preview")
+    .writer_feature("catalogOwned-preview")
+    .writer_feature("inCommitTimestamp")
+    .add_file("f0.parquet", &[], Some(int_range_stats("age", 0, 10, 100)))
+    .build();
     cmd().arg(table.path()).assert().failure().stderr(
         predicate::str::contains("catalog-managed")
             .and(predicate::str::contains("does not support")),
