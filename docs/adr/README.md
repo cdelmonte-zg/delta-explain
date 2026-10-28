@@ -39,3 +39,4 @@ old one, never an edit that rewrites history. Statuses: `proposed`,
 | [0007](0007-explain-why-is-a-deterministic-diagnostic-engine.md) | `--explain-why` is a deterministic diagnostic engine, not an ML model | accepted |
 | [0008](0008-owned-predicate-vocabulary-as-capability-boundary.md) | Owned predicate vocabulary is the pruning capability boundary | accepted |
 | [0009](0009-catalog-name-resolution-with-vended-credentials.md) | Catalog names resolve to a location and the credentials to read it | accepted |
+| [0010](0010-use-delta-kernel-snapshot-metadata.md) | Table metadata comes from the kernel Snapshot, through its internal API | accepted |

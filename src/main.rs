@@ -191,7 +191,6 @@ fn try_main() -> Result<ExitCode> {
 
     let table = table::open(
         &location,
-        &runtime.store,
         runtime.engine.as_ref(),
         table::OpenOptions {
             version: cli.at_version,

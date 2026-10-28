@@ -28,6 +28,9 @@ in one case the checkpoint rewritten); the script cannot rebuild those.
 | `test-table-checkpointed` | checkpoint-only log (JSON commits removed), flat, `add.stats` JSON | full | `checkpoint_stats` |
 | `test-table-checkpointed-struct` | checkpoint-only, `stats_parsed` struct only (hand-rewritten checkpoint) | full | `checkpoint_stats` |
 | `test-table-checkpointed-part` | checkpoint-only, partitioned | full | `checkpoint_partition_columns` |
+| `test-table-checkpointed-features` | checkpoint-only, protocol 3/7 with `deletionVectors` (writer) and `allowColumnDefaults` (hand-added to the checkpoint) | full | `protocol_features` |
+| `test-table-checkpointed-catalog-managed` | checkpoint-only, protocol 3/7 with `catalogManaged` + `inCommitTimestamp` (hand-rewritten checkpoint); refused | full | `protocol_features` |
+| `test-table-checkpointed-catalog-owned` | same with `catalogOwned-preview`; refused | full | `protocol_features` |
 | `test-table-checkpoint-multipart` | classic checkpoint split in two parts (`delta.checkpoint.partSize=2`), 3 commits, Spark-written | full | `exotic_logs` |
 | `test-table-checkpoint-v2` | V2 checkpoint: UUID-named JSON manifest + parquet sidecars in `_sidecars/` (`delta.checkpointPolicy=v2`), Spark-written | full | `exotic_logs` |
 | `taxi-nyc` | real NYC TLC yellow-taxi data (deltalake-written), partitioned by `pickup_date`, 5 date partitions, 4000 rows | full (real writer) | `taxi` |

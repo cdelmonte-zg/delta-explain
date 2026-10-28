@@ -18,6 +18,11 @@ follow SemVer relative to that field.
 
 ### Changed
 
+- Table metadata (partition columns, reader/writer features, clustering
+  domain) now comes from the kernel snapshot instead of a second read of
+  the JSON log: features are correct on checkpoint-only logs, and cloud
+  invocations skip one read per commit. Both kernel crates are pinned to
+  an exact version (ADR 0010). Output and exit codes are unchanged.
 - Upgraded delta_kernel to 0.30 (arrow 60, object_store 0.14). The
   `cargo audit` ignores for quick-xml (RUSTSEC-2026-0194, -0195) are gone
   with it, and the Unity Catalog GCP token now reaches the store as the
