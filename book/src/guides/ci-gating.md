@@ -91,7 +91,7 @@ a partial document.
 A composite action wraps the CLI with matching inputs. Pin the release tag:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.0
+- uses: cdelmonte-zg/delta-explain@v0.8.1
   with:
     table: s3://lake/events
     where: "region = 'eu'"
@@ -104,7 +104,7 @@ the table with the credentials the catalog vends, so no cloud credentials
 are configured on the runner:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.0
+- uses: cdelmonte-zg/delta-explain@v0.8.1
   with:
     table: sales.events.orders
     catalog: unity
