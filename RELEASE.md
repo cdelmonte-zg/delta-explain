@@ -73,8 +73,9 @@ step covers what, and what stays by hand.
 - [ ] `cargo install delta-explain --version X.Y.Z` succeeds and
       `--version` matches.
 - [ ] Docker: `docker run --rm ghcr.io/cdelmonte-zg/delta-explain:X.Y.Z --version`.
-- [ ] GitHub Action smoke: a workflow using
-      `cdelmonte-zg/delta-explain@vX.Y.Z` with `version: X.Y.Z` passes.
+- [ ] GitHub Action smoke against the released binary:
+      `gh workflow run action-smoke.yml --ref main -f version=X.Y.Z`
+      (it also runs with `latest` on every change to `action.yml`).
 - [ ] **Marketplace listing points at the new tag.** Releases created by
       CI are published to the GitHub Marketplace automatically (verified
       on v0.7.0: the "Publish this Action" checkbox arrives already
