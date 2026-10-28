@@ -1,8 +1,9 @@
 name: action-smoke
 
 # Exercises the composite action in this repo against the committed fixtures,
-# with the latest released binary. Keeps the action honest on every change to
-# action.yml and catches release-asset renames.
+# with the latest released binary, or the one named on dispatch (the
+# post-release check in RELEASE.md). Keeps the action honest on every change
+# to action.yml and catches release-asset renames.
 
 permissions:
   contents: read
@@ -13,6 +14,12 @@ on:
     paths: ["action.yml", ".github/workflows/action-smoke.yml"]
   pull_request:
     paths: ["action.yml", ".github/workflows/action-smoke.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "delta-explain release to install (e.g. 0.8.1), or 'latest'"
+        required: false
+        default: "latest"
 
 jobs:
   gate-passes:
@@ -26,6 +33,7 @@ jobs:
           table: fixtures/test-table
           where: "country = 'DE' AND age > 40"
           min-pruning: "60"
+          version: ${{ inputs.version || 'latest' }}
       - name: Outputs are populated
         run: |
           test "${{ steps.gate.outputs.result }}" = "pass"
@@ -44,6 +52,7 @@ jobs:
           table: fixtures/test-table-flat
           where: "country = 'DE' AND age > 40"
           min-pruning: "60"
+          version: ${{ inputs.version || 'latest' }}
       - name: The failure is the assertion, with outputs intact
         run: |
           test "${{ steps.gate.outcome }}" = "failure"
