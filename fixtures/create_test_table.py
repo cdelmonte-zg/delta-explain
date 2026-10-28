@@ -406,6 +406,17 @@ if not already_exists(CHECKPOINTED_TABLE_PATH):
 CHECKPOINTED_STRUCT_TABLE_PATH = str(HERE / "test-table-checkpointed-struct")
 
 
+def write_checkpoint(tbl, cp_path: Path):
+    """Write a rewritten checkpoint and keep `_last_checkpoint` honest about it."""
+    import pyarrow.parquet as pq
+
+    pq.write_table(tbl, cp_path)
+    hint_path = cp_path.parent / "_last_checkpoint"
+    hint = json.loads(hint_path.read_text())
+    hint["sizeInBytes"] = cp_path.stat().st_size
+    hint_path.write_text(json.dumps(hint, separators=(",", ":")))
+
+
 def rewrite_checkpoint_stats_as_struct(table_path: str):
     import pyarrow.parquet as pq
 
@@ -448,7 +459,7 @@ def rewrite_checkpoint_stats_as_struct(table_path: str):
 
     idx = tbl.schema.get_field_index("add")
     new_tbl = tbl.set_column(idx, pa.field("add", new_add.type), new_add)
-    pq.write_table(new_tbl, cp_path)
+    write_checkpoint(new_tbl, cp_path)
 
 
 if not already_exists(CHECKPOINTED_STRUCT_TABLE_PATH):
@@ -509,7 +520,7 @@ def patch_checkpoint(table_path: str, **patches):
                 for i in range(len(old))]
         idx = tbl.schema.get_field_index(column)
         tbl = tbl.set_column(idx, tbl.schema.field(idx), pa.array(rows, type=old.type))
-    pq.write_table(tbl, cp_path)
+    write_checkpoint(tbl, cp_path)
 
 
 def add_writer_feature_to_checkpoint(table_path: str, feature: str):
