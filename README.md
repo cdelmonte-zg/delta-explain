@@ -93,7 +93,7 @@ delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90 --
 The repo doubles as a composite GitHub Action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.0
+- uses: cdelmonte-zg/delta-explain@v0.8.1
   with:
     table: s3://warehouse/events
     where: "country = 'DE' AND age > 40"
@@ -105,7 +105,7 @@ The repo doubles as a composite GitHub Action, so the gate is one step. Pin the 
 Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. With `catalog: unity` the `table` input is a name, and the step reads `DATABRICKS_HOST` and `DATABRICKS_TOKEN` from its `env`:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.0
+- uses: cdelmonte-zg/delta-explain@v0.8.1
   with:
     table: sales.events.orders
     catalog: unity
