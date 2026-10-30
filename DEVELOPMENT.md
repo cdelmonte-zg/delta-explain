@@ -4,6 +4,10 @@ This document is the contributor-facing map of the codebase: how to build and
 test, how the modules fit together, and the conventions changes are expected to
 follow.
 
+Questions and ideas belong in
+[Discussions](https://github.com/cdelmonte-zg/delta-explain/discussions); bugs
+in [Issues](https://github.com/cdelmonte-zg/delta-explain/issues).
+
 ## Project overview
 
 `delta-explain` is a CLI that makes Delta Lake file pruning visible. Given a Delta
