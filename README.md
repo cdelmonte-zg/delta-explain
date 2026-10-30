@@ -156,6 +156,12 @@ For a detailed walkthrough of the architecture, design decisions, and the reason
 
 Build with `cargo build && cargo test`; the contributor guide - architecture, testing conventions, fixtures - is [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Questions and feedback
+
+Questions about a report, and ideas for the tool, go in
+[Discussions](https://github.com/cdelmonte-zg/delta-explain/discussions).
+Bugs go in [Issues](https://github.com/cdelmonte-zg/delta-explain/issues).
+
 ## License
 
 MIT
