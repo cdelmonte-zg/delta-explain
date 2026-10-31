@@ -861,9 +861,9 @@ dependencies = [
 
 [[package]]
 name = "delta_kernel"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b9ffb54dab8d7755a54150c7170a96afe2faeb39676d1cf0d5a98050887c4ab"
+checksum = "54126a2c4de6be3940069183355206f82bb0567fb54432dfdf54ecea9d9b8f0c"
 dependencies = [
  "arrow",
  "bytes",
