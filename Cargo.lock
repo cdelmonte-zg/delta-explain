@@ -894,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "delta_kernel_default_engine"
-version = "0.30.0"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c1b00c71b46e060618edcdff8ac668525afcb3eecd555099f6b7b8c7c98403d"
+checksum = "e15ad6ff8c6f38d0dea9dc60afd1db822625b35e29d9df85a867e6b36f0b891f"
 dependencies = [
  "async-stream",
  "async-trait",
