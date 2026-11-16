@@ -1,4 +1,4 @@
-use sqlparser::ast::{BinaryOperator, Expr as SqlExpr, UnaryOperator, Value as SqlValue};
+use sqlparser::ast::{BinaryOperator, Expr as SqlExpr, InTarget, UnaryOperator, Value as SqlValue};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -71,10 +71,13 @@ fn convert(expr: &SqlExpr) -> Pred {
 
         SqlExpr::IsNotDistinctFrom(left, right) => convert_distinct(expr, left, right, true),
 
-        SqlExpr::InList {
+        // Only the plain list form; subquery, UNNEST, table and GLOBAL
+        // targets stay outside the vocabulary and fall to Unsupported.
+        SqlExpr::In {
             expr: lhs,
-            list,
+            target: InTarget::List(list),
             negated,
+            global: false,
         } => convert_in_list(expr, lhs, list, *negated),
 
         SqlExpr::Between {
