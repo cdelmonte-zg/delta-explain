@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct FileStats {
-    pub num_records: Option<u64>,
     pub columns: HashMap<String, ColumnStats>,
 }
 
@@ -25,8 +24,6 @@ pub(in crate::metadata) fn parse_stats_json(stats_str: &str) -> Option<FileStats
         return None;
     }
 
-    let num_records = stats.get("numRecords").and_then(|v| v.as_u64());
-
     let mut columns: HashMap<String, ColumnStats> = HashMap::new();
 
     // Delta nests stats for struct columns: minValues.profile = {age, score}.
@@ -44,10 +41,7 @@ pub(in crate::metadata) fn parse_stats_json(stats_str: &str) -> Option<FileStats
         }
     }
 
-    Some(FileStats {
-        num_records,
-        columns,
-    })
+    Some(FileStats { columns })
 }
 
 fn col_entry(columns: &mut HashMap<String, ColumnStats>, key: String) -> &mut ColumnStats {

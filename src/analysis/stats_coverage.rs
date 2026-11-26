@@ -4,8 +4,7 @@ use super::model::{
     ColumnStatsCoverage, PartitionAnalysis, PredicateClassification, StatsRequirement,
 };
 use super::predicate::{Literal, Pred};
-use crate::metadata::scan::BaselineScan;
-use crate::metadata::stats::FileStats;
+use crate::metadata::scan::{BaselineScan, FileInfo};
 use delta_kernel::schema::{DataType, MetadataValue, Schema, StructField, StructType};
 
 const PHYSICAL_NAME_KEY: &str = "delta.columnMapping.physicalName";
@@ -46,13 +45,11 @@ pub(crate) fn compute(
 
         for requirement in requirements {
             let covered_files = baseline
-                .stats
+                .files
                 .iter()
-                .filter(|entry| {
-                    let (path, file_stats) = *entry;
-
-                    is_candidate(path.as_str())
-                        && has_required_stats(file_stats, &physical_column, requirement)
+                .filter(|file| {
+                    is_candidate(file.path.as_str())
+                        && has_required_stats(file, &physical_column, requirement)
                 })
                 .count();
 
@@ -139,18 +136,22 @@ fn collect_stats_requirements(predicate: &Pred, requirements: &mut RequirementsB
     }
 }
 
-fn has_required_stats(file_stats: &FileStats, column: &str, requirement: StatsRequirement) -> bool {
-    let Some(column_stats) = file_stats.columns.get(column) else {
+fn has_required_stats(file: &FileInfo, column: &str, requirement: StatsRequirement) -> bool {
+    let Some(file_stats) = &file.stats else {
+        return false;
+    };
+
+    let Some(col_stats) = file_stats.columns.get(column) else {
         return false;
     };
 
     match requirement {
-        StatsRequirement::MinMax => column_stats.min.is_some() && column_stats.max.is_some(),
+        StatsRequirement::MinMax => col_stats.min.is_some() && col_stats.max.is_some(),
 
-        StatsRequirement::NullCount => column_stats.null_count.is_some(),
+        StatsRequirement::NullCount => col_stats.null_count.is_some(),
 
         StatsRequirement::NullCountAndNumRecords => {
-            column_stats.null_count.is_some() && file_stats.num_records.is_some()
+            col_stats.null_count.is_some() && file.num_records.is_some()
         }
     }
 }
@@ -320,12 +321,13 @@ mod tests {
         assert_eq!(actual, Some(Vec::new()));
     }
 
-    fn file(path: &str) -> FileInfo {
+    fn file(path: &str, num_records: Option<u64>, stats: Option<FileStats>) -> FileInfo {
         FileInfo {
             path: path.to_string(),
             size: 100,
+            stats,
             partition_values: HashMap::new(),
-            num_records: None,
+            num_records,
             has_deletion_vector: false,
         }
     }
@@ -345,40 +347,34 @@ mod tests {
     }
 
     fn baseline_with_age_column(column_name: &str) -> BaselineScan {
-        let stats = HashMap::from([
-            (
-                "a".to_string(),
-                FileStats {
-                    num_records: Some(10),
-                    columns: HashMap::from([(
-                        column_name.to_string(),
-                        ColumnStats {
-                            min: Some("10".to_string()),
-                            max: Some("20".to_string()),
-                            null_count: Some(0),
-                        },
-                    )]),
+        let stats_a = FileStats {
+            columns: HashMap::from([(
+                column_name.to_string(),
+                ColumnStats {
+                    min: Some("10".to_string()),
+                    max: Some("20".to_string()),
+                    null_count: Some(0),
                 },
-            ),
-            (
-                "b".to_string(),
-                FileStats {
-                    num_records: None,
-                    columns: HashMap::from([(
-                        column_name.to_string(),
-                        ColumnStats {
-                            min: None,
-                            max: None,
-                            null_count: Some(10),
-                        },
-                    )]),
+            )]),
+        };
+
+        let stats_b = FileStats {
+            columns: HashMap::from([(
+                column_name.to_string(),
+                ColumnStats {
+                    min: None,
+                    max: None,
+                    null_count: Some(10),
                 },
-            ),
-        ]);
+            )]),
+        };
 
         BaselineScan {
-            files: vec![file("a"), file("b"), file("c")],
-            stats,
+            files: vec![
+                file("a", Some(10), Some(stats_a)),
+                file("b", None, Some(stats_b)),
+                file("c", None, None),
+            ],
         }
     }
 

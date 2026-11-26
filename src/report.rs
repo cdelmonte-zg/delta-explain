@@ -77,7 +77,13 @@ pub fn build(
         catalog: catalog.cloned(),
         version: table.snapshot.version(),
         total_files: table.metadata.baseline.files.len(),
-        files_with_stats: table.metadata.baseline.stats.len(),
+        files_with_stats: table
+            .metadata
+            .baseline
+            .files
+            .iter()
+            .filter(|file| file.stats.is_some())
+            .count(),
         partition_columns: table.metadata.partition_columns.clone(),
         features: TableFeatureReport {
             deletion_vectors_enabled: features.deletion_vectors_enabled,

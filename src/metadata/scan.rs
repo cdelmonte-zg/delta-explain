@@ -15,6 +15,7 @@ use crate::metadata::stats::{FileStats, parse_stats_json};
 pub struct FileInfo {
     pub path: String,
     pub size: i64,
+    pub stats: Option<FileStats>,
     pub partition_values: HashMap<String, String>,
     pub num_records: Option<u64>,
     pub has_deletion_vector: bool,
@@ -22,7 +23,6 @@ pub struct FileInfo {
 
 pub struct BaselineScan {
     pub files: Vec<FileInfo>,
-    pub stats: HashMap<String, FileStats>,
 }
 
 pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<BaselineScan> {
@@ -38,17 +38,20 @@ pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<Bas
         files = scan_meta.visit_scan_files(files, push_file_info)?;
         visitor.visit_rows_of(&scan_meta.scan_files)?;
     }
-    Ok(BaselineScan {
-        files,
-        stats: visitor.stats,
-    })
+
+    files
+        .iter_mut()
+        .for_each(|entry| entry.stats = visitor.stats.remove(&entry.path));
+
+    Ok(BaselineScan { files })
 }
 
 fn push_file_info(files: &mut Vec<FileInfo>, file: ScanFile) {
     files.push(FileInfo {
-        path: file.path.clone(),
+        path: file.path,
         size: file.size,
-        partition_values: file.partition_values.clone(),
+        stats: None,
+        partition_values: file.partition_values,
         num_records: file.stats.map(|s| s.num_records),
         has_deletion_vector: file.dv_info.has_vector(),
     });
