@@ -7,6 +7,25 @@ and from v0.2.0 onwards the project follows [Semantic Versioning](https://semver
 The JSON output carries an explicit `schema_version` field whose changes also
 follow SemVer relative to that field.
 
+## [0.8.2] - 2026-11-27
+
+### Changed
+
+- One log replay per run. The baseline scan keeps its file metadata in
+  memory, and the partition and data-skipping scans start from it instead
+  of replaying the Delta log again, so a predicate costs one log read
+  instead of three. Output and exit codes are unchanged. Measured locally
+  at 200k files, a run with a predicate is 8-17% faster. Peak memory grows
+  by 11-27%, also on runs without a predicate. The gain is larger on
+  remote object stores, where each replay is a round of reads. The README
+  Performance numbers are re-measured.
+- Upgraded delta_kernel to 0.30.1 and sqlparser to 0.64.
+
+### Fixed
+
+- Bumped `url` to 2.5.9 (RUSTSEC-2026-0592) and `quinn-udp` to 0.5.16
+  (RUSTSEC-2026-0538), both transitive.
+
 ## [0.8.1] - 2026-10-28
 
 ### Added

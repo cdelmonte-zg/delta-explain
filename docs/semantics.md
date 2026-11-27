@@ -43,6 +43,8 @@ concurrency and no adaptive behavior:
    the literal partition values; their intersection is Phase 1. The full
    predicate, conservatively stripped of unsupported fragments and
    intersected with the partition-exact verdict, runs as the final scan.
+   Both kernel scans start from the file metadata the baseline scan kept
+   in memory, so the log is replayed once per run.
 5. **Attribution**: the survivor-set difference between phases is
    attributed: directory-level partition pruning first, min/max data
    skipping second.

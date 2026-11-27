@@ -67,7 +67,7 @@ Production-table honesty (formerly the v0.5 plan, delivered in the same cycle):
 
 - **Detect and declare protocol features**: deletion vectors (record counts overcount and the report says so), column mapping (physical vs logical names), liquid clustering. Declared in a `table_features` JSON block with warnings; the numbers are never silently compensated.
 - **Per-file machine-readable output**: `--verbose --format json` emits a `files[]` array (`kept`, `pruned_by`, sizes, partition values), capped by `--limit`; the differential harness consumes it instead of scraping text.
-- **Scale, measured**: 200k files in ~1.6 s / ~320 MB, linear; numbers and the ~1M-file memory ceiling documented in the README.
+- **Scale, measured**: 200k files in ~1.7 s / ~380 MB, linear; numbers and the ~1M-file memory ceiling documented in the README.
 - **Exotic log shapes, proven**: log compaction, classic multi-part checkpoints, and V2 UUID-named checkpoints with sidecars are covered by the test matrix (the kernel handled them; now that is a guarantee, not an assumption).
 
 And the public contract, stabilized:
@@ -106,7 +106,7 @@ Moving declared boundaries across the line, one release note at a time:
 
 - **Deletion vectors: compensate, not just declare.** The DV descriptor carries `cardinality`; `numRecords - cardinality` is the live record count. Cheap, but it changes a reported number's meaning, so it ships with a schema note.
 - **Batch mode** (`--predicates <file>`): one log replay, N reports; also the natural place for task-level parallelism, which stays out of the single-invocation core by design.
-- **One log replay per invocation**: today a predicate costs up to three metadata scans; on remote tables that is the real latency. Redundancy elimination before any parallelism.
+- **One log replay per invocation**: shipped in v0.8.2. The baseline scan keeps its file metadata in memory and both pruning scans start from it, so a predicate no longer costs three metadata scans. On remote tables that was the real latency; the price is more resident memory.
 - **`LIKE`**: shipped in v0.5.0, ahead of this list - prefix patterns rewrite to a lexicographic range and prune on both axes, and any-shape `LIKE` on partition columns is evaluated exactly against the literal partition values (`partition_exact`).
 - **JSON schema 1.0**: declared only after 0.2 has soaked unchanged under real consumers for a few months.
 

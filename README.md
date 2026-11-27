@@ -93,7 +93,7 @@ delta-explain s3://warehouse/events -w "date = '2024-01-15'" --min-pruning 90 --
 The repo doubles as a composite GitHub Action, so the gate is one step. Pin the tag: the action downloads a released binary, so the ref you pin is the behavior you get.
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.1
+- uses: cdelmonte-zg/delta-explain@v0.8.2
   with:
     table: s3://warehouse/events
     where: "country = 'DE' AND age > 40"
@@ -105,7 +105,7 @@ The repo doubles as a composite GitHub Action, so the gate is one step. Pin the 
 Inputs mirror the CLI flags; the step fails when a gate fails and exposes `pruning-pct`, `final-files`, and `result` as outputs for later steps. With `catalog: unity` the `table` input is a name, and the step reads `DATABRICKS_HOST` and `DATABRICKS_TOKEN` from its `env`:
 
 ```yaml
-- uses: cdelmonte-zg/delta-explain@v0.8.1
+- uses: cdelmonte-zg/delta-explain@v0.8.2
   with:
     table: sales.events.orders
     catalog: unity
@@ -132,13 +132,13 @@ delta-explain reads only the Delta log, never the parquet data files, so its cos
 
 | Log shape (200k files) | Baseline | With predicate | Peak memory |
 |---|---|---|---|
-| single JSON commit | ~1.0 s | ~1.3 s | ~280 MB |
-| 2000 JSON commits | ~1.4 s | ~2.2 s | ~320 MB |
-| 2000 commits + parquet checkpoint | ~0.8 s | ~1.0 s | ~240 MB |
+| single JSON commit | ~0.8 s | ~1.1 s | ~300 MB |
+| 2000 JSON commits | ~1.2 s | ~1.7 s | ~380 MB |
+| 2000 commits + parquet checkpoint | ~0.6 s | ~0.8 s | ~290 MB |
 
-The most production-like shape (checkpointed) is also the fastest: the kernel reads one parquet checkpoint instead of replaying thousands of JSON commits. Scaling is linear at roughly 1.5 KB of resident memory per file, which extrapolates to ~1.5 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is usually secondary to log size at this scale: an `IN` list with 500 items over 200k files adds about 0.4 s.
+The most production-like shape (checkpointed) is also the fastest: the kernel reads one parquet checkpoint instead of replaying thousands of JSON commits. The log is replayed once per run and its file metadata stays in memory for the pruning phases, which trades fewer log reads for more resident memory. Scaling is linear at roughly 1.5-2 KB of resident memory per file, which extrapolates to ~2 GB at one million files; that is the current practical ceiling and it is a known limitation, not a hidden one. Predicate complexity is usually secondary to log size at this scale: an `IN` list with 500 items over 200k files adds about 0.4 s.
 
-Data volume itself is invisible - what a big table costs is its log. A 10 TB profile (40k files x 256 MB, 31 stats columns, checkpointed; `--wide 30 --file-size-mb 256`) runs in ~1.5 s at ~470 MB; the pathological small-files version of the same 10 TB (160k files x 64 MB, same stats width) takes ~5 s at ~1.8 GB. Memory scales with files x stats leaves, so the one-million-file ceiling above assumes a narrow schema: wide production schemas reach it proportionally earlier, and `delta.dataSkippingNumIndexedCols` on the table bounds the width the log carries in the first place.
+Data volume itself is invisible - what a big table costs is its log. A 10 TB profile (40k files x 256 MB, 31 stats columns, checkpointed; `--wide 30 --file-size-mb 256`) runs in ~1.4 s at ~600 MB; the pathological small-files version of the same 10 TB (160k files x 64 MB, same stats width) takes ~5.5 s at ~2.3 GB. Memory scales with files x stats leaves, so the one-million-file ceiling above assumes a narrow schema: wide production schemas reach it proportionally earlier, and `delta.dataSkippingNumIndexedCols` on the table bounds the width the log carries in the first place.
 
 Output is the dimension to manage on large tables: the compact JSON stays summary-only at any size, and per-file detail (`--verbose`, in both formats) should be capped with `--limit`.
 
