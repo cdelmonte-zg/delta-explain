@@ -57,6 +57,13 @@ pub enum Error {
     /// with a response this tool cannot interpret.
     #[error("Catalog error {0}")]
     Catalog(String),
+
+    /// The cached scan metadata belongs to a different snapshot version.
+    #[error("Cached scan version {cached} does not match snapshot version {snapshot}")]
+    ScanCacheVersionMismatch {
+        cached: delta_kernel::Version,
+        snapshot: delta_kernel::Version,
+    },
 }
 
 impl From<reqwest::Error> for Error {

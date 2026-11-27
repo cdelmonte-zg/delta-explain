@@ -34,6 +34,7 @@ pub mod instrumentation;
 pub mod metadata;
 pub mod presentation;
 pub mod report;
+mod scan;
 pub mod storage;
 pub mod table;
 pub mod table_uri;

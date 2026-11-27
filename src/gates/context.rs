@@ -22,7 +22,7 @@ pub(super) fn build(table: &TableState, analysis: Option<&AnalysisResult>) -> Ga
         .baseline
         .files
         .iter()
-        .filter(|file| !table.metadata.baseline.stats.contains_key(&file.path))
+        .filter(|file| file.stats.is_none())
         .map(|file| file.path.clone())
         .collect();
 

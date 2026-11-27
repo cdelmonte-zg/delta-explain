@@ -23,14 +23,7 @@ pub(super) fn build(
         .files
         .iter()
         .map(|file| {
-            let file_stats = baseline.stats.get(&file.path);
-
-            // ScanFile::num_records is not always populated, for example
-            // when statistics came from stats_parsed rather than JSON stats.
-            // Fall back to the parsed baseline statistics.
-            let num_records = file
-                .num_records
-                .or_else(|| file_stats.and_then(|stats| stats.num_records));
+            let file_stats = file.stats.as_ref();
 
             let mut stats = file_stats
                 .map(|stats| {
@@ -77,21 +70,13 @@ pub(super) fn build(
 
             FileView {
                 path: file.path.clone(),
-
                 size_bytes: file.size,
-
                 partition_values: file.partition_values.clone(),
-
-                num_records,
-
+                num_records: file.num_records,
                 has_stats: file_stats.is_some(),
-
                 stats,
-
                 kept: pruned_by.is_none(),
-
                 pruned_by,
-
                 phase_states,
             }
         })
