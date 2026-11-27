@@ -1,12 +1,11 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use delta_kernel::schema::SchemaRef;
-use delta_kernel::{Engine, Snapshot};
 
 use crate::error::Result;
 use crate::instrumentation::Instrumentation;
 use crate::metadata::scan::FileInfo;
+use crate::scan::scan_context::ScanContext;
 
 use super::kernel;
 use super::model::{PartitionAnalysis, PredicateClassification};
@@ -15,13 +14,11 @@ use super::partition_eval::{self, Truth};
 pub(super) fn prune(
     classification: &PredicateClassification,
     files: &[FileInfo],
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
+    context: &ScanContext<'_>,
     schema: &SchemaRef,
     instrumentation: &mut dyn Instrumentation,
 ) -> Result<PartitionAnalysis> {
-    let kernel_survivors =
-        scan_partition_safe(classification, snapshot, engine, schema, instrumentation)?;
+    let kernel_survivors = scan_partition_safe(classification, context, schema, instrumentation)?;
 
     let (exact_survivors, evaluation_gaps) =
         evaluate_partition_exact(classification, files, schema, instrumentation)?;
@@ -36,8 +33,7 @@ pub(super) fn prune(
 
 fn scan_partition_safe(
     classification: &PredicateClassification,
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
+    context: &ScanContext<'_>,
     schema: &SchemaRef,
     instrumentation: &mut dyn Instrumentation,
 ) -> Result<Option<HashSet<String>>> {
@@ -49,7 +45,7 @@ fn scan_partition_safe(
 
     instrumentation.partition_kernel_predicate_lowered(&predicate, &kernel_predicate)?;
 
-    let survivors = kernel::surviving_files(snapshot, engine, &kernel_predicate)?;
+    let survivors = kernel::surviving_files(context, &kernel_predicate)?;
 
     Ok(Some(survivors))
 }

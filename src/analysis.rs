@@ -14,6 +14,7 @@ use delta_kernel::{Engine, schema::SchemaRef};
 
 use crate::error::Result;
 use crate::instrumentation::Instrumentation;
+use crate::scan::scan_context::ScanContext;
 use crate::table::TableState;
 
 use self::model::{AnalysisResult, Confidence, PhaseAnalysis};
@@ -52,11 +53,16 @@ pub fn analyze(
 
     instrumentation.classification_completed(&classification)?;
 
+    let context = ScanContext {
+        snapshot: table.snapshot.clone(),
+        engine,
+        scan_cache: &table.scan_cache,
+    };
+
     let partition = partition_pruning::prune(
         &classification,
         &table.metadata.baseline.files,
-        table.snapshot.clone(),
-        engine,
+        &context,
         &schema,
         instrumentation,
     )?;
@@ -65,8 +71,7 @@ pub fn analyze(
         &classification,
         &partition,
         &table.metadata.baseline.files,
-        table.snapshot.clone(),
-        engine,
+        &context,
         &schema,
         instrumentation,
     )?;

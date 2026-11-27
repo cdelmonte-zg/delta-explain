@@ -3,11 +3,14 @@ use std::sync::Arc;
 use delta_kernel::{Engine, Snapshot};
 use url::Url;
 
+use crate::scan::scan_cache::CachedScanMetadata;
+
 use super::error::{Error, Result};
 use super::instrumentation::Instrumentation;
 use super::metadata;
 
 pub struct TableState {
+    pub(crate) scan_cache: CachedScanMetadata,
     pub snapshot: Arc<Snapshot>,
     pub metadata: metadata::TableMetadata,
 }
@@ -45,7 +48,7 @@ pub fn open(
                      tables yet"
         )));
     }
-    let baseline = metadata::scan::scan_baseline(snapshot.clone(), engine)?;
+    let (baseline, scan_cache) = metadata::scan::scan_baseline(snapshot.clone(), engine)?;
 
     let partition_columns = log.partition_columns.clone();
 
@@ -63,8 +66,8 @@ pub fn open(
     );
 
     Ok(TableState {
+        scan_cache,
         snapshot,
-
         metadata: metadata::TableMetadata {
             log,
             baseline,

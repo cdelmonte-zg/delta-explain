@@ -1,12 +1,11 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use delta_kernel::schema::SchemaRef;
-use delta_kernel::{Engine, Snapshot};
 
 use crate::error::Result;
 use crate::instrumentation::Instrumentation;
 use crate::metadata::scan::FileInfo;
+use crate::scan::scan_context::ScanContext;
 
 use super::kernel;
 use super::model::{PartitionAnalysis, PredicateClassification, ScanAnalysis};
@@ -26,8 +25,7 @@ pub(super) fn prune(
     classification: &PredicateClassification,
     partition: &PartitionAnalysis,
     files: &[FileInfo],
-    snapshot: Arc<Snapshot>,
-    engine: &dyn Engine,
+    context: &ScanContext<'_>,
     schema: &SchemaRef,
     instrumentation: &mut dyn Instrumentation,
 ) -> Result<ScanAnalysis> {
@@ -41,7 +39,7 @@ pub(super) fn prune(
 
             instrumentation.scan_kernel_predicate_lowered(&predicate, &kernel_predicate)?;
 
-            kernel::surviving_files(snapshot, engine, &kernel_predicate)?
+            kernel::surviving_files(context, &kernel_predicate)?
         }
 
         None => {

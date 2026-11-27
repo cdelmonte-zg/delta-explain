@@ -10,6 +10,7 @@ use std::{
 
 use crate::error::Result;
 use crate::metadata::stats::{FileStats, parse_stats_json};
+use crate::scan::scan_cache::CachedScanMetadata;
 
 #[derive(Clone, Debug)]
 pub struct FileInfo {
@@ -25,10 +26,16 @@ pub struct BaselineScan {
     pub files: Vec<FileInfo>,
 }
 
-pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<BaselineScan> {
+pub(crate) fn scan_baseline(
+    snapshot: Arc<Snapshot>,
+    engine: &dyn Engine,
+) -> Result<(BaselineScan, CachedScanMetadata)> {
+    let mut scan_cache = CachedScanMetadata::new(snapshot.version());
+
     let scan = ScanBuilder::new(snapshot)
         .with_stats(StatsOptions::all())
         .build()?;
+
     let mut files = Vec::new();
     let mut visitor = StatsVisitor {
         stats: HashMap::new(),
@@ -37,13 +44,14 @@ pub fn scan_baseline(snapshot: Arc<Snapshot>, engine: &dyn Engine) -> Result<Bas
         let scan_meta = res?;
         files = scan_meta.visit_scan_files(files, push_file_info)?;
         visitor.visit_rows_of(&scan_meta.scan_files)?;
+        scan_cache.insert(scan_meta.scan_files)?;
     }
 
     files
         .iter_mut()
         .for_each(|entry| entry.stats = visitor.stats.remove(&entry.path));
 
-    Ok(BaselineScan { files })
+    Ok((BaselineScan { files }, scan_cache))
 }
 
 fn push_file_info(files: &mut Vec<FileInfo>, file: ScanFile) {
