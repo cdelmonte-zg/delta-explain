@@ -32,6 +32,9 @@ pub(crate) fn scan_baseline(
 ) -> Result<(BaselineScan, CachedScanMetadata)> {
     let mut scan_cache = CachedScanMetadata::new(snapshot.version());
 
+    // Use all() because json_only() fails to synthesize JSON statistics
+    // from struct-only checkpoints in Delta Kernel 0.30.1 when no
+    // predicate is supplied.
     let scan = ScanBuilder::new(snapshot)
         .with_stats(StatsOptions::all())
         .build()?;
